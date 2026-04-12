@@ -8,7 +8,6 @@ import {
   requestCancelOrder 
 } from '../services/orderService'; 
 
-// Component Card đơn hàng lẻ để xử lý logic đếm ngược riêng biệt cho từng đơn
 const OrderCard = ({ order }) => {
   const [timeLeft, setTimeLeft] = useState(0);
   const [showCancelReason, setShowCancelReason] = useState(false);
@@ -37,11 +36,13 @@ const OrderCard = ({ order }) => {
   }, [order]);
 
   const handleCancelClick = async () => {
+    // Nếu đơn đang chờ và còn trong 10 phút thì cho phép hủy trực tiếp
     if (order.status === 'PENDING' && timeLeft > 0) {
       if (window.confirm('Bạn muốn hủy đơn hàng này?')) {
         await updateOrderStatus(order.id, 'CANCELLED');
       }
     } else {
+      // Nếu đã quá 10 phút hoặc bếp đã nhận đơn, yêu cầu nhập lý do
       setShowCancelReason(true);
     }
   };
@@ -65,7 +66,6 @@ const OrderCard = ({ order }) => {
 
   return (
     <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-200/50 border border-gray-100 p-6 overflow-hidden transition-all animate-in slide-in-from-bottom-4">
-      {/* Header đơn hàng */}
       <div className="flex justify-between items-center mb-4">
         <div>
           <span className="font-mono text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg uppercase tracking-widest">
@@ -76,7 +76,6 @@ const OrderCard = ({ order }) => {
         <StatusBadge status={order.status} />
       </div>
 
-      {/* Nội dung đơn hàng */}
       <div className="space-y-3 mb-6">
         <p className="text-[15px] text-gray-800 font-black leading-tight">{order.items}</p>
         <div className="flex justify-between items-end border-t border-dashed pt-3">
@@ -85,7 +84,7 @@ const OrderCard = ({ order }) => {
         </div>
       </div>
 
-      {/* PHẦN THANH TOÁN (MỚI) */}
+      {/* PHẦN THANH TOÁN */}
       <div className="bg-gray-50 rounded-3xl p-4 mb-4 border border-gray-100">
         <div className="flex justify-between items-center mb-3">
           <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Thanh toán</span>
@@ -140,7 +139,7 @@ const OrderCard = ({ order }) => {
         )}
       </div>
 
-      {/* PHẦN HỦY ĐƠN (MỚI) */}
+      {/* PHẦN HỦY ĐƠN */}
       <div className="space-y-2">
         {order.status === 'CANCEL_REQUESTED' ? (
           <div className="bg-yellow-50 text-yellow-700 text-[10px] font-black p-3 rounded-2xl text-center uppercase border border-yellow-100">
@@ -149,7 +148,14 @@ const OrderCard = ({ order }) => {
         ) : !['COMPLETED', 'CANCELLED'].includes(order.status) && (
           <>
             {!showCancelReason ? (
-              onClick={handleCancelClick}
+              <button 
+                onClick={handleCancelClick}
+                className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-400 border border-red-100 hover:bg-red-50 transition-all"
+              >
+                {order.status === 'PENDING' && timeLeft > 0 
+                  ? `Hủy đơn nhanh (${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, '0')})`
+                  : 'Yêu cầu hủy đơn'}
+              </button>
             ) : (
               <div className="bg-red-50 p-4 rounded-3xl border border-red-100 animate-in fade-in">
                 <textarea 
