@@ -1,37 +1,60 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import MenuItem from '../components/MenuItem';
 import { createOrder } from '../services/orderService';
-
-// Dữ liệu mẫu trích xuất trực tiếp từ hình ảnh thực đơn của bạn
-const mockMenu = [
-  { id: 1, name: 'Cơm Gà KATSU Phủ Trứng (sốt STAMINA)', price: '70,000đ', description: 'Gà giòn tan - mọng nước. Cơm phủ trứng béo ngậy. Sốt STAMINA thơmmm ngon.' },
-  { id: 2, name: 'Cơm Gà KATSUDON (sốt STAMINA)', price: '60,000đ', description: 'Gà giòn tan - mọng nước. Sốt STAMINA - Sốt Tokyo Garlic BBQ thơmmm.' },
-  { id: 3, name: 'Hương Nhài Dẻ Cười', price: '2 giá', description: 'Trà thanh – kem bùi – vị dịu dàng khó quên.' },
-  { id: 4, name: 'Sakura Hồng Sữa Dẻ Cười', price: '2 giá', description: '' },
-  { id: 5, name: 'Sakura Hồng Sữa', price: '2 giá', description: 'Hồng trà sữa Sakura (hoa anh đào)' },
-  { id: 6, name: 'Sakura Cream Frappe', price: '57,000đ', description: 'Hương hoa anh đào thanh ngọt, mát lạnh và nhẹ nhàng – như một mùa xuân Nhật Bản trong từng ngụm.' }
-];
+import { getUserByPhone } from '../services/authService'; // Service lấy khách hàng
+import { getMenu } from '../services/menuService';       // Service lấy thực đơn
 
 const Order = () => {
-  const { username: routeUsername } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   
+  // Lấy username từ URL nếu có (ví dụ sau khi đăng ký xong chuyển qua)
+  const initialUser = searchParams.get('user') || '';
+
   // State quản lý dữ liệu
-  const [username, setUsername] = useState(routeUsername || '');
+  const [username, setUsername] = useState(initialUser);
   const [customerInfo, setCustomerInfo] = useState(null);
+  const [menu, setMenu] = useState([]); // Chuyển từ mockMenu sang state động
   const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Mô phỏng việc gọi API kiểm tra Username (SĐT)
+  // 1. Lấy thực đơn từ Firebase khi vừa mở trang
   useEffect(() => {
-    if (username && username.length >= 10) {
-      // TODO: Thay thế bằng logic gọi Firebase lấy thông tin khách thật
-      // Ví dụ giả lập: Nếu nhập đủ số, coi như khách cũ
-      setCustomerInfo({ name: 'Khách Hàng', phone: username, address: 'Phân khu Origami, Vinhomes' });
-    } else {
-      setCustomerInfo(null);
-    }
+    const fetchMenu = async () => {
+      const data = await getMenu();
+      setMenu(data);
+      setIsLoading(false);
+    };
+    fetchMenu();
+  }, []);
+
+  // 2. Tự động tìm thông tin khách khi nhập đủ Số điện thoại
+  useEffect(() => {
+    const fetchUser = async () => {
+      if (username && username.length >= 10) {
+        const userData = await getUserByPhone(username);
+        if (userData) {
+          setCustomerInfo({
+            name: userData.fullName,
+            phone: userData.username,
+            address: userData.address
+          });
+        } else {
+          setCustomerInfo(null);
+        }
+      } else {
+        setCustomerInfo(null);
+      }
+    };
+
+    // Debounce nhẹ để tránh gọi API liên tục khi đang gõ
+    const timer = setTimeout(() => {
+      fetchUser();
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, [username]);
 
   const handleAddToCart = (item) => {
@@ -39,8 +62,14 @@ const Order = () => {
   };
 
   const handleOrderSubmit = async () => {
-    if (!username) {
-      alert('Vui lòng nhập Username (SĐT) trước khi đặt hàng!');
+    if (!username || username.length < 10) {
+      alert('Vui lòng nhập Username (Số điện thoại) hợp lệ!');
+      return;
+    }
+
+    if (!customerInfo) {
+      alert('Không tìm thấy thông tin thành viên. Vui lòng đăng ký trước khi đặt hàng!');
+      navigate('/dangky');
       return;
     }
 
@@ -49,76 +78,67 @@ const Order = () => {
       return;
     }
 
-    // 1. Chuyển đổi giỏ hàng thành chuỗi văn bản để dễ lưu trữ và hiển thị 
-    // VD: "2x Cơm Gà KATSU, 1x Sakura Hồng Sữa"
+    // Nhóm các món để tính tổng và tạo chuỗi mô tả
     const groupedItems = cart.reduce((acc, item) => {
       acc[item.name] = (acc[item.name] || 0) + 1;
       return acc;
     }, {});
+    
     const itemsString = Object.entries(groupedItems)
       .map(([name, qty]) => `${qty}x ${name}`)
       .join(', ');
 
-    // 2. Tính tổng tiền
     const calculateTotal = () => {
       const totalNum = cart.reduce((total, item) => {
         if (item.price === '2 giá') return total; 
         const numericPrice = parseInt(item.price.replace(/\D/g, ''), 10) || 0;
         return total + numericPrice;
       }, 0);
-      return totalNum > 0 ? totalNum.toLocaleString('vi-VN') + 'đ' : '2 giá';
+      return totalNum > 0 ? totalNum.toLocaleString('vi-VN') + 'đ' : 'Sẽ báo giá sau';
     };
 
-    // 3. Chuẩn bị dữ liệu để đẩy lên Firebase
     const orderData = {
       phone: username,
-      customer: customerInfo?.name || 'Khách Vãng Lai', 
-      address: customerInfo?.address || 'Chưa cập nhật địa chỉ',
+      customer: customerInfo.name, 
+      address: customerInfo.address,
       items: itemsString,
       total: calculateTotal(),
-      // status và createdAt sẽ được service tự động thêm vào
     };
 
     try {
-      // 4. Gọi API gửi đơn lên Firestore (Hàm này chạy bất đồng bộ)
       const result = await createOrder(orderData);
 
       if (result.success) {
-        // Đặt hàng thành công: Xoá giỏ hàng và chuyển trang
         setCart([]);
-        alert('Đặt hàng thành công!');
+        alert('Đặt hàng thành công! Đơn hàng đã được gửi tới bếp.');
         navigate(`/checkorder?user=${username}`);
       } else {
-        alert('Có lỗi xảy ra khi đặt hàng. Vui lòng thử lại sau.');
+        alert('Lỗi: ' + result.error);
       }
     } catch (error) {
       console.error("Lỗi submit đơn: ", error);
-      alert('Lỗi kết nối. Vui lòng kiểm tra lại mạng.');
+      alert('Lỗi kết nối Firebase.');
     }
   };
 
-  const filteredMenu = mockMenu.filter(item => 
+  const filteredMenu = menu.filter(item => 
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
     <div className="min-h-screen bg-white pb-24">
-      {/* Header thanh điều hướng */}
+      {/* Header */}
       <div className="bg-white px-4 py-3 border-b flex items-center justify-between sticky top-0 z-10">
         <button onClick={() => navigate(-1)} className="text-gray-600 hover:bg-gray-100 p-1 rounded">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
         </button>
-        <h1 className="text-[16px] font-medium text-gray-800">Thực đơn</h1>
-        <button className="text-gray-600 hover:bg-gray-100 p-1 rounded border border-gray-200">
-           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
+        <h1 className="text-[16px] font-medium text-gray-800">Thực đơn đặt món</h1>
+        <div className="w-8"></div>
       </div>
 
-      {/* Thanh tìm kiếm món */}
+      {/* Tìm kiếm */}
       <div className="bg-white p-3 border-b border-gray-100">
         <div className="relative">
           <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
@@ -128,16 +148,16 @@ const Order = () => {
           </span>
           <input 
             type="text" 
-            placeholder="Tìm tên món" 
+            placeholder="Tìm món ngon..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-gray-50/50"
+            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-gray-50/50"
           />
         </div>
       </div>
 
-      {/* Khối khai báo Username */}
-      <div className="bg-white p-4 shadow-[0_2px_4px_rgba(0,0,0,0.02)] border-b border-gray-100">
+      {/* Thông tin khách */}
+      <div className="bg-white p-4 border-b border-gray-100">
         <label className="block text-sm font-semibold text-gray-800 mb-2">
           Username (Số điện thoại) <span className="text-red-500">*</span>
         </label>
@@ -145,31 +165,35 @@ const Order = () => {
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="Nhập SĐT của bạn..."
+          placeholder="Nhập SĐT để nhận diện..."
           className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-gray-800 focus:outline-none focus:border-[#007BFF] focus:ring-1 focus:ring-[#007BFF] transition-colors"
         />
         
-        {/* Hiển thị thông tin khách nếu SĐT hợp lệ */}
-        {customerInfo && (
-          <div className="mt-3 p-3 bg-[#E8F4FD] border border-[#B8DAFF] rounded-lg">
-            <p className="text-sm text-[#004085] font-semibold">Tên người nhận: {customerInfo.name}</p>
-            <p className="text-[13px] text-[#004085] mt-1">Giao đến: {customerInfo.address}</p>
+        {customerInfo ? (
+          <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-sm text-green-800 font-semibold">Chào {customerInfo.name}!</p>
+            <p className="text-[13px] text-green-700 mt-1 italic">Địa chỉ: {customerInfo.address}</p>
           </div>
-        )}
-        
-        {/* Gợi ý đăng ký nếu SĐT có độ dài nhất định nhưng chưa tìm thấy (hiện tại giả lập độ dài < 10) */}
-        {!customerInfo && username.length > 0 && username.length < 10 && (
-          <p className="text-[13px] text-amber-600 mt-2">
-            Nếu chưa có tài khoản, vui lòng <span onClick={() => navigate('/dangky')} className="text-blue-500 underline cursor-pointer font-medium">Đăng ký tại đây</span>.
-          </p>
-        )}
+        ) : username.length >= 10 ? (
+          <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-sm text-amber-700 font-medium">Bạn chưa đăng ký thành viên?</p>
+            <button 
+              onClick={() => navigate('/dangky')} 
+              className="mt-1 text-sm text-blue-600 font-bold underline"
+            >
+              Đăng ký tài khoản ngay để đặt hàng
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {/* Danh sách Thực Đơn */}
       <div className="bg-white">
-        <div className="px-4 py-3 bg-[#F8F9FA] border-b border-gray-200">
-          <h2 className="text-[14px] font-bold text-gray-800">Món mới ({filteredMenu.length})</h2>
+        <div className="px-4 py-3 bg-[#F8F9FA] border-b border-gray-200 flex justify-between">
+          <h2 className="text-[14px] font-bold text-gray-800 uppercase tracking-tight">Thực đơn hôm nay</h2>
+          {isLoading && <span className="text-xs text-blue-500 animate-pulse">Đang tải...</span>}
         </div>
+        
         <div className="flex flex-col">
           {filteredMenu.map(item => (
             <MenuItem 
@@ -180,26 +204,26 @@ const Order = () => {
               onAdd={() => handleAddToCart(item)}
             />
           ))}
-          {filteredMenu.length === 0 && (
-            <p className="text-center text-gray-500 py-8 text-sm">Không tìm thấy món ăn phù hợp.</p>
+          {!isLoading && filteredMenu.length === 0 && (
+            <div className="py-20 text-center">
+               <p className="text-gray-400 text-sm">Chưa có món ăn nào trong thực đơn.</p>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Nút Đặt Hàng cố định ở dưới cùng (Chỉ hiện khi có món trong giỏ) */}
+      {/* Thanh Giỏ hàng nổi */}
       {cart.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-[0_-4px_15px_-5px_rgba(0,0,0,0.1)] z-20">
           <button 
             onClick={handleOrderSubmit}
-            className="w-full bg-[#007BFF] hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-between transition-colors shadow-md"
+            className="w-full bg-[#007BFF] hover:bg-blue-600 text-white font-bold py-3.5 px-6 rounded-xl flex items-center justify-between transition-all transform active:scale-95"
           >
-            <span className="bg-white/20 px-3 py-1 rounded-md text-sm">{cart.length} món</span>
-            <span>Tiến hành Đặt hàng</span>
-            <span>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M12.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </span>
+            <span className="bg-white/20 px-3 py-1 rounded-lg text-sm">{cart.length} món</span>
+            <span>GỬI ĐƠN HÀNG</span>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
           </button>
         </div>
       )}

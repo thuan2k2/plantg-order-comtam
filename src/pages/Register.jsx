@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+// IMPORT hàm service để làm việc với Firebase
+import { registerUser } from '../services/authService'; 
 
 const Register = () => {
   const navigate = useNavigate();
@@ -19,7 +21,7 @@ const Register = () => {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => { // Thêm async ở đây
     e.preventDefault();
     
     // Kiểm tra dữ liệu cơ bản
@@ -30,14 +32,27 @@ const Register = () => {
 
     setIsLoading(true);
 
-    // TODO: Tại đây sẽ gọi API lưu dữ liệu lên Firebase Firestore
-    // Mô phỏng thời gian delay của mạng (1 giây)
-    setTimeout(() => {
+    try {
+      // GỌI API THẬT: Lưu dữ liệu lên Firebase Firestore
+      const result = await registerUser(formData);
+
+      if (result.success) {
+        setIsLoading(false);
+        alert('Đăng ký tài khoản thành công! Mời bạn tiếp tục đặt hàng.');
+        
+        // Chuyển hướng sang trang đặt món với thông tin username thực tế
+        // Lưu ý: Route của bạn nên khớp với cấu trúc URL bên App.jsx
+        navigate(`/order?user=${formData.username}`);
+      } else {
+        // Xử lý khi số điện thoại đã tồn tại hoặc lỗi khác
+        setIsLoading(false);
+        alert(result.error || 'Có lỗi xảy ra, vui lòng thử lại.');
+      }
+    } catch (error) {
       setIsLoading(false);
-      alert('Đăng ký tài khoản thành công! Mời bạn tiếp tục đặt hàng.');
-      // Chuyển hướng sang trang đặt món và tự động điền username lên URL hoặc state
-      navigate(`/order/${formData.username}`);
-    }, 1000);
+      console.error("Lỗi đăng ký:", error);
+      alert('Lỗi kết nối máy chủ Firebase. Vui lòng kiểm tra lại mạng.');
+    }
   };
 
   return (
@@ -78,7 +93,7 @@ const Register = () => {
               placeholder="Ví dụ: 0901234567"
               className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-gray-50/50"
             />
-            <p className="text-[12px] text-gray-400 mt-1 italic">Sẽ được dùng để tự động nhận diện bạn lần sau.</p>
+            <p className="text-[12px] text-gray-400 mt-1 italic">Dùng số điện thoại để hệ thống ghi nhớ bạn.</p>
           </div>
 
           {/* Họ và Tên */}
@@ -111,7 +126,6 @@ const Register = () => {
                 className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-gray-50/50"
               />
             </div>
-            {/* Nút copy nhanh nếu SĐT nhận giống SĐT đăng nhập */}
             <button 
               type="button"
               onClick={() => setFormData({...formData, deliveryPhone: formData.username})}
@@ -156,7 +170,6 @@ const Register = () => {
             )}
           </button>
         </form>
-
       </div>
     </div>
   );

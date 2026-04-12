@@ -1,31 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import StatusBadge from '../components/StatusBadge'; // Tận dụng component đã viết
-import { getOrdersByPhone, updateOrderStatus } from '../services/orderService'; // Import API thật
+import StatusBadge from '../components/StatusBadge'; 
+import { getOrdersByPhone, updateOrderStatus } from '../services/orderService'; 
 
 const CheckOrder = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   
-  // Lấy SĐT từ URL
+  // Lấy SĐT từ URL (ví dụ: ?user=0901234567)
   const userPhoneParam = searchParams.get('user') || '';
   
   const [phoneInput, setPhoneInput] = useState(userPhoneParam);
   const [orders, setOrders] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Gọi API Firebase mỗi khi userPhoneParam trên URL thay đổi
+  // Gọi API Firebase mỗi khi tham số 'user' trên URL thay đổi
   useEffect(() => {
     const fetchOrders = async () => {
-      if (userPhoneParam) {
+      // Chỉ tìm kiếm khi SĐT có ít nhất 10 ký tự để tiết kiệm tài nguyên Firebase
+      if (userPhoneParam && userPhoneParam.length >= 10) {
         setIsSearching(true);
         try {
-          // Lấy dữ liệu thật từ Firestore
           const userOrders = await getOrdersByPhone(userPhoneParam);
           setOrders(userOrders);
         } catch (error) {
           console.error("Lỗi tải đơn hàng:", error);
-          alert("Không thể tải đơn hàng, vui lòng thử lại sau.");
+          alert("Không thể kết nối với máy chủ. Vui lòng kiểm tra lại mạng.");
         } finally {
           setIsSearching(false);
         }
@@ -39,32 +39,33 @@ const CheckOrder = () => {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    if (!phoneInput.trim()) return;
-    setSearchParams({ user: phoneInput });
+    const cleanPhone = phoneInput.trim();
+    if (!cleanPhone) {
+      alert("Vui lòng nhập số điện thoại để tra cứu.");
+      return;
+    }
+    // Cập nhật URL, từ đó kích hoạt useEffect ở trên
+    setSearchParams({ user: cleanPhone });
   };
 
-  // Cập nhật hàm huỷ đơn để bắn API lên Firebase
   const handleCancelOrder = async (orderId, currentStatus) => {
+    // 1. Huỷ trực tiếp (Khi đơn mới hoặc đã xác nhận nhưng chưa nấu)
     if (['PENDING', 'CONFIRMED', 'SCHEDULED'].includes(currentStatus)) {
-      const confirmDirectCancel = window.confirm('Bạn có chắc chắn muốn huỷ đơn hàng này không?');
-      if (confirmDirectCancel) {
-        // Gọi API cập nhật Firebase
-        const result = await updateOrderStatus(orderId, 'CANCELLED');
+      if (window.confirm('Bạn có chắc chắn muốn huỷ đơn hàng này không?')) {
+        const result = await updateOrderStatus(orderId, 'CANCEL_REQUESTED'); // Chuyển sang yêu cầu huỷ để Admin duyệt
         if (result.success) {
-          // Cập nhật lại giao diện ngay lập tức mà không cần tải lại trang
-          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'CANCELLED' } : o));
-          alert('Đã huỷ đơn hàng thành công.');
+          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'CANCEL_REQUESTED' } : o));
+          alert('Đã gửi yêu cầu huỷ đơn thành công.');
         }
       }
     } 
+    // 2. Yêu cầu huỷ (Khi bếp đã bắt đầu làm hoặc đang giao)
     else if (['PREPARING', 'DELIVERING'].includes(currentStatus)) {
-      const confirmRequestCancel = window.confirm('Đơn hàng của bạn đang được chuẩn bị/giao. Bạn có muốn gửi yêu cầu huỷ đến bếp không?');
-      if (confirmRequestCancel) {
-        // Gọi API cập nhật Firebase
+      if (window.confirm('Đơn hàng đang được xử lý. Bạn muốn gửi yêu cầu huỷ gấp đến cửa hàng?')) {
         const result = await updateOrderStatus(orderId, 'CANCEL_REQUESTED');
         if (result.success) {
           setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'CANCEL_REQUESTED' } : o));
-          alert('Đã gửi yêu cầu huỷ đơn. Vui lòng chờ bếp phản hồi.');
+          alert('Yêu cầu huỷ đã được gửi. Vui lòng đợi xác nhận từ cửa hàng.');
         }
       }
     }
@@ -72,87 +73,99 @@ const CheckOrder = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-10">
+      {/* Header cố định */}
       <div className="bg-white px-4 py-3 border-b flex items-center shadow-sm sticky top-0 z-10">
         <button onClick={() => navigate(-1)} className="text-gray-600 hover:bg-gray-100 p-1 rounded mr-3">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
         </button>
-        <h1 className="text-[16px] font-semibold text-gray-800">Kiểm tra đơn hàng</h1>
+        <h1 className="text-[16px] font-bold text-gray-800 tracking-tight">Lịch sử đơn hàng</h1>
       </div>
 
       <div className="p-4 max-w-lg mx-auto">
-        <form onSubmit={handleSearch} className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Tra cứu theo Username (SĐT)</label>
+        {/* Form tìm kiếm */}
+        <form onSubmit={handleSearch} className="mb-6 bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Số điện thoại tra cứu</label>
           <div className="flex gap-2">
             <input
-              type="text"
+              type="tel"
               value={phoneInput}
               onChange={(e) => setPhoneInput(e.target.value)}
-              placeholder="Nhập số điện thoại..."
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-500"
+              placeholder="Nhập SĐT (ví dụ: 090...)"
+              className="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
             />
             <button 
               type="submit"
-              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-md active:scale-95 whitespace-nowrap"
             >
               Tìm kiếm
             </button>
           </div>
         </form>
 
+        {/* Trạng thái Loading */}
         {isSearching ? (
-          <div className="text-center py-10 text-gray-500">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-3"></div>
-            Đang tải dữ liệu từ máy chủ...
+          <div className="text-center py-16 text-gray-400">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-sm font-medium">Đang tìm đơn hàng của bạn...</p>
           </div>
         ) : userPhoneParam && orders.length === 0 ? (
-          <div className="text-center py-10 bg-white rounded-xl shadow-sm border border-gray-100">
-            <p className="text-gray-500">Không tìm thấy đơn hàng nào cho SĐT: <span className="font-semibold text-gray-700">{userPhoneParam}</span></p>
-            <button onClick={() => navigate('/order')} className="mt-4 text-blue-500 hover:underline text-sm font-medium">
-              Đi đến trang Đặt món
+          /* Trạng thái không có đơn */
+          <div className="text-center py-12 bg-white rounded-2xl shadow-sm border border-gray-100 px-6">
+            <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+               <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 9.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+               </svg>
+            </div>
+            <p className="text-gray-500 text-sm">Không tìm thấy đơn hàng nào cho SĐT này.</p>
+            <button 
+              onClick={() => navigate('/order')} 
+              className="mt-6 w-full bg-gray-800 text-white py-3 rounded-xl font-bold text-sm hover:bg-black transition-colors"
+            >
+              Đặt món ngay
             </button>
           </div>
         ) : (
+          /* Danh sách đơn hàng từ Firebase */
           <div className="space-y-4">
             {orders.map((order) => {
-              const canDirectCancel = ['PENDING', 'CONFIRMED', 'SCHEDULED'].includes(order.status);
-              const canRequestCancel = ['PREPARING', 'DELIVERING'].includes(order.status);
-              const canTakeAction = canDirectCancel || canRequestCancel;
+              const canCancel = ['PENDING', 'CONFIRMED', 'PREPARING', 'DELIVERING'].includes(order.status);
 
               return (
-                <div key={order.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-50 flex justify-between items-center bg-gray-50/50">
-                    {/* ID đơn hàng thật từ Firebase thường khá dài, ta có thể cắt ngắn 6 ký tự cuối cho đẹp */}
-                    <span className="font-mono text-sm font-semibold text-gray-700 uppercase">
-                      #{order.id.slice(-6)}
+                <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transform transition-all active:scale-[0.99]">
+                  <div className="px-5 py-3.5 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
+                    <span className="font-mono text-xs font-black text-gray-400 uppercase tracking-widest">
+                      Mã: #{order.id.slice(-6)}
                     </span>
-                    <span className="text-[12px] text-gray-500">{order.time}</span>
+                    <span className="text-[11px] font-medium text-gray-400 bg-white border border-gray-100 px-2 py-0.5 rounded-full">
+                      {order.time}
+                    </span>
                   </div>
                   
-                  <div className="p-4">
-                    <div className="mb-3">
+                  <div className="p-5">
+                    <div className="mb-4">
                       <StatusBadge status={order.status} />
                     </div>
                     
-                    <p className="text-sm text-gray-800 mb-2 leading-relaxed">
-                      <span className="font-semibold">Món ăn:</span> {order.items}
-                    </p>
-                    <p className="text-sm text-gray-800 font-semibold mb-4">
-                      Tổng cộng: <span className="text-red-500">{order.total}</span>
-                    </p>
+                    <div className="space-y-2 mb-5">
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs font-bold text-gray-400 uppercase mt-0.5 w-16">Chi tiết:</span>
+                        <p className="text-[14px] text-gray-800 font-medium leading-relaxed">{order.items}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-400 uppercase w-16">Tổng:</span>
+                        <p className="text-lg font-black text-red-500">{order.total}</p>
+                      </div>
+                    </div>
 
-                    {canTakeAction && (
-                      <div className="pt-3 border-t border-gray-100 flex justify-end">
+                    {canCancel && order.status !== 'CANCEL_REQUESTED' && order.status !== 'CANCELLED' && (
+                      <div className="pt-4 border-t border-gray-100">
                         <button
                           onClick={() => handleCancelOrder(order.id, order.status)}
-                          className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors border ${
-                            canDirectCancel 
-                              ? 'text-red-600 border-red-200 bg-red-50 hover:bg-red-100' 
-                              : 'text-orange-600 border-orange-200 bg-orange-50 hover:bg-orange-100'
-                          }`}
+                          className="w-full text-xs font-bold text-red-500 py-2.5 rounded-xl border border-red-100 bg-red-50/50 hover:bg-red-50 transition-colors uppercase tracking-wider"
                         >
-                          {canDirectCancel ? 'Huỷ đơn hàng' : 'Gửi yêu cầu huỷ đơn'}
+                          Huỷ đơn / Thay đổi
                         </button>
                       </div>
                     )}
