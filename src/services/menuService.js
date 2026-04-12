@@ -1,24 +1,17 @@
-import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, orderBy, query } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'; // Thêm Storage
-import { db, storage } from '../firebase/config'; // Thêm storage từ config
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, orderBy, query, onSnapshot } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase/config';
 
 const COLLECTION_NAME = 'menu';
 
 /**
  * Hàm hỗ trợ: Tải ảnh lên Firebase Storage
- * @param {File} file - Tệp tin hình ảnh từ input
- * @returns {string|null} - Link ảnh công khai
  */
 export const uploadImage = async (file) => {
   if (!file) return null;
   try {
-    // Tạo đường dẫn lưu file: menu/ten_file_thoi_gian.png
     const storageRef = ref(storage, `menu/${Date.now()}_${file.name}`);
-    
-    // Tải tệp lên
     const snapshot = await uploadBytes(storageRef, file);
-    
-    // Lấy link URL công khai của tệp vừa tải
     const downloadURL = await getDownloadURL(snapshot.ref);
     return downloadURL;
   } catch (error) {
@@ -28,7 +21,24 @@ export const uploadImage = async (file) => {
 };
 
 /**
- * Lấy danh sách toàn bộ thực đơn
+ * Lấy danh sách thực đơn THỜI GIAN THỰC
+ * Giúp Admin và Khách thấy món mới ngay lập tức
+ */
+export const subscribeToMenu = (callback) => {
+  const menuRef = collection(db, COLLECTION_NAME);
+  const q = query(menuRef, orderBy("name", "asc"));
+
+  return onSnapshot(q, (snapshot) => {
+    const menuItems = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    callback(menuItems);
+  });
+};
+
+/**
+ * Lấy danh sách thực đơn (Dạng tĩnh)
  */
 export const getMenu = async () => {
   try {
@@ -36,15 +46,10 @@ export const getMenu = async () => {
     const q = query(menuRef, orderBy("name", "asc"));
     const snapshot = await getDocs(q);
     
-    const menuItems = [];
-    snapshot.forEach((doc) => {
-      menuItems.push({
-        id: doc.id,
-        ...doc.data()
-      });
-    });
-    
-    return menuItems;
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
   } catch (error) {
     console.error("Lỗi tải thực đơn:", error);
     return [];
@@ -52,14 +57,15 @@ export const getMenu = async () => {
 };
 
 /**
- * Thêm một món ăn mới vào thực đơn (Đã hỗ trợ link ảnh)
+ * Thêm một món ăn mới
+ * BỔ SUNG: Mặc định category nếu không có
  */
 export const addMenuItem = async (itemData) => {
   try {
     const menuRef = collection(db, COLLECTION_NAME);
     const docRef = await addDoc(menuRef, {
       ...itemData,
-      // Đảm bảo có trường image (nếu không có thì để rỗng)
+      category: itemData.category || 'MAIN', // MAIN, SIDE, EXTRA
       image: itemData.image || '' 
     });
     return { success: true, id: docRef.id };
@@ -84,7 +90,7 @@ export const updateMenuItem = async (itemId, updatedData) => {
 };
 
 /**
- * Xoá vĩnh viễn một món ăn khỏi thực đơn
+ * Xoá món ăn
  */
 export const deleteMenuItem = async (itemId) => {
   try {

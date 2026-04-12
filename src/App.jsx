@@ -13,14 +13,16 @@ import Dashboard from './pages/Admin/Dashboard';
 import ManageOrders from './pages/Admin/ManageOrders';
 import ManageUsers from './pages/Admin/ManageUsers';
 import ManageMenu from './pages/Admin/ManageMenu';
-import AdminLogin from './pages/Admin/AdminLogin'; // Trang đăng nhập Admin mới
+import AdminLogin from './pages/Admin/AdminLogin';
+// BỔ SUNG: Trang thống kê đơn hàng mới
+import Statistics from './pages/Admin/Statistics'; 
 
 // CSS Toàn cục
 import './index.css';
 
 // --- COMPONENT BẢO VỆ ROUTE ADMIN ---
-// Nếu chưa đăng nhập (không có adminToken), đẩy về trang /admin/login
 const ProtectedAdminRoute = ({ children }) => {
+  // Đồng bộ với logic logout trong AdminLayout: kiểm tra adminToken
   const isAuthenticated = localStorage.getItem('adminToken') === 'true';
   
   if (!isAuthenticated) {
@@ -38,20 +40,15 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/dangky" element={<Register />} />
           
-          {/* Hỗ trợ cả 2 dạng: /order và /order/0901234567 */}
           <Route path="/order" element={<Order />} />
           <Route path="/order/:username" element={<Order />} />
           
-          {/* Trang kiểm tra đơn hàng */}
           <Route path="/checkorder" element={<CheckOrder />} />
-
 
           {/* --- Cấu trúc các trang dành cho Admin --- */}
           
-          {/* 1. Trang đăng nhập Admin (Không bị khóa) */}
           <Route path="/admin/login" element={<AdminLogin />} />
 
-          {/* 2. Cụm trang quản trị (Được bảo vệ bởi ProtectedAdminRoute) */}
           <Route 
             path="/admin" 
             element={
@@ -60,25 +57,30 @@ function App() {
               </ProtectedAdminRoute>
             }
           >
-            {/* Các route con này chỉ hiện khi đã qua được lớp bảo vệ ở trên */}
+            {/* Dashboard: Tổng quan doanh thu & đơn mới */}
             <Route index element={<Dashboard />} />
+            
+            {/* ManageOrders: Chỉ hiện đơn hàng của HÔM NAY */}
             <Route path="orders" element={<ManageOrders />} />
+            
+            {/* Statistics: Xem lại toàn bộ lịch sử đơn hàng & Tìm kiếm nâng cao */}
+            <Route path="statistics" element={<Statistics />} />
+            
             <Route path="users" element={<ManageUsers />} />
             <Route path="menu" element={<ManageMenu />} />
           </Route>
 
-
           {/* --- Route xử lý lỗi 404 --- */}
           <Route path="*" element={
             <div className="min-h-screen flex items-center justify-center bg-gray-50 p-10 text-center">
-              <div>
-                <h1 className="text-4xl font-bold text-gray-800 mb-4">404</h1>
-                <p className="text-gray-500 mb-6">Trang không tồn tại hoặc đã bị di dời.</p>
+              <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
+                <h1 className="text-6xl font-black text-gray-200 mb-4">404</h1>
+                <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-8">Trang không tồn tại</p>
                 <button 
                   onClick={() => window.location.href = '/'}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium"
+                  className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-blue-100 active:scale-95 transition-all"
                 >
-                  Quay về trang chủ
+                  QUAY VỀ TRANG CHỦ
                 </button>
               </div>
             </div>

@@ -15,13 +15,13 @@ import { db } from '../firebase/config';
 const COLLECTION_NAME = 'orders';
 
 /**
- * 1. Tạo một đơn hàng mới (Bổ sung trường note)
+ * 1. Tạo một đơn hàng mới (Hỗ trợ note và cấu trúc món mới)
  */
 export const createOrder = async (orderData) => {
   try {
     const newOrder = {
       ...orderData,
-      note: orderData.note || "", // Nhận ghi chú từ giao diện Order.jsx
+      note: orderData.note || "", 
       status: 'PENDING',
       createdAt: serverTimestamp(),
     };
@@ -34,8 +34,7 @@ export const createOrder = async (orderData) => {
 };
 
 /**
- * 2. Lấy toàn bộ đơn hàng (Dạng tĩnh)
- * FIX: Thêm lại hàm này để tránh lỗi [MISSING_EXPORT] tại Dashboard.jsx
+ * 2. Lấy toàn bộ đơn hàng (Dạng tĩnh cho Thống kê)
  */
 export const getAllOrders = async () => {
   try {
@@ -53,15 +52,38 @@ export const getAllOrders = async () => {
 };
 
 /**
- * 3. LẮNG NGHE ĐƠN HÀNG THEO SĐT (Dành cho khách hàng)
+ * 3. LẮNG NGHE ĐƠN HÀNG TRONG NGÀY (Dành cho trang Quản lý đơn hàng Admin)
+ * Tự động lọc các đơn hàng có trường 'time' chứa chuỗi ngày hiện tại
+ */
+export const subscribeToOrdersByDate = (dateStr, callback) => {
+  const ordersRef = collection(db, COLLECTION_NAME);
+  const q = query(ordersRef, orderBy("createdAt", "desc"));
+
+  return onSnapshot(q, (snapshot) => {
+    const allOrders = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      time: doc.data().createdAt && typeof doc.data().createdAt.toDate === 'function'
+        ? doc.data().createdAt.toDate().toLocaleString('vi-VN')
+        : 'Vừa xong'
+    }));
+    
+    // Lọc thủ công các đơn hàng trong ngày (Ví dụ: "13/04/2026")
+    const filtered = allOrders.filter(o => o.time && o.time.includes(dateStr));
+    callback(filtered);
+  }, (error) => {
+    console.error("Lỗi Realtime (By Date):", error);
+  });
+};
+
+/**
+ * 4. LẮNG NGHE ĐƠN HÀNG THEO SĐT (Dành cho khách hàng)
  */
 export const subscribeToOrdersByPhone = (phone, callback) => {
   if (!phone) return () => {};
-
   const cleanPhone = phone.trim();
-  const ordersRef = collection(db, COLLECTION_NAME);
   const q = query(
-    ordersRef,
+    collection(db, COLLECTION_NAME),
     where("phone", "==", cleanPhone),
     orderBy("createdAt", "desc")
   );
@@ -75,18 +97,14 @@ export const subscribeToOrdersByPhone = (phone, callback) => {
         : 'Vừa xong'
     }));
     callback(orders);
-  }, (error) => {
-    console.error("Lỗi Realtime (Phone):", error);
   });
 };
 
 /**
- * 4. LẮNG NGHE TOÀN BỘ ĐƠN HÀNG (Dành cho Admin thời gian thực)
+ * 5. LẮNG NGHE TOÀN BỘ ĐƠN HÀNG (Dành cho Dashboard & Thống kê Admin)
  */
 export const subscribeToAllOrders = (callback) => {
-  const ordersRef = collection(db, COLLECTION_NAME);
-  const q = query(ordersRef, orderBy("createdAt", "desc"));
-
+  const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
     const orders = snapshot.docs.map(doc => ({
       id: doc.id,
@@ -96,13 +114,11 @@ export const subscribeToAllOrders = (callback) => {
         : 'N/A'
     }));
     callback(orders);
-  }, (error) => {
-    console.error("Lỗi Realtime (Admin):", error);
   });
 };
 
 /**
- * 5. Cập nhật trạng thái
+ * 6. Cập nhật trạng thái
  */
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { subscribeToAllOrders, updateOrderStatus } from '../../services/orderService';
+// CẬP NHẬT: Sử dụng hàm subscribeToOrdersByDate để lọc đơn trong ngày
+import { subscribeToOrdersByDate, updateOrderStatus } from '../../services/orderService';
 import StatusBadge from '../../components/StatusBadge';
 
 const ORDER_STATUSES = {
@@ -19,10 +20,15 @@ const ManageOrders = () => {
 
   useEffect(() => {
     setIsLoading(true);
-    const unsubscribe = subscribeToAllOrders((data) => {
+    // Lấy chuỗi ngày hôm nay theo định dạng vi-VN (Ví dụ: 13/04/2026)
+    const todayStr = new Date().toLocaleDateString('vi-VN');
+
+    // Lắng nghe đơn hàng CHỈ TRONG NGÀY HÔM NAY
+    const unsubscribe = subscribeToOrdersByDate(todayStr, (data) => {
       setOrders(data);
       setIsLoading(false);
     });
+
     return () => unsubscribe();
   }, []);
 
@@ -59,15 +65,27 @@ const ManageOrders = () => {
   if (isLoading) return (
     <div className="p-20 text-center text-gray-400">
        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4"></div>
-       <p className="font-medium tracking-widest uppercase text-xs italic">Đang kết nối luồng dữ liệu...</p>
+       <p className="font-medium tracking-widest uppercase text-xs italic text-blue-500">Đang lọc đơn hàng hôm nay...</p>
     </div>
   );
 
   return (
     <div className="space-y-6">
+      {/* Header Info */}
+      <div className="flex justify-between items-end px-2">
+        <div>
+          <h2 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Đơn hàng hôm nay</h2>
+          <p className="text-xs text-blue-500 font-bold">{new Date().toLocaleDateString('vi-VN')}</p>
+        </div>
+        <p className="text-[10px] text-gray-400 font-black uppercase bg-gray-100 px-2 py-1 rounded-md">
+          {orders.length} Đơn
+        </p>
+      </div>
+
+      {/* Tabs Menu */}
       <div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex gap-2 overflow-x-auto no-scrollbar">
         {[
-          { id: 'ALL', label: `Tất cả (${orders.length})`, color: 'bg-gray-800' },
+          { id: 'ALL', label: `Tất cả`, color: 'bg-gray-800' },
           { id: 'PENDING', label: 'Đơn mới', color: 'bg-blue-600', count: orders.filter(o => o.status === 'PENDING').length },
           { id: 'ACTIVE', label: 'Đang làm/Giao', color: 'bg-orange-500' },
           { id: 'CANCEL_REQ', label: 'Yêu cầu huỷ', color: 'bg-yellow-500', dot: orders.filter(o => o.status === 'CANCEL_REQUESTED').length > 0 }
@@ -80,16 +98,17 @@ const ManageOrders = () => {
             }`}
           >
             {tab.label}
-            {tab.count > 0 && <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px]">{tab.count}</span>}
+            {tab.count > 0 && <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px] font-black">{tab.count}</span>}
             {tab.dot && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>}
           </button>
         ))}
       </div>
 
+      {/* Order Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {filteredOrders.length === 0 ? (
-          <div className="col-span-full bg-white p-20 rounded-3xl border border-dashed border-gray-200 text-center text-gray-400">
-            Không có dữ liệu trong mục này.
+          <div className="col-span-full bg-white p-20 rounded-3xl border border-dashed border-gray-200 text-center text-gray-400 font-bold italic">
+            Hôm nay chưa có đơn hàng nào trong mục này.
           </div>
         ) : (
           filteredOrders.map(order => {
@@ -104,11 +123,11 @@ const ManageOrders = () => {
                       {statusConfig.label}
                     </span>
                   </div>
-                  <span className="text-xs font-bold text-gray-400 italic">{order.time}</span>
+                  <span className="text-xs font-bold text-gray-400 italic">{order.time.split(',')[1] || order.time}</span>
                 </div>
 
                 <div className="p-6 flex-1 space-y-4">
-                  {/* PHẦN GHI CHÚ MỚI BỔ SUNG */}
+                  {/* Ghi chú của khách */}
                   {order.note && (
                     <div className="bg-yellow-50 p-3 rounded-2xl border border-yellow-100 flex items-start gap-2">
                       <div className="mt-1 text-yellow-600">
@@ -131,13 +150,13 @@ const ManageOrders = () => {
                     </div>
                     <div>
                       <p className="text-[10px] text-gray-400 uppercase font-black mb-1">Địa chỉ</p>
-                      <p className="text-sm text-gray-600 leading-snug">{order.address}</p>
+                      <p className="text-sm text-gray-600 leading-snug font-medium">{order.address}</p>
                     </div>
                   </div>
                   
                   <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
                     <p className="text-[10px] text-gray-400 uppercase font-black mb-2">Chi tiết đơn</p>
-                    <p className="text-sm text-gray-800 font-medium leading-relaxed">{order.items}</p>
+                    <p className="text-sm text-gray-800 font-bold leading-relaxed">{order.items}</p>
                   </div>
                   
                   <div className="flex justify-between items-center pt-2">
@@ -147,7 +166,6 @@ const ManageOrders = () => {
                 </div>
 
                 <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex gap-3 justify-end">
-                  {/* CẬP NHẬT: 2 LỰA CHỌN KHI ĐƠN MỚI */}
                   {order.status === 'PENDING' && (
                     <>
                       <button 
@@ -170,7 +188,7 @@ const ManageOrders = () => {
                       onClick={() => handleUpdateStatus(order.id, 'DELIVERING')}
                       className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-2xl text-sm font-black shadow-lg active:scale-95 transition-all"
                     >
-                      GIAO CHO SHIPPER
+                      BÀN GIAO CHO SHIPPER
                     </button>
                   )}
 
@@ -179,7 +197,7 @@ const ManageOrders = () => {
                       onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}
                       className="w-full bg-green-600 hover:bg-green-700 text-white py-3.5 rounded-2xl text-sm font-black shadow-lg active:scale-95 transition-all"
                     >
-                      HOÀN THÀNH ĐƠN
+                      XÁC NHẬN GIAO THÀNH CÔNG
                     </button>
                   )}
 
