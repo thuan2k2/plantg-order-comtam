@@ -13,11 +13,11 @@ const Order = () => {
   const [username, setUsername] = useState(initialUser);
   const [customerInfo, setCustomerInfo] = useState(null);
   const [menu, setMenu] = useState([]); 
-  const [cart, setCart] = useState({}); // Thay đổi: Quản lý giỏ hàng bằng Object { id: {item, qty} }
+  const [cart, setCart] = useState({}); // Quản lý giỏ hàng bằng Object { id: {item, qty} }
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('MAIN'); // Mặc định hiển thị Món chính
-  const [showConfirm, setShowConfirm] = useState(false); // Trạng thái Popup xác nhận
+  const [activeTab, setActiveTab] = useState('MAIN'); 
+  const [showConfirm, setShowConfirm] = useState(false); 
 
   const [note, setNote] = useState('');
   const [recentPhones, setRecentPhones] = useState([]);
@@ -38,8 +38,8 @@ const Order = () => {
   // 2. Tự động tìm thông tin khách
   useEffect(() => {
     const fetchUser = async () => {
-      if (username && username.length >= 10) {
-        const userData = await getUserByPhone(username);
+      if (username && username.trim().length >= 10) {
+        const userData = await getUserByPhone(username.trim());
         if (userData) {
           setCustomerInfo({
             name: userData.fullName,
@@ -53,7 +53,7 @@ const Order = () => {
     return () => clearTimeout(timer);
   }, [username]);
 
-  // Logic cập nhật số lượng món chuyên sâu
+  // Logic cập nhật số lượng món
   const updateQuantity = (item, delta) => {
     setCart(prev => {
       const currentItem = prev[item.id];
@@ -82,13 +82,36 @@ const Order = () => {
     return totalNum > 0 ? totalNum.toLocaleString('vi-VN') + 'đ' : 'Sẽ báo giá sau';
   };
 
+  // --- BỔ SUNG: Kiểm tra điều kiện trước khi hiện Popup xác nhận ---
+  const handleProcessToConfirm = () => {
+    if (!username || username.trim().length < 10) {
+      alert('Vui lòng nhập Số điện thoại đặt hàng trước khi tiếp tục!');
+      window.scrollTo({ top: 0, behavior: 'smooth' }); // Cuộn lên để khách thấy ô nhập SĐT
+      return;
+    }
+
+    if (!customerInfo) {
+      alert('Số điện thoại này chưa đăng ký thành viên hoặc không tồn tại. Vui lòng kiểm tra lại hoặc Đăng ký tài khoản mới!');
+      return;
+    }
+
+    setShowConfirm(true);
+  };
+
   const handleOrderSubmit = async () => {
+    // Chống lỗi "name of null" - Phòng thủ lớp 2
+    if (!customerInfo?.name) {
+      alert('Lỗi dữ liệu khách hàng. Vui lòng kiểm tra lại SĐT!');
+      setShowConfirm(false);
+      return;
+    }
+
     const itemsString = cartArray.map(item => `${item.qty}x ${item.name}`).join(', ');
 
     const orderData = {
-      phone: username,
+      phone: username.trim(),
       customer: customerInfo.name, 
-      address: customerInfo.address,
+      address: customerInfo.address || "Địa chỉ mặc định",
       items: itemsString,
       total: calculateTotal(),
       note: note.trim(),
@@ -97,15 +120,23 @@ const Order = () => {
     try {
       const result = await createOrder(orderData);
       if (result.success) {
-        const updatedPhones = [username, ...recentPhones.filter(p => p !== username)].slice(0, 3);
+        const updatedPhones = [username.trim(), ...recentPhones.filter(p => p !== username.trim())].slice(0, 3);
         localStorage.setItem('recentPhones', JSON.stringify(updatedPhones));
+        
+        // Cập nhật profile để các trang sau tự nhận diện
+        localStorage.setItem('userProfile', JSON.stringify({
+          fullName: customerInfo.name,
+          address: customerInfo.address,
+          phone: username.trim()
+        }));
+
         setCart({});
         setShowConfirm(false);
-        alert('Đặt hàng thành công! Đơn hàng đã được gửi tới bếp.');
-        navigate(`/checkorder?user=${username}`);
+        alert('Đặt hàng thành công!');
+        navigate(`/checkorder?user=${username.trim()}`);
       }
     } catch (error) {
-      alert('Lỗi kết nối Firebase.');
+      alert('Lỗi kết nối Firebase. Vui lòng thử lại!');
     }
   };
 
@@ -124,7 +155,6 @@ const Order = () => {
           <div className="w-8"></div>
         </div>
         
-        {/* Tabs phân loại */}
         <div className="flex border-b">
           {[
             { id: 'MAIN', label: 'Món chính' },
@@ -144,13 +174,21 @@ const Order = () => {
 
       {/* Thông tin khách */}
       <div className="bg-white p-4 mb-2">
-        <input type="tel" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Nhập SĐT đặt hàng..." className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-blue-500 outline-none" />
+        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 mb-2 block">Username (Số điện thoại) *</label>
+        <input type="tel" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Nhập SĐT để nhận diện..." className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold focus:border-blue-500 outline-none transition-all" />
+        
         {recentPhones.length > 0 && !customerInfo && (
           <div className="flex flex-wrap gap-2 mt-2">
-            {recentPhones.map(p => <button key={p} onClick={() => setUsername(p)} className="text-[10px] bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-bold">{p}</button>)}
+            {recentPhones.map(p => <button key={p} onClick={() => setUsername(p)} className="text-[10px] bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-bold active:scale-95 transition-all">{p}</button>)}
           </div>
         )}
-        {customerInfo && <div className="mt-2 text-xs font-bold text-green-600">Chào {customerInfo.name}! 📍 {customerInfo.address}</div>}
+        
+        {customerInfo && (
+          <div className="mt-3 p-3 bg-green-50 rounded-xl border border-green-100">
+            <div className="text-xs font-bold text-green-700">Chào {customerInfo.name}!</div>
+            <div className="text-[10px] text-green-600 italic">Giao đến: {customerInfo.address}</div>
+          </div>
+        )}
       </div>
 
       {/* Danh sách món ăn */}
@@ -164,7 +202,6 @@ const Order = () => {
               <p className="text-sm font-black text-red-500">{item.price}</p>
             </div>
             
-            {/* Bộ điều khiển số lượng */}
             <div className="flex items-center gap-3 bg-gray-100 p-1 rounded-xl">
               <button onClick={() => updateQuantity(item, -1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm text-lg font-bold">-</button>
               <span className="w-4 text-center text-sm font-black">{cart[item.id]?.qty || 0}</span>
@@ -176,11 +213,14 @@ const Order = () => {
 
       {/* Thanh Giỏ hàng nổi */}
       {totalItems > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-gray-100 z-40">
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-gray-100 z-40 shadow-2xl">
           <div className="mb-3 px-1">
-             <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú yêu cầu món..." className="w-full p-3 text-xs bg-gray-50 border-none rounded-xl focus:ring-1 focus:ring-blue-500" rows="1" />
+             <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú yêu cầu món (VD: không hành, nhiều ớt...)" className="w-full p-3 text-xs bg-gray-50 border-none rounded-xl focus:ring-1 focus:ring-blue-500" rows="1" />
           </div>
-          <button onClick={() => setShowConfirm(true)} className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl flex items-center justify-between px-6 shadow-xl active:scale-95 transition-all">
+          <button 
+            onClick={handleProcessToConfirm} 
+            className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl flex items-center justify-between px-6 active:scale-95 transition-all shadow-xl shadow-blue-200"
+          >
             <span className="text-xs uppercase tracking-widest">{totalItems} món đã chọn</span>
             <span>TIẾP TỤC →</span>
           </button>
@@ -191,28 +231,32 @@ const Order = () => {
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] p-8 shadow-2xl animate-in fade-in slide-in-from-bottom-10 duration-300">
-            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6 sm:hidden"></div>
             <h2 className="text-lg font-black text-gray-800 uppercase tracking-tighter mb-2">Kiểm tra lại đơn hàng</h2>
-            <p className="text-xs text-gray-400 mb-6">Bạn vui lòng kiểm tra kỹ danh sách món trước khi đặt.</p>
+            <p className="text-xs text-gray-400 mb-6 font-medium">Bạn vui lòng kiểm tra kỹ danh sách món và địa chỉ giao hàng.</p>
             
-            <div className="max-h-60 overflow-y-auto space-y-3 mb-6 pr-2 custom-scrollbar">
+            <div className="max-h-60 overflow-y-auto space-y-3 mb-6 pr-2 custom-scrollbar border-b border-dashed pb-4">
               {cartArray.map(item => (
                 <div key={item.id} className="flex justify-between items-center text-sm">
                   <span className="font-medium text-gray-600"><span className="font-black text-blue-600">{item.qty}x</span> {item.name}</span>
                   <span className="font-bold text-gray-800">{item.price}</span>
                 </div>
               ))}
-              {note && <div className="p-3 bg-yellow-50 rounded-xl text-xs italic text-yellow-700">" {note} "</div>}
+              {note && (
+                <div className="p-3 bg-yellow-50 rounded-xl text-[11px] italic text-yellow-700 border border-yellow-100 mt-2">
+                  <span className="font-black not-italic uppercase text-[9px] block mb-1">Ghi chú của bạn:</span>
+                  " {note} "
+                </div>
+              )}
             </div>
 
-            <div className="border-t border-dashed py-4 mb-6 flex justify-between items-center">
-              <span className="text-sm font-bold text-gray-400 uppercase">Tổng cộng:</span>
+            <div className="py-4 mb-6 flex justify-between items-center">
+              <span className="text-sm font-bold text-gray-400 uppercase tracking-widest">Tổng cộng:</span>
               <span className="text-2xl font-black text-red-500">{calculateTotal()}</span>
             </div>
 
             <div className="flex gap-3">
               <button onClick={() => setShowConfirm(false)} className="flex-1 py-4 text-sm font-bold text-gray-400 hover:bg-gray-50 rounded-2xl transition-all">QUAY LẠI</button>
-              <button onClick={handleOrderSubmit} className="flex-[2] py-4 bg-blue-600 text-white text-sm font-black rounded-2xl shadow-lg shadow-blue-200 active:scale-95 transition-all">ĐẶT HÀNG NGAY</button>
+              <button onClick={handleOrderSubmit} className="flex-[2] py-4 bg-blue-600 text-white text-sm font-black rounded-2xl shadow-lg shadow-blue-200 active:scale-95 transition-all uppercase tracking-widest">Xác nhận đặt ngay</button>
             </div>
           </div>
         </div>

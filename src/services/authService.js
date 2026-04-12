@@ -1,16 +1,33 @@
-import { collection, addDoc, getDocs, query, where, updateDoc, doc, serverTimestamp, orderBy } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  collection, 
+  addDoc, 
+  getDocs, 
+  query, 
+  where, 
+  updateDoc, 
+  doc, 
+  serverTimestamp, 
+  orderBy,
+  onSnapshot 
+} from 'firebase/firestore';
+import { db, app } from '../firebase/config'; // Đảm bảo đã export app từ config
 
+const auth = getAuth(app);
 const COLLECTION_NAME = 'users';
 
 /**
- * Đăng ký tài khoản khách hàng mới
+ * 1. Đăng ký tài khoản khách hàng mới (Firestore)
+ * Vẫn giữ cơ chế cũ dành cho khách hàng không cần mật khẩu
  */
 export const registerUser = async (userData) => {
   try {
     const usersRef = collection(db, COLLECTION_NAME);
-    
-    // 1. Kiểm tra xem Username (SĐT) đã tồn tại chưa
     const q = query(usersRef, where("username", "==", userData.username.trim()));
     const snapshot = await getDocs(q);
     
@@ -18,7 +35,6 @@ export const registerUser = async (userData) => {
       return { success: false, error: 'Số điện thoại này đã được đăng ký!' };
     }
 
-    // 2. Thêm khách hàng mới
     const newUser = {
       ...userData,
       username: userData.username.trim(),
@@ -29,46 +45,60 @@ export const registerUser = async (userData) => {
     };
 
     const docRef = await addDoc(usersRef, newUser);
-    console.log("Đăng ký thành công khách hàng ID:", docRef.id);
     return { success: true, id: docRef.id };
   } catch (error) {
-    console.error("Lỗi khi đăng ký:", error);
+    console.error("Lỗi registerUser:", error);
     return { success: false, error: error.message };
   }
 };
 
 /**
- * Đăng nhập dành riêng cho Admin
+ * 2. ĐĂNG NHẬP ADMIN (Sử dụng Firebase Authentication)
+ * Thay thế logic cũ so sánh chuỗi mật khẩu thủ công
  */
-export const loginAdmin = async (username, password) => {
+export const loginAdmin = async (email, password) => {
   try {
-    const user = await getUserByPhone(username);
-    
-    if (!user) {
-      return { success: false, error: 'Tài khoản không tồn tại!' };
-    }
+    // Đăng nhập bằng hệ thống Auth của Firebase
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
 
-    // Kiểm tra quyền Admin và Mật khẩu
-    if (user.role === 'admin' && password === 'Thuan021208@') {
-      localStorage.setItem('adminToken', 'true');
-      localStorage.setItem('adminInfo', JSON.stringify({
-        username: user.username,
-        fullName: user.fullName
-      }));
-      return { success: true };
-    } else if (user.role !== 'admin') {
-      return { success: false, error: 'Bạn không có quyền truy cập trang Admin!' };
-    } else {
-      return { success: false, error: 'Mật khẩu Admin không chính xác!' };
-    }
+    // Lưu trạng thái bổ trợ vào localStorage để các thành phần cũ không bị lỗi
+    localStorage.setItem('adminToken', 'true');
+    
+    return { success: true, user };
   } catch (error) {
     console.error("Lỗi đăng nhập Admin:", error);
-    return { success: false, error: 'Lỗi hệ thống.' };
+    let errorMessage = "Lỗi hệ thống";
+    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+      errorMessage = "Email hoặc mật khẩu không chính xác";
+    }
+    return { success: false, error: errorMessage };
   }
 };
 
 /**
- * Lấy thông tin khách hàng bằng Số điện thoại
+ * 3. ĐĂNG XUẤT ADMIN
+ */
+export const logoutAdmin = async () => {
+  try {
+    await signOut(auth);
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminInfo');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * 4. THEO DÕI TRẠNG THÁI ĐĂNG NHẬP
+ */
+export const subscribeToAuth = (callback) => {
+  return onAuthStateChanged(auth, callback);
+};
+
+/**
+ * 5. Lấy thông tin khách bằng SĐT (Real-time)
  */
 export const getUserByPhone = async (phone) => {
   try {
@@ -77,52 +107,33 @@ export const getUserByPhone = async (phone) => {
     const q = query(usersRef, where("username", "==", phone.trim()));
     const snapshot = await getDocs(q);
     
-    if (snapshot.empty) {
-      return null;
-    }
-    
+    if (snapshot.empty) return null;
     const userDoc = snapshot.docs[0];
     return { id: userDoc.id, ...userDoc.data() };
   } catch (error) {
-    console.error("Lỗi getUserByPhone:", error);
     return null;
   }
 };
 
 /**
- * Lấy toàn bộ danh sách khách hàng (Dành cho Admin)
- * Cập nhật: Thêm sắp xếp và check log dữ liệu
+ * 6. Lấy toàn bộ danh sách khách hàng (Real-time cho Admin)
  */
-export const getAllUsers = async () => {
-  try {
-    const usersRef = collection(db, COLLECTION_NAME);
-    // Thêm orderBy để người mới đăng ký hiện lên đầu
-    const q = query(usersRef, orderBy("createdAt", "desc"));
-    const snapshot = await getDocs(q);
-    
-    const users = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      users.push({
-        id: doc.id,
-        ...data,
-        // Chuyển đổi Timestamp an toàn để tránh lỗi .toDate() of null
-        joinDate: data.createdAt && typeof data.createdAt.toDate === 'function' 
-          ? data.createdAt.toDate().toLocaleDateString('vi-VN') 
-          : 'Mới tạo'
-      });
-    });
-    
-    console.log("Tổng số khách hàng lấy được từ Firebase:", users.length);
-    return users;
-  } catch (error) {
-    console.error("Lỗi getAllUsers:", error);
-    return [];
-  }
+export const subscribeToAllUsers = (callback) => {
+  const usersRef = collection(db, COLLECTION_NAME);
+  const q = query(usersRef, orderBy("createdAt", "desc"));
+
+  return onSnapshot(q, (snapshot) => {
+    const users = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      joinDate: doc.data().createdAt?.toDate().toLocaleDateString('vi-VN') || 'Mới tạo'
+    }));
+    callback(users);
+  });
 };
 
 /**
- * Cập nhật thông tin khách hàng
+ * 7. Cập nhật thông tin khách hàng
  */
 export const updateUserProfile = async (userId, updateData) => {
   try {
@@ -133,7 +144,6 @@ export const updateUserProfile = async (userId, updateData) => {
     });
     return { success: true };
   } catch (error) {
-    console.error("Lỗi updateUserProfile:", error);
     return { success: false, error: error.message };
   }
 };

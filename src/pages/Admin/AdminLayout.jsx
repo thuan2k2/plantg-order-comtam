@@ -1,5 +1,7 @@
 import React from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+// CẬP NHẬT: Import hàm đăng xuất từ authService
+import { logoutAdmin } from '../../services/authService';
 
 const AdminLayout = () => {
   const location = useLocation();
@@ -8,12 +10,23 @@ const AdminLayout = () => {
   // Hàm kiểm tra link hiện tại để tô màu menu đang active
   const isActive = (path) => location.pathname === path;
 
-  // Logic Thoát Admin
-  const handleLogout = () => {
+  // CẬP NHẬT: Sử dụng logoutAdmin của Firebase Auth thay vì xóa localStorage thủ công
+  const handleLogout = async () => {
     if (window.confirm("Bạn có chắc chắn muốn thoát quyền Quản trị viên không?")) {
-      // Nếu bạn có dùng Token/Session thì xóa ở đây
-      // localStorage.removeItem('admin_token');
-      navigate('/');
+      try {
+        const result = await logoutAdmin();
+        if (result.success) {
+          // Sau khi đăng xuất thành công, Firebase Auth sẽ xóa token thực
+          // onAuthStateChanged trong App.jsx sẽ nhận biết và bảo vệ hệ thống
+          navigate('/admin/login');
+        } else {
+          alert("Lỗi khi đăng xuất: " + result.error);
+        }
+      } catch (error) {
+        console.error("Logout Error:", error);
+        // Backup: Nếu Firebase lỗi, vẫn đẩy về login để đảm bảo an toàn
+        navigate('/admin/login');
+      }
     }
   };
 
@@ -43,7 +56,6 @@ const AdminLayout = () => {
             Đơn hàng hôm nay
           </Link>
 
-          {/* MỤC MỚI: THỐNG KÊ ĐƠN HÀNG */}
           <Link 
             to="/admin/statistics" 
             className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${isActive('/admin/statistics') ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}

@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { getAuth, onAuthStateChanged } from "firebase/auth"; // Thêm Auth của Firebase
+import { app } from './firebase/config'; // Đảm bảo đã export app từ config
 
 // Import các Pages dành cho Khách hàng
 import Home from './pages/Home';
@@ -14,7 +16,6 @@ import ManageOrders from './pages/Admin/ManageOrders';
 import ManageUsers from './pages/Admin/ManageUsers';
 import ManageMenu from './pages/Admin/ManageMenu';
 import AdminLogin from './pages/Admin/AdminLogin';
-// BỔ SUNG: Trang thống kê đơn hàng mới
 import Statistics from './pages/Admin/Statistics'; 
 
 // CSS Toàn cục
@@ -22,12 +23,38 @@ import './index.css';
 
 // --- COMPONENT BẢO VỆ ROUTE ADMIN ---
 const ProtectedAdminRoute = ({ children }) => {
-  // Đồng bộ với logic logout trong AdminLayout: kiểm tra adminToken
-  const isAuthenticated = localStorage.getItem('adminToken') === 'true';
-  
-  if (!isAuthenticated) {
+  const [checkingStatus, setCheckingStatus] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const auth = getAuth(app);
+
+  useEffect(() => {
+    // Lắng nghe trạng thái đăng nhập thực từ Firebase Auth
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setIsLoggedIn(true);
+      } else {
+        setIsLoggedIn(false);
+      }
+      setCheckingStatus(false);
+    });
+
+    return () => unsubscribe();
+  }, [auth]);
+
+  // Trong khi đang kiểm tra trạng thái, hiển thị màn hình chờ
+  if (checkingStatus) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500"></div>
+      </div>
+    );
+  }
+
+  // Nếu chưa đăng nhập, đẩy về trang Login
+  if (!isLoggedIn) {
     return <Navigate to="/admin/login" replace />;
   }
+
   return children;
 };
 
@@ -47,6 +74,7 @@ function App() {
 
           {/* --- Cấu trúc các trang dành cho Admin --- */}
           
+          {/* Trang login không bảo vệ */}
           <Route path="/admin/login" element={<AdminLogin />} />
 
           <Route 
@@ -57,15 +85,12 @@ function App() {
               </ProtectedAdminRoute>
             }
           >
-            {/* Dashboard: Tổng quan doanh thu & đơn mới */}
+            {/* Index sẽ render Dashboard mặc định */}
             <Route index element={<Dashboard />} />
             
-            {/* ManageOrders: Chỉ hiện đơn hàng của HÔM NAY */}
+            {/* Các route con được bảo vệ hoàn toàn */}
             <Route path="orders" element={<ManageOrders />} />
-            
-            {/* Statistics: Xem lại toàn bộ lịch sử đơn hàng & Tìm kiếm nâng cao */}
             <Route path="statistics" element={<Statistics />} />
-            
             <Route path="users" element={<ManageUsers />} />
             <Route path="menu" element={<ManageMenu />} />
           </Route>
