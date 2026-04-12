@@ -1,41 +1,64 @@
-import React, { useState } from 'react';
-
-// Dữ liệu khách hàng giả lập (Mock Data)
-const initialUsers = [
-  { id: 'U001', username: '0901234567', fullName: 'Nguyễn Văn A', deliveryPhone: '0901234567', address: 'S1.01 Origami, Vinhomes', joinDate: '10/05/2026', totalOrders: 15, status: 'ACTIVE' },
-  { id: 'U002', username: '0912345678', fullName: 'Trần Thị B', deliveryPhone: '0988888888', address: 'S2.02 Rainbow, Vinhomes', joinDate: '12/05/2026', totalOrders: 3, status: 'ACTIVE' },
-  { id: 'U003', username: '0987654321', fullName: 'Lê Văn C', deliveryPhone: '0987654321', address: 'S3.03 Beverly, Vinhomes', joinDate: '14/05/2026', totalOrders: 1, status: 'ACTIVE' },
-  { id: 'U004', username: '0909090909', fullName: 'Phạm D (Boom hàng)', deliveryPhone: '0909090909', address: 'S1.05 Origami, Vinhomes', joinDate: '01/05/2026', totalOrders: 4, status: 'BLOCKED' },
-];
+import React, { useState, useEffect } from 'react';
+import { getAllUsers, updateUserProfile } from '../../services/authService';
 
 const ManageUsers = () => {
-  const [users, setUsers] = useState(initialUsers);
+  const [users, setUsers] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Lọc danh sách khách hàng theo SĐT hoặc Tên
+  // 1. Tải danh sách người dùng thực tế từ Firebase
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    setIsLoading(true);
+    const data = await getAllUsers();
+    setUsers(data);
+    setIsLoading(false);
+  };
+
+  // 2. Hàm lọc khách hàng theo Tên hoặc SĐT
   const filteredUsers = users.filter(user => 
-    user.username.includes(searchQuery) || 
-    user.fullName.toLowerCase().includes(searchQuery.toLowerCase())
+    (user.username && user.username.includes(searchQuery)) || 
+    (user.fullName && user.fullName.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  // Hàm khoá/mở khoá tài khoản (Mô phỏng chặn khách hay boom hàng)
-  const toggleUserStatus = (userId) => {
-    setUsers(users.map(user => {
-      if (user.id === userId) {
-        return { ...user, status: user.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE' };
+  // 3. Hàm khoá/mở khoá tài khoản trên Firebase
+  const toggleUserStatus = async (user) => {
+    const newStatus = user.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE';
+    const confirmMsg = newStatus === 'BLOCKED' 
+      ? `Bạn có chắc muốn CHẶN khách hàng ${user.fullName}?` 
+      : `Mở khoá cho khách hàng ${user.fullName}?`;
+
+    if (window.confirm(confirmMsg)) {
+      const result = await updateUserProfile(user.id, { status: newStatus });
+      if (result.success) {
+        // Cập nhật state cục bộ để UI thay đổi ngay lập tức
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: newStatus } : u));
+      } else {
+        alert("Lỗi cập nhật: " + result.error);
       }
-      return user;
-    }));
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="p-20 text-center text-gray-400">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <p className="text-sm font-bold uppercase tracking-widest">Đang tải danh sách thành viên...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 relative">
       
       {/* Header và Thanh tìm kiếm */}
-      <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-gray-800">Danh sách Khách hàng</h2>
-          <p className="text-sm text-gray-500">Tổng cộng: {users.length} tài khoản đã đăng ký</p>
+          <h2 className="text-lg font-black text-gray-800 uppercase tracking-tight">Danh sách Khách hàng</h2>
+          <p className="text-sm text-gray-500 font-medium">Tổng cộng: {users.length} tài khoản thực tế</p>
         </div>
         
         <div className="relative w-full sm:w-72">
@@ -46,79 +69,75 @@ const ManageUsers = () => {
           </span>
           <input 
             type="text" 
-            placeholder="Tìm theo Tên hoặc SĐT..." 
+            placeholder="Tìm tên hoặc số điện thoại..." 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-500 bg-gray-50/50 transition-colors"
+            className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 bg-gray-50/50 transition-all focus:ring-4 focus:ring-blue-500/5"
           />
         </div>
       </div>
 
       {/* Bảng Danh sách Khách hàng */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-gray-50 text-gray-500 text-sm border-b border-gray-100">
-                <th className="px-6 py-4 font-medium">Khách hàng</th>
-                <th className="px-6 py-4 font-medium">Liên hệ nhận hàng</th>
-                <th className="px-6 py-4 font-medium">Địa chỉ mặc định</th>
-                <th className="px-6 py-4 font-medium text-center">Thống kê</th>
-                <th className="px-6 py-4 font-medium text-center">Trạng thái</th>
-                <th className="px-6 py-4 font-medium text-right">Thao tác</th>
+              <tr className="bg-gray-50/50 text-gray-400 text-[11px] uppercase tracking-widest border-b border-gray-100">
+                <th className="px-6 py-4 font-black">Khách hàng</th>
+                <th className="px-6 py-4 font-black">SĐT Nhận hàng</th>
+                <th className="px-6 py-4 font-black">Địa chỉ</th>
+                <th className="px-6 py-4 font-black text-center">Đơn hàng</th>
+                <th className="px-6 py-4 font-black text-center">Trạng thái</th>
+                <th className="px-6 py-4 font-black text-right">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-50">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-10 text-center text-gray-500">
-                    Không tìm thấy khách hàng nào phù hợp.
+                  <td colSpan="6" className="px-6 py-20 text-center text-gray-400 italic">
+                    Không tìm thấy dữ liệu khách hàng phù hợp.
                   </td>
                 </tr>
               ) : (
                 filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={user.id} className="hover:bg-blue-50/30 transition-colors group">
                     <td className="px-6 py-4">
-                      <p className="font-semibold text-gray-800">{user.fullName}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">Username: <span className="font-medium text-blue-600">{user.username}</span></p>
+                      <p className="font-bold text-gray-800 group-hover:text-blue-600 transition-colors">{user.fullName}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">ID: {user.username}</p>
+                    </td>
+                    
+                    <td className="px-6 py-4 text-sm font-bold text-gray-600">
+                      {user.deliveryPhone || user.username}
                     </td>
                     
                     <td className="px-6 py-4">
-                      <p className="text-sm font-medium text-gray-800">{user.deliveryPhone}</p>
-                      {user.deliveryPhone !== user.username && (
-                         <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded mt-1 inline-block">SĐT khác</span>
-                      )}
-                    </td>
-                    
-                    <td className="px-6 py-4">
-                      <p className="text-sm text-gray-800 line-clamp-2">{user.address}</p>
+                      <p className="text-xs text-gray-500 line-clamp-2 max-w-[200px] leading-relaxed">{user.address}</p>
                     </td>
                     
                     <td className="px-6 py-4 text-center">
-                      <p className="text-sm font-bold text-gray-800">{user.totalOrders}</p>
-                      <p className="text-[11px] text-gray-500 uppercase tracking-wide mt-0.5">Đơn hàng</p>
+                      <p className="text-sm font-black text-gray-800">{user.totalOrders || 0}</p>
                     </td>
 
                     <td className="px-6 py-4 text-center">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium border inline-block ${
+                      <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-tighter border ${
                         user.status === 'ACTIVE' 
-                          ? 'bg-green-50 text-green-700 border-green-200' 
-                          : 'bg-red-50 text-red-700 border-red-200'
+                          ? 'bg-green-50 text-green-600 border-green-100' 
+                          : 'bg-red-50 text-red-600 border-red-100'
                       }`}>
-                        {user.status === 'ACTIVE' ? 'Đang hoạt động' : 'Bị chặn'}
+                        {user.status === 'ACTIVE' ? 'Hoạt động' : 'Đã chặn'}
                       </span>
                     </td>
 
                     <td className="px-6 py-4 text-right">
                       <button 
-                        onClick={() => toggleUserStatus(user.id)}
-                        className={`text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors ${
+                        onClick={() => toggleUserStatus(user)}
+                        className={`text-[11px] px-4 py-2 rounded-xl font-bold uppercase transition-all shadow-sm active:scale-95 ${
                           user.status === 'ACTIVE'
-                            ? 'text-red-600 border-red-200 hover:bg-red-50'
-                            : 'text-green-600 border-green-200 hover:bg-green-50'
+                            ? 'bg-red-50 text-red-500 hover:bg-red-500 hover:text-white'
+                            : 'bg-green-50 text-green-600 hover:bg-green-600 hover:text-white'
                         }`}
                       >
-                        {user.status === 'ACTIVE' ? 'Chặn' : 'Bỏ chặn'}
+                        {user.status === 'ACTIVE' ? 'Chặn khách' : 'Bỏ chặn'}
                       </button>
                     </td>
                   </tr>
