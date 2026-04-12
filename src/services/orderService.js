@@ -15,8 +15,7 @@ import { db } from '../firebase/config';
 const COLLECTION_NAME = 'orders';
 
 /**
- * 1. Tạo một đơn hàng mới
- * Mặc định phương thức thanh toán là Tiền mặt (CASH) và chưa thanh toán (UNPAID)
+ * 1. Tạo đơn hàng mới
  */
 export const createOrder = async (orderData) => {
   try {
@@ -38,20 +37,19 @@ export const createOrder = async (orderData) => {
 
 /**
  * 2. Cập nhật phương thức thanh toán (Dành cho Khách hàng)
- * Nếu khách báo "Đã chuyển khoản", set trạng thái là WAITING_CONFIRM
  */
 export const updatePaymentMethod = async (orderId, method, isTransferred = false) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
     const updateData = {
-      paymentMethod: method, // 'CASH' hoặc 'TRANSFER'
+      paymentMethod: method,
       updatedAt: serverTimestamp()
     };
     
     if (method === 'TRANSFER' && isTransferred) {
-      updateData.paymentStatus = 'WAITING_CONFIRM'; // Khách báo đã CK, chờ Admin xác nhận
+      updateData.paymentStatus = 'WAITING_CONFIRM';
     } else if (method === 'CASH') {
-      updateData.paymentStatus = 'UNPAID'; // Quay về tiền mặt
+      updateData.paymentStatus = 'UNPAID';
     }
 
     await updateDoc(orderRef, updateData);
@@ -63,7 +61,6 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
 
 /**
  * 3. Xác nhận trạng thái tiền tệ (Dành cho Admin)
- * Nút "Đã nhận tiền" (PAID) hoặc "Chưa nhận tiền" (UNPAID)
  */
 export const confirmPaymentStatus = async (orderId, isPaid) => {
   try {
@@ -80,13 +77,11 @@ export const confirmPaymentStatus = async (orderId, isPaid) => {
 
 /**
  * 4. Hủy đơn hàng có điều kiện (Dành cho Khách hàng)
- * - Nếu là PENDING: Hủy trực tiếp (CANCELLED)
- * - Nếu khác: Gửi yêu cầu kèm lý do (CANCEL_REQUESTED)
  */
 export const requestCancelOrder = async (orderId, status, reason = "") => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
-    const isDirectCancel = status === 'PENDING'; // Giả sử check logic 10p ở UI, PENDING cho hủy luôn
+    const isDirectCancel = status === 'PENDING'; 
     
     await updateDoc(orderRef, {
       status: isDirectCancel ? 'CANCELLED' : 'CANCEL_REQUESTED',
@@ -100,8 +95,7 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
 };
 
 /**
- * 5. Xóa đơn hàng mềm (Soft Delete - Dành cho Admin)
- * Chuyển trạng thái DELETED để ẩn khỏi danh sách bếp nhưng giữ lại trong lịch sử
+ * 5. Xóa đơn hàng mềm (Dành cho Admin)
  */
 export const deleteOrderSoft = async (orderId) => {
   try {
@@ -117,11 +111,35 @@ export const deleteOrderSoft = async (orderId) => {
 };
 
 /**
- * 6. Lắng nghe đơn hàng real-time (Bộ lọc đồng bộ)
+ * 6. FIX LỖI BUILD: Bổ sung export hàm subscribeToOrdersByPhone
+ * Dành cho trang CheckOrder tra cứu đơn hàng
+ */
+export const subscribeToOrdersByPhone = (phone, callback) => {
+  if (!phone) return () => {};
+  const cleanPhone = phone.trim();
+  const q = query(
+    collection(db, COLLECTION_NAME),
+    where("phone", "==", cleanPhone),
+    orderBy("createdAt", "desc")
+  );
+
+  return onSnapshot(q, (snapshot) => {
+    const orders = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'Vừa xong'
+    }));
+    callback(orders);
+  }, (error) => {
+    console.error("Lỗi lắng nghe theo SĐT:", error);
+  });
+};
+
+/**
+ * 7. Lắng nghe đơn hàng trong ngày (Admin)
  */
 export const subscribeToOrdersByDate = (dateStr, callback) => {
   const ordersRef = collection(db, COLLECTION_NAME);
-  // Lọc bỏ đơn DELETED để bếp không thấy đơn đã xóa
   const q = query(ordersRef, orderBy("createdAt", "desc"));
 
   return onSnapshot(q, (snapshot) => {
@@ -133,13 +151,14 @@ export const subscribeToOrdersByDate = (dateStr, callback) => {
         time: data.createdAt?.toDate().toLocaleString('vi-VN') || 'Vừa xong'
       };
     });
-    
-    // Lọc: Cùng ngày VÀ trạng thái không phải DELETED
     const filtered = allOrders.filter(o => o.time.includes(dateStr) && o.status !== 'DELETED');
     callback(filtered);
   });
 };
 
+/**
+ * 8. Lắng nghe toàn bộ đơn hàng (Thống kê)
+ */
 export const subscribeToAllOrders = (callback) => {
   const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
@@ -153,7 +172,7 @@ export const subscribeToAllOrders = (callback) => {
 };
 
 /**
- * 7. Cập nhật trạng thái đơn hàng (General)
+ * 9. Cập nhật trạng thái đơn hàng (Chung)
  */
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
@@ -164,6 +183,7 @@ export const updateOrderStatus = async (orderId, newStatus) => {
     });
     return { success: true };
   } catch (error) {
+    console.error("Lỗi updateOrderStatus:", error);
     return { success: false, error: error.message };
   }
 };
