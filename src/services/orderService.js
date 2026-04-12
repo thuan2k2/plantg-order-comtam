@@ -6,20 +6,17 @@ const COLLECTION_NAME = 'orders';
 
 /**
  * Tạo một đơn hàng mới (Dành cho trang Order.jsx của khách)
- * @param {Object} orderData - Chứa { customer, phone, address, items, total }
  */
 export const createOrder = async (orderData) => {
   try {
-    // Thêm các trường mặc định cho đơn mới
     const newOrder = {
       ...orderData,
-      status: 'PENDING', // Trạng thái mặc định khi mới đặt
-      createdAt: serverTimestamp(), // Lấy thời gian chuẩn của server Firebase
+      status: 'PENDING',
+      createdAt: serverTimestamp(),
     };
 
     const docRef = await addDoc(collection(db, COLLECTION_NAME), newOrder);
     
-    // Trả về ID của đơn hàng vừa tạo để hiển thị cho khách
     return { success: true, id: docRef.id };
   } catch (error) {
     console.error("Lỗi khi tạo đơn hàng: ", error);
@@ -29,29 +26,44 @@ export const createOrder = async (orderData) => {
 
 /**
  * Lấy danh sách đơn hàng của MỘT khách cụ thể (Dành cho trang CheckOrder.jsx)
- * @param {string} phone - Số điện thoại của khách hàng
+ * FIX: Thêm thông báo lỗi Index cụ thể
  */
 export const getOrdersByPhone = async (phone) => {
   try {
+    if (!phone) return [];
+    
     const ordersRef = collection(db, COLLECTION_NAME);
-    // Lọc các đơn có trường 'phone' khớp với sđt khách nhập, sắp xếp mới nhất lên đầu
-    const q = query(ordersRef, where("phone", "==", phone), orderBy("createdAt", "desc"));
+    
+    // LƯU Ý: Lệnh query này bắt buộc phải có INDEX trên Firebase Console
+    const q = query(
+      ordersRef, 
+      where("phone", "==", phone), 
+      orderBy("createdAt", "desc")
+    );
     
     const querySnapshot = await getDocs(q);
     const orders = [];
     
     querySnapshot.forEach((doc) => {
+      const data = doc.data();
       orders.push({
         id: doc.id,
-        ...doc.data(),
-        // Chuyển đổi timestamp của Firebase thành chuỗi thời gian dễ đọc
-        time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'Vừa xong'
+        ...data,
+        // Fix định dạng thời gian an toàn
+        time: data.createdAt 
+          ? data.createdAt.toDate().toLocaleString('vi-VN') 
+          : 'Đang xử lý...'
       });
     });
     
     return orders;
   } catch (error) {
-    console.error("Lỗi khi lấy đơn hàng theo SĐT: ", error);
+    // Nếu bạn thấy lỗi này trong Console trình duyệt, hãy click vào link Firebase cung cấp để tạo Index
+    if (error.code === 'failed-precondition') {
+      console.error("LỖI: Bạn chưa tạo Index cho query này trong Firebase Console!");
+    } else {
+      console.error("Lỗi khi lấy đơn hàng theo SĐT: ", error);
+    }
     return [];
   }
 };
@@ -62,17 +74,17 @@ export const getOrdersByPhone = async (phone) => {
 export const getAllOrders = async () => {
   try {
     const ordersRef = collection(db, COLLECTION_NAME);
-    // Sắp xếp đơn mới nhất lên đầu
     const q = query(ordersRef, orderBy("createdAt", "desc"));
     
     const querySnapshot = await getDocs(q);
     const orders = [];
     
     querySnapshot.forEach((doc) => {
+      const data = doc.data();
       orders.push({
         id: doc.id,
-        ...doc.data(),
-        time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'N/A'
+        ...data,
+        time: data.createdAt ? data.createdAt.toDate().toLocaleString('vi-VN') : 'N/A'
       });
     });
     
@@ -85,8 +97,6 @@ export const getAllOrders = async () => {
 
 /**
  * Cập nhật trạng thái của một đơn hàng (Dành cho Admin duyệt đơn/huỷ đơn)
- * @param {string} orderId - ID của đơn hàng
- * @param {string} newStatus - Trạng thái mới (VD: 'PREPARING', 'CANCELLED')
  */
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
