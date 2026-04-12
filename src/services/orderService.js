@@ -1,7 +1,6 @@
 import { collection, addDoc, getDocs, query, where, updateDoc, doc, orderBy, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
-// Tên collection phải khớp chính xác với Firestore Console
 const COLLECTION_NAME = 'orders';
 
 /**
@@ -25,18 +24,20 @@ export const createOrder = async (orderData) => {
 
 /**
  * Lấy đơn hàng theo SĐT (Dành cho khách hàng tra cứu)
+ * Đã thêm log để debug chính xác lỗi Index
  */
 export const getOrdersByPhone = async (phone) => {
   try {
     if (!phone) return [];
     
+    // Loại bỏ khoảng trắng để tránh lỗi so khớp "0333..." và " 0333..."
+    const cleanPhone = phone.trim();
     const ordersRef = collection(db, COLLECTION_NAME);
     
-    // Lưu ý: Nếu trang bị trắng hoặc lỗi, bạn phải vào Console trình duyệt
-    // click vào link Firebase cung cấp để tạo "Composite Index" cho query này.
+    // LƯU Ý: Nếu Index chưa "Enabled", query này sẽ luôn trả về mảng rỗng []
     const q = query(
       ordersRef, 
-      where("phone", "==", phone.trim()), 
+      where("phone", "==", cleanPhone), 
       orderBy("createdAt", "desc")
     );
     
@@ -48,16 +49,17 @@ export const getOrdersByPhone = async (phone) => {
       orders.push({
         id: doc.id,
         ...data,
-        // Chuyển đổi Timestamp an toàn
         time: data.createdAt && typeof data.createdAt.toDate === 'function'
           ? data.createdAt.toDate().toLocaleString('vi-VN') 
-          : 'Mới đặt...'
+          : 'Vừa xong'
       });
     });
     
+    console.log(`Đã tìm thấy ${orders.length} đơn cho số: ${cleanPhone}`);
     return orders;
   } catch (error) {
-    console.error("Lỗi getOrdersByPhone:", error);
+    // Log chi tiết lỗi để bạn copy link tạo Index nếu nó xuất hiện
+    console.error("Lỗi getOrdersByPhone chi tiết:", error);
     return [];
   }
 };
@@ -68,6 +70,7 @@ export const getOrdersByPhone = async (phone) => {
 export const getAllOrders = async () => {
   try {
     const ordersRef = collection(db, COLLECTION_NAME);
+    // Sắp xếp đơn mới nhất lên đầu
     const q = query(ordersRef, orderBy("createdAt", "desc"));
     
     const querySnapshot = await getDocs(q);
@@ -80,7 +83,7 @@ export const getAllOrders = async () => {
         ...data,
         time: data.createdAt && typeof data.createdAt.toDate === 'function'
           ? data.createdAt.toDate().toLocaleString('vi-VN') 
-          : 'Đang tải...'
+          : 'N/A'
       });
     });
     
