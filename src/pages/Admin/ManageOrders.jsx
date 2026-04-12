@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getAllOrders, updateOrderStatus } from '../../services/orderService';
 
-// Từ điển trạng thái đồng bộ
+// Từ điển trạng thái đồng bộ với hệ thống
 const ORDER_STATUSES = {
   PENDING: { label: 'Chờ xác nhận', color: 'bg-gray-100 text-gray-700 border-gray-200' },
   CONFIRMED: { label: 'Đã xác nhận', color: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -15,45 +15,51 @@ const ORDER_STATUSES = {
 const ManageOrders = () => {
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('ALL'); // ALL, PENDING, ACTIVE, CANCEL_REQ
+  const [activeTab, setActiveTab] = useState('ALL'); 
 
-  // 1. Tải toàn bộ đơn hàng từ Firebase khi mở trang
-  useEffect(() => {
-    fetchOrders();
-    
-    // Mẹo: Bạn có thể dùng setInterval để tự động cập nhật đơn mới mỗi 30 giây
-    const interval = setInterval(fetchOrders, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
+  // 1. Tải dữ liệu thực tế từ Firebase
   const fetchOrders = async () => {
+    // Không set isLoading liên tục để tránh hiện tượng nháy trang khi auto-refresh
     const data = await getAllOrders();
     setOrders(data);
     setIsLoading(false);
   };
 
-  // 2. Hàm cập nhật trạng thái đơn hàng lên Firebase
+  useEffect(() => {
+    fetchOrders();
+    // Tự động cập nhật mỗi 30 giây để Admin không bỏ lỡ đơn mới
+    const interval = setInterval(fetchOrders, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 2. Cập nhật trạng thái đơn hàng lên Firestore
   const handleUpdateStatus = async (orderId, newStatus) => {
-    const result = await updateOrderStatus(orderId, newStatus);
-    if (result.success) {
-      // Cập nhật state cục bộ để giao diện thay đổi ngay lập tức
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-    } else {
-      alert("Lỗi cập nhật: " + result.error);
+    try {
+      const result = await updateOrderStatus(orderId, newStatus);
+      if (result.success) {
+        // Cập nhật state cục bộ để UI thay đổi ngay lập tức
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+      } else {
+        alert("Lỗi cập nhật: " + result.error);
+      }
+    } catch (error) {
+      console.error("Lỗi thao tác đơn hàng:", error);
     }
   };
 
-  // 3. Hàm xử lý riêng cho Yêu cầu huỷ đơn
+  // 3. Xử lý yêu cầu hủy đơn từ khách hàng (Admin duyệt hoặc từ chối)
   const handleCancelAction = async (orderId, isApproved) => {
     const nextStatus = isApproved ? 'CANCELLED' : 'PREPARING';
-    const confirmMsg = isApproved ? "Xác nhận HUỶ đơn hàng này?" : "TỪ CHỐI huỷ và tiếp tục nấu món?";
+    const confirmMsg = isApproved 
+      ? "Xác nhận ĐỒNG Ý huỷ đơn hàng này?" 
+      : "Từ chối huỷ? Đơn hàng sẽ quay lại trạng thái 'Đang chuẩn bị'.";
     
     if (window.confirm(confirmMsg)) {
       await handleUpdateStatus(orderId, nextStatus);
     }
   };
 
-  // Lọc đơn hàng theo tab
+  // Logic lọc đơn hàng cho các Tabs
   const filteredOrders = orders.filter(order => {
     if (activeTab === 'ALL') return true;
     if (activeTab === 'PENDING') return order.status === 'PENDING';
@@ -63,52 +69,41 @@ const ManageOrders = () => {
   });
 
   if (isLoading) return (
-    <div className="p-10 text-center text-gray-400 italic">Đang tải danh sách đơn hàng thực tế...</div>
+    <div className="p-20 text-center text-gray-400">
+       <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4"></div>
+       <p className="font-medium tracking-widest uppercase text-xs">Đang đồng bộ đơn hàng...</p>
+    </div>
   );
 
   return (
     <div className="space-y-6">
       
       {/* Thanh điều hướng Tabs */}
-      <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex gap-2 overflow-x-auto">
-        <button 
-          onClick={() => setActiveTab('ALL')}
-          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'ALL' ? 'bg-gray-800 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
-        >
-          Tất cả ({orders.length})
-        </button>
-        <button 
-          onClick={() => setActiveTab('PENDING')}
-          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'PENDING' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
-        >
-          Đơn mới
-          {orders.filter(o => o.status === 'PENDING').length > 0 && 
-            <span className="ml-2 bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px] animate-bounce">
-              {orders.filter(o => o.status === 'PENDING').length}
-            </span>
-          }
-        </button>
-        <button 
-          onClick={() => setActiveTab('ACTIVE')}
-          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'ACTIVE' ? 'bg-orange-500 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
-        >
-          Đang làm/Giao
-        </button>
-        <button 
-          onClick={() => setActiveTab('CANCEL_REQ')}
-          className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'CANCEL_REQ' ? 'bg-yellow-500 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
-        >
-          Yêu cầu huỷ
-          {orders.filter(o => o.status === 'CANCEL_REQUESTED').length > 0 && 
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-          }
-        </button>
+      <div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex gap-2 overflow-x-auto no-scrollbar">
+        {[
+          { id: 'ALL', label: `Tất cả (${orders.length})`, color: 'bg-gray-800' },
+          { id: 'PENDING', label: 'Đơn mới', color: 'bg-blue-600', count: orders.filter(o => o.status === 'PENDING').length },
+          { id: 'ACTIVE', label: 'Đang làm/Giao', color: 'bg-orange-500' },
+          { id: 'CANCEL_REQ', label: 'Yêu cầu huỷ', color: 'bg-yellow-500', dot: orders.filter(o => o.status === 'CANCEL_REQUESTED').length > 0 }
+        ].map(tab => (
+          <button 
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
+              activeTab === tab.id ? `${tab.color} text-white shadow-lg scale-105` : 'text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            {tab.label}
+            {tab.count > 0 && <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px]">{tab.count}</span>}
+            {tab.dot && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>}
+          </button>
+        ))}
       </div>
 
-      {/* Danh sách các thẻ đơn hàng */}
+      {/* Danh sách các thẻ đơn hàng (Dạng Grid) */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {filteredOrders.length === 0 ? (
-          <div className="col-span-full bg-white p-20 rounded-2xl border border-dashed border-gray-200 text-center text-gray-400 shadow-sm">
+          <div className="col-span-full bg-white p-20 rounded-3xl border border-dashed border-gray-200 text-center text-gray-400 shadow-sm">
             Hiện không có đơn hàng nào trong mục này.
           </div>
         ) : (
@@ -116,25 +111,25 @@ const ManageOrders = () => {
             const statusConfig = ORDER_STATUSES[order.status] || ORDER_STATUSES.PENDING;
 
             return (
-              <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden transition-all hover:shadow-md">
-                {/* Header thẻ đơn hàng */}
-                <div className="px-5 py-4 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
+              <div key={order.id} className="bg-white rounded-3xl shadow-sm border border-gray-100 flex flex-col overflow-hidden transition-all hover:shadow-md">
+                {/* Header: ID & Status */}
+                <div className="px-6 py-4 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
                   <div className="flex items-center gap-3">
                     <span className="font-mono font-black text-gray-800 text-lg uppercase">#{order.id.slice(-6)}</span>
-                    <span className={`px-2.5 py-1 rounded-lg text-[10px] uppercase font-black border ${statusConfig.color}`}>
+                    <span className={`px-3 py-1 rounded-lg text-[10px] uppercase font-black border ${statusConfig.color}`}>
                       {statusConfig.label}
                     </span>
                   </div>
-                  <span className="text-xs font-medium text-gray-400">{order.time}</span>
+                  <span className="text-xs font-bold text-gray-400">{order.time}</span>
                 </div>
 
-                {/* Nội dung thông tin đơn */}
-                <div className="p-5 flex-1 space-y-4">
+                {/* Info: Khách hàng & Món ăn */}
+                <div className="p-6 flex-1 space-y-4">
                   <div className="grid grid-cols-2 gap-6">
                     <div>
                       <p className="text-[10px] text-gray-400 uppercase font-black mb-1 tracking-wider">Khách hàng</p>
                       <p className="text-sm font-bold text-gray-800">{order.customer}</p>
-                      <p className="text-sm text-blue-600 font-medium">{order.phone}</p>
+                      <p className="text-sm text-blue-600 font-bold">{order.phone}</p>
                     </div>
                     <div>
                       <p className="text-[10px] text-gray-400 uppercase font-black mb-1 tracking-wider">Địa chỉ giao</p>
@@ -143,7 +138,7 @@ const ManageOrders = () => {
                   </div>
                   
                   <div className="bg-gray-50/80 p-4 rounded-xl border border-gray-100">
-                    <p className="text-[10px] text-gray-400 uppercase font-black mb-2 tracking-wider">Chi tiết món ăn</p>
+                    <p className="text-[10px] text-gray-400 uppercase font-black mb-2 tracking-wider">Chi tiết đơn</p>
                     <p className="text-sm text-gray-800 font-medium leading-relaxed">{order.items}</p>
                   </div>
                   
@@ -153,33 +148,33 @@ const ManageOrders = () => {
                   </div>
                 </div>
 
-                {/* Khu vực Nút thao tác */}
-                <div className="px-5 py-4 bg-gray-50/50 border-t border-gray-100 flex gap-3 justify-end">
+                {/* Footer: Các nút thao tác logic Admin */}
+                <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex gap-3 justify-end">
                   
                   {order.status === 'PENDING' && (
                     <button 
                       onClick={() => handleUpdateStatus(order.id, 'PREPARING')}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-sm font-bold transition-all shadow-lg active:scale-95"
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-2xl text-sm font-black shadow-lg active:scale-95 transition-all"
                     >
-                      Xác nhận & Báo bếp nấu
+                      XÁC NHẬN & BÁO BẾP NẤU
                     </button>
                   )}
 
                   {order.status === 'PREPARING' && (
                     <button 
                       onClick={() => handleUpdateStatus(order.id, 'DELIVERING')}
-                      className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl text-sm font-bold transition-all shadow-lg active:scale-95"
+                      className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3.5 rounded-2xl text-sm font-black shadow-lg active:scale-95 transition-all"
                     >
-                      Bàn giao cho Shipper
+                      BÀN GIAO CHO SHIPPER
                     </button>
                   )}
 
                   {order.status === 'DELIVERING' && (
                     <button 
                       onClick={() => handleUpdateStatus(order.id, 'COMPLETED')}
-                      className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-bold transition-all shadow-lg active:scale-95"
+                      className="w-full bg-green-600 hover:bg-green-700 text-white py-3.5 rounded-2xl text-sm font-black shadow-lg active:scale-95 transition-all"
                     >
-                      Xác nhận đã giao thành công
+                      XÁC NHẬN GIAO THÀNH CÔNG
                     </button>
                   )}
 
@@ -187,13 +182,13 @@ const ManageOrders = () => {
                     <div className="flex gap-3 w-full">
                       <button 
                         onClick={() => handleCancelAction(order.id, false)}
-                        className="flex-1 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 py-3 rounded-xl text-sm font-bold transition-all"
+                        className="flex-1 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 py-3.5 rounded-2xl text-sm font-bold transition-all"
                       >
                         Từ chối hủy
                       </button>
                       <button 
                         onClick={() => handleCancelAction(order.id, true)}
-                        className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl text-sm font-bold transition-all shadow-md"
+                        className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3.5 rounded-2xl text-sm font-bold shadow-md transition-all active:scale-95"
                       >
                         Đồng ý hủy đơn
                       </button>
@@ -201,7 +196,7 @@ const ManageOrders = () => {
                   )}
 
                   {['COMPLETED', 'CANCELLED'].includes(order.status) && (
-                    <span className="text-xs text-gray-400 font-bold uppercase tracking-widest py-2">Đơn hàng đã đóng</span>
+                    <span className="text-xs text-gray-400 font-bold uppercase tracking-widest py-2">Hồ sơ đơn hàng đã đóng</span>
                   )}
 
                 </div>
