@@ -16,14 +16,13 @@ import {
   orderBy,
   onSnapshot 
 } from 'firebase/firestore';
-import { db, app } from '../firebase/config'; // Đảm bảo đã export app từ config
+import { db, app } from '../firebase/config'; 
 
 const auth = getAuth(app);
 const COLLECTION_NAME = 'users';
 
 /**
- * 1. Đăng ký tài khoản khách hàng mới (Firestore)
- * Vẫn giữ cơ chế cũ dành cho khách hàng không cần mật khẩu
+ * 1. Đăng ký tài khoản khách hàng mới
  */
 export const registerUser = async (userData) => {
   try {
@@ -53,23 +52,18 @@ export const registerUser = async (userData) => {
 };
 
 /**
- * 2. ĐĂNG NHẬP ADMIN (Sử dụng Firebase Authentication)
- * Thay thế logic cũ so sánh chuỗi mật khẩu thủ công
+ * 2. ĐĂNG NHẬP ADMIN (Firebase Auth)
  */
 export const loginAdmin = async (email, password) => {
   try {
-    // Đăng nhập bằng hệ thống Auth của Firebase
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
-
-    // Lưu trạng thái bổ trợ vào localStorage để các thành phần cũ không bị lỗi
     localStorage.setItem('adminToken', 'true');
-    
     return { success: true, user };
   } catch (error) {
     console.error("Lỗi đăng nhập Admin:", error);
     let errorMessage = "Lỗi hệ thống";
-    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
       errorMessage = "Email hoặc mật khẩu không chính xác";
     }
     return { success: false, error: errorMessage };
@@ -98,7 +92,7 @@ export const subscribeToAuth = (callback) => {
 };
 
 /**
- * 5. Lấy thông tin khách bằng SĐT (Real-time)
+ * 5. Lấy thông tin khách bằng SĐT
  */
 export const getUserByPhone = async (phone) => {
   try {
@@ -116,7 +110,28 @@ export const getUserByPhone = async (phone) => {
 };
 
 /**
- * 6. Lấy toàn bộ danh sách khách hàng (Real-time cho Admin)
+ * 6. LẤY TOÀN BỘ KHÁCH HÀNG (Dạng tĩnh)
+ * FIX LỖI: Cung cấp export cho ManageUsers.jsx
+ */
+export const getAllUsers = async () => {
+  try {
+    const usersRef = collection(db, COLLECTION_NAME);
+    const q = query(usersRef, orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+    
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      joinDate: doc.data().createdAt?.toDate().toLocaleDateString('vi-VN') || 'Mới tạo'
+    }));
+  } catch (error) {
+    console.error("Lỗi getAllUsers:", error);
+    return [];
+  }
+};
+
+/**
+ * 7. LẮNG NGHE KHÁCH HÀNG (Real-time)
  */
 export const subscribeToAllUsers = (callback) => {
   const usersRef = collection(db, COLLECTION_NAME);
@@ -129,11 +144,14 @@ export const subscribeToAllUsers = (callback) => {
       joinDate: doc.data().createdAt?.toDate().toLocaleDateString('vi-VN') || 'Mới tạo'
     }));
     callback(users);
+  }, (error) => {
+    console.error("Lỗi Real-time Users:", error);
   });
 };
 
 /**
- * 7. Cập nhật thông tin khách hàng
+ * 8. Cập nhật thông tin khách hàng
+ * FIX LỖI: Cung cấp export cho ManageUsers.jsx
  */
 export const updateUserProfile = async (userId, updateData) => {
   try {
@@ -144,6 +162,7 @@ export const updateUserProfile = async (userId, updateData) => {
     });
     return { success: true };
   } catch (error) {
+    console.error("Lỗi updateUserProfile:", error);
     return { success: false, error: error.message };
   }
 };
