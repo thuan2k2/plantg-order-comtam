@@ -17,8 +17,12 @@ const Order = () => {
   const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  
+  // BỔ SUNG: State cho ghi chú và danh sách SĐT đã dùng
+  const [note, setNote] = useState('');
+  const [recentPhones, setRecentPhones] = useState([]);
 
-  // 1. Lấy thực đơn từ Firebase (Đã bao gồm link ảnh)
+  // 1. Lấy thực đơn & Danh sách SĐT cũ từ LocalStorage
   useEffect(() => {
     const fetchMenu = async () => {
       const data = await getMenu();
@@ -26,6 +30,10 @@ const Order = () => {
       setIsLoading(false);
     };
     fetchMenu();
+
+    // Lấy danh sách SĐT cũ để gợi ý
+    const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
+    setRecentPhones(savedPhones);
   }, []);
 
   // 2. Tự động tìm thông tin khách
@@ -99,12 +107,17 @@ const Order = () => {
       address: customerInfo.address,
       items: itemsString,
       total: calculateTotal(),
+      note: note.trim(), // BỔ SUNG: Gửi ghi chú lên Firebase
     };
 
     try {
       const result = await createOrder(orderData);
 
       if (result.success) {
+        // BỔ SUNG: Lưu SĐT vào bộ nhớ tạm máy khách (tối đa 3 số gần nhất)
+        const updatedPhones = [username, ...recentPhones.filter(p => p !== username)].slice(0, 3);
+        localStorage.setItem('recentPhones', JSON.stringify(updatedPhones));
+
         setCart([]);
         alert('Đặt hàng thành công! Đơn hàng đã được gửi tới bếp.');
         navigate(`/checkorder?user=${username}`);
@@ -152,18 +165,34 @@ const Order = () => {
         </div>
       </div>
 
-      {/* Thông tin khách */}
+      {/* Thông tin khách & Gợi ý SĐT */}
       <div className="bg-white p-4 border-b border-gray-100">
         <label className="block text-sm font-semibold text-gray-800 mb-2">
           Username (Số điện thoại) <span className="text-red-500">*</span>
         </label>
         <input
-          type="text"
+          type="tel"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="Nhập SĐT để nhận diện..."
           className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-gray-800 focus:outline-none focus:border-[#007BFF] focus:ring-1 focus:ring-[#007BFF] transition-colors"
         />
+
+        {/* BỔ SUNG: Gợi ý SĐT cũ */}
+        {recentPhones.length > 0 && !customerInfo && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            <span className="text-[11px] text-gray-400 w-full font-bold uppercase tracking-widest">SĐT bạn đã dùng:</span>
+            {recentPhones.map(p => (
+              <button 
+                key={p} 
+                onClick={() => setUsername(p)}
+                className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-full border border-blue-100 font-bold active:scale-95 transition-all"
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
         
         {customerInfo ? (
           <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -183,6 +212,18 @@ const Order = () => {
         ) : null}
       </div>
 
+      {/* BỔ SUNG: Phần nhập Ghi chú */}
+      <div className="bg-white p-4 border-b border-gray-100">
+        <label className="block text-sm font-semibold text-gray-800 mb-2">Ghi chú cho quán (nếu có)</label>
+        <textarea 
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Ví dụ: Ít cơm, không lấy rau, thêm ớt..."
+          className="w-full border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-500 bg-gray-50/30"
+          rows="2"
+        />
+      </div>
+
       {/* Danh sách Thực Đơn */}
       <div className="bg-white">
         <div className="px-4 py-3 bg-[#F8F9FA] border-b border-gray-200 flex justify-between">
@@ -197,7 +238,7 @@ const Order = () => {
               name={item.name}
               price={item.price}
               description={item.description}
-              image={item.image} // <<< QUAN TRỌNG: Thêm dòng này để hiển thị ảnh
+              image={item.image}
               onAdd={() => handleAddToCart(item)}
             />
           ))}

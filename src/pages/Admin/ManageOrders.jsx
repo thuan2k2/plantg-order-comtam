@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-// Import thêm hàm subscribeToAllOrders để lắng nghe thời gian thực
 import { subscribeToAllOrders, updateOrderStatus } from '../../services/orderService';
 import StatusBadge from '../../components/StatusBadge';
 
-// Từ điển trạng thái đồng bộ với hệ thống
 const ORDER_STATUSES = {
   PENDING: { label: 'Chờ xác nhận', color: 'bg-gray-100 text-gray-700 border-gray-200' },
   CONFIRMED: { label: 'Đã xác nhận', color: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -19,33 +17,21 @@ const ManageOrders = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('ALL');
 
-  // Lắng nghe dữ liệu thời gian thực từ Firebase
   useEffect(() => {
     setIsLoading(true);
-
-    /** * Sử dụng subscribeToAllOrders thay vì getAllOrders.
-     * Firebase sẽ tự động đẩy dữ liệu mới về đây mỗi khi:
-     * 1. Có khách đặt đơn mới.
-     * 2. Khách gửi yêu cầu hủy đơn.
-     * 3. Bạn cập nhật trạng thái đơn hàng.
-     */
     const unsubscribe = subscribeToAllOrders((data) => {
       setOrders(data);
       setIsLoading(false);
     });
-
-    // Quan trọng: Ngắt kết nối khi thoát khỏi trang Admin để tránh tốn băng thông
     return () => unsubscribe();
   }, []);
 
-  // Cập nhật trạng thái đơn hàng lên Firestore
   const handleUpdateStatus = async (orderId, newStatus) => {
     try {
       const result = await updateOrderStatus(orderId, newStatus);
       if (!result.success) {
         alert("Lỗi cập nhật: " + result.error);
       }
-      // Lưu ý: Không cần setOrders thủ công vì onSnapshot (unsubscribe) sẽ tự cập nhật UI
     } catch (error) {
       console.error("Lỗi thao tác đơn hàng:", error);
     }
@@ -79,7 +65,6 @@ const ManageOrders = () => {
 
   return (
     <div className="space-y-6">
-      {/* Tabs Menu */}
       <div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex gap-2 overflow-x-auto no-scrollbar">
         {[
           { id: 'ALL', label: `Tất cả (${orders.length})`, color: 'bg-gray-800' },
@@ -123,6 +108,21 @@ const ManageOrders = () => {
                 </div>
 
                 <div className="p-6 flex-1 space-y-4">
+                  {/* PHẦN GHI CHÚ MỚI BỔ SUNG */}
+                  {order.note && (
+                    <div className="bg-yellow-50 p-3 rounded-2xl border border-yellow-100 flex items-start gap-2">
+                      <div className="mt-1 text-yellow-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[10px] text-yellow-600 font-black uppercase tracking-wider">Ghi chú của khách:</p>
+                        <p className="text-sm text-yellow-900 font-bold italic leading-tight">"{order.note}"</p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-[10px] text-gray-400 uppercase font-black mb-1">Khách hàng</p>
@@ -147,13 +147,22 @@ const ManageOrders = () => {
                 </div>
 
                 <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100 flex gap-3 justify-end">
+                  {/* CẬP NHẬT: 2 LỰA CHỌN KHI ĐƠN MỚI */}
                   {order.status === 'PENDING' && (
-                    <button 
-                      onClick={() => handleUpdateStatus(order.id, 'PREPARING')}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-2xl text-sm font-black shadow-lg active:scale-95 transition-all"
-                    >
-                      XÁC NHẬN & BÁO BẾP
-                    </button>
+                    <>
+                      <button 
+                        onClick={() => handleUpdateStatus(order.id, 'CANCELLED')}
+                        className="flex-1 bg-white border border-red-200 text-red-500 py-3 rounded-2xl text-[11px] font-black uppercase hover:bg-red-50 transition-all"
+                      >
+                        Hủy đơn
+                      </button>
+                      <button 
+                        onClick={() => handleUpdateStatus(order.id, 'PREPARING')}
+                        className="flex-[2] bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-2xl text-[11px] font-black uppercase shadow-lg active:scale-95 transition-all"
+                      >
+                        Xác nhận & Báo bếp
+                      </button>
+                    </>
                   )}
 
                   {order.status === 'PREPARING' && (

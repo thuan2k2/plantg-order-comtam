@@ -2,6 +2,7 @@ import {
   collection, 
   addDoc, 
   updateDoc, 
+  getDocs,
   doc, 
   query, 
   where, 
@@ -14,12 +15,13 @@ import { db } from '../firebase/config';
 const COLLECTION_NAME = 'orders';
 
 /**
- * 1. Tạo một đơn hàng mới (Giữ nguyên)
+ * 1. Tạo một đơn hàng mới (Bổ sung trường note)
  */
 export const createOrder = async (orderData) => {
   try {
     const newOrder = {
       ...orderData,
+      note: orderData.note || "", // Nhận ghi chú từ giao diện Order.jsx
       status: 'PENDING',
       createdAt: serverTimestamp(),
     };
@@ -32,8 +34,26 @@ export const createOrder = async (orderData) => {
 };
 
 /**
- * 2. LẮNG NGHE ĐƠN HÀNG THEO SĐT (Dành cho khách hàng)
- * Thay vì trả về mảng, hàm này trả về một hàm "Hủy đăng ký" (Unsubscribe)
+ * 2. Lấy toàn bộ đơn hàng (Dạng tĩnh)
+ * FIX: Thêm lại hàm này để tránh lỗi [MISSING_EXPORT] tại Dashboard.jsx
+ */
+export const getAllOrders = async () => {
+  try {
+    const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'N/A'
+    }));
+  } catch (error) {
+    console.error("Lỗi getAllOrders:", error);
+    return [];
+  }
+};
+
+/**
+ * 3. LẮNG NGHE ĐƠN HÀNG THEO SĐT (Dành cho khách hàng)
  */
 export const subscribeToOrdersByPhone = (phone, callback) => {
   if (!phone) return () => {};
@@ -46,7 +66,6 @@ export const subscribeToOrdersByPhone = (phone, callback) => {
     orderBy("createdAt", "desc")
   );
 
-  // onSnapshot sẽ tự động gọi callback mỗi khi dữ liệu thay đổi
   return onSnapshot(q, (snapshot) => {
     const orders = snapshot.docs.map(doc => ({
       id: doc.id,
@@ -62,7 +81,7 @@ export const subscribeToOrdersByPhone = (phone, callback) => {
 };
 
 /**
- * 3. LẮNG NGHE TOÀN BỘ ĐƠN HÀNG (Dành cho Admin)
+ * 4. LẮNG NGHE TOÀN BỘ ĐƠN HÀNG (Dành cho Admin thời gian thực)
  */
 export const subscribeToAllOrders = (callback) => {
   const ordersRef = collection(db, COLLECTION_NAME);
@@ -83,7 +102,7 @@ export const subscribeToAllOrders = (callback) => {
 };
 
 /**
- * 4. Cập nhật trạng thái (Giữ nguyên)
+ * 5. Cập nhật trạng thái
  */
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
