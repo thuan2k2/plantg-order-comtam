@@ -51,7 +51,7 @@ const Home = () => {
         <div className="mt-6">
           <h1 className="text-4xl font-black text-[#4A2C2A] tracking-tighter leading-none">
             PLANT G <br/>
-            <span className="text-orange-600 text-2xl">CƠM TẤM NHÀ LÀM</span>
+            <span className="text-orange-600 text-2xl">CƠM TẤM NHÀ LÀMM</span>
           </h1>
           <div className="flex justify-center gap-1 mt-3">
             {[1,2,3,4,5].map(i => <span key={i} className="text-yellow-500 text-sm">⭐</span>)}
