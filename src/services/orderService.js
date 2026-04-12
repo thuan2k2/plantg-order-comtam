@@ -16,7 +16,7 @@ const COLLECTION_NAME = 'orders';
 
 /**
  * 1. Tạo một đơn hàng mới
- * Tích hợp đầy đủ trường note và định dạng chuẩn
+ * Mặc định phương thức thanh toán là Tiền mặt (CASH) và chưa thanh toán (UNPAID)
  */
 export const createOrder = async (orderData) => {
   try {
@@ -24,6 +24,8 @@ export const createOrder = async (orderData) => {
       ...orderData,
       note: orderData.note || "", 
       status: 'PENDING',
+      paymentMethod: 'CASH',     // Mặc định là Tiền mặt
+      paymentStatus: 'UNPAID',    // Mặc định là Chưa thanh toán
       createdAt: serverTimestamp(),
     };
     const docRef = await addDoc(collection(db, COLLECTION_NAME), newOrder);
@@ -35,30 +37,91 @@ export const createOrder = async (orderData) => {
 };
 
 /**
- * 2. Lấy toàn bộ đơn hàng (Dạng tĩnh)
- * Dùng cho các báo cáo xuất dữ liệu hoặc Dashboard khởi tạo
+ * 2. Cập nhật phương thức thanh toán (Dành cho Khách hàng)
+ * Nếu khách báo "Đã chuyển khoản", set trạng thái là WAITING_CONFIRM
  */
-export const getAllOrders = async () => {
+export const updatePaymentMethod = async (orderId, method, isTransferred = false) => {
   try {
-    const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'Đang xử lý...'
-    }));
+    const orderRef = doc(db, COLLECTION_NAME, orderId);
+    const updateData = {
+      paymentMethod: method, // 'CASH' hoặc 'TRANSFER'
+      updatedAt: serverTimestamp()
+    };
+    
+    if (method === 'TRANSFER' && isTransferred) {
+      updateData.paymentStatus = 'WAITING_CONFIRM'; // Khách báo đã CK, chờ Admin xác nhận
+    } else if (method === 'CASH') {
+      updateData.paymentStatus = 'UNPAID'; // Quay về tiền mặt
+    }
+
+    await updateDoc(orderRef, updateData);
+    return { success: true };
   } catch (error) {
-    console.error("Lỗi getAllOrders:", error);
-    return [];
+    return { success: false, error: error.message };
   }
 };
 
 /**
- * 3. LẮNG NGHE ĐƠN HÀNG TRONG NGÀY (Real-time)
- * Dành cho trang ManageOrders của Admin
+ * 3. Xác nhận trạng thái tiền tệ (Dành cho Admin)
+ * Nút "Đã nhận tiền" (PAID) hoặc "Chưa nhận tiền" (UNPAID)
+ */
+export const confirmPaymentStatus = async (orderId, isPaid) => {
+  try {
+    const orderRef = doc(db, COLLECTION_NAME, orderId);
+    await updateDoc(orderRef, {
+      paymentStatus: isPaid ? 'PAID' : 'UNPAID',
+      updatedAt: serverTimestamp()
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * 4. Hủy đơn hàng có điều kiện (Dành cho Khách hàng)
+ * - Nếu là PENDING: Hủy trực tiếp (CANCELLED)
+ * - Nếu khác: Gửi yêu cầu kèm lý do (CANCEL_REQUESTED)
+ */
+export const requestCancelOrder = async (orderId, status, reason = "") => {
+  try {
+    const orderRef = doc(db, COLLECTION_NAME, orderId);
+    const isDirectCancel = status === 'PENDING'; // Giả sử check logic 10p ở UI, PENDING cho hủy luôn
+    
+    await updateDoc(orderRef, {
+      status: isDirectCancel ? 'CANCELLED' : 'CANCEL_REQUESTED',
+      cancelReason: reason || "Khách tự hủy trong thời gian cho phép",
+      updatedAt: serverTimestamp()
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * 5. Xóa đơn hàng mềm (Soft Delete - Dành cho Admin)
+ * Chuyển trạng thái DELETED để ẩn khỏi danh sách bếp nhưng giữ lại trong lịch sử
+ */
+export const deleteOrderSoft = async (orderId) => {
+  try {
+    const orderRef = doc(db, COLLECTION_NAME, orderId);
+    await updateDoc(orderRef, {
+      status: 'DELETED',
+      updatedAt: serverTimestamp()
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * 6. Lắng nghe đơn hàng real-time (Bộ lọc đồng bộ)
  */
 export const subscribeToOrdersByDate = (dateStr, callback) => {
   const ordersRef = collection(db, COLLECTION_NAME);
+  // Lọc bỏ đơn DELETED để bếp không thấy đơn đã xóa
   const q = query(ordersRef, orderBy("createdAt", "desc"));
 
   return onSnapshot(q, (snapshot) => {
@@ -67,46 +130,16 @@ export const subscribeToOrdersByDate = (dateStr, callback) => {
       return {
         id: doc.id,
         ...data,
-        // Chuyển đổi timestamp thành string ngay tại đây để filter
         time: data.createdAt?.toDate().toLocaleString('vi-VN') || 'Vừa xong'
       };
     });
     
-    // Lọc các đơn có ngày trùng với dateStr (Ví dụ: "13/04/2026")
-    const filtered = allOrders.filter(o => o.time && o.time.includes(dateStr));
+    // Lọc: Cùng ngày VÀ trạng thái không phải DELETED
+    const filtered = allOrders.filter(o => o.time.includes(dateStr) && o.status !== 'DELETED');
     callback(filtered);
-  }, (error) => {
-    console.error("Lỗi bảo mật/kết nối (By Date):", error);
   });
 };
 
-/**
- * 4. LẮNG NGHE ĐƠN HÀNG THEO SĐT (Dành cho khách hàng)
- */
-export const subscribeToOrdersByPhone = (phone, callback) => {
-  if (!phone) return () => {};
-  const cleanPhone = phone.trim();
-  const q = query(
-    collection(db, COLLECTION_NAME),
-    where("phone", "==", cleanPhone),
-    orderBy("createdAt", "desc")
-  );
-
-  return onSnapshot(q, (snapshot) => {
-    const orders = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'Vừa xong'
-    }));
-    callback(orders);
-  }, (error) => {
-    console.error("Lỗi lắng nghe theo SĐT:", error);
-  });
-};
-
-/**
- * 5. LẮNG NGHE TOÀN BỘ ĐƠN HÀNG (Dashboard & Thống kê Admin)
- */
 export const subscribeToAllOrders = (callback) => {
   const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
@@ -116,22 +149,14 @@ export const subscribeToAllOrders = (callback) => {
       time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'N/A'
     }));
     callback(orders);
-  }, (error) => {
-    console.error("Lỗi bảo mật/kết nối (All Orders):", error);
   });
 };
 
 /**
- * 6. Cập nhật trạng thái đơn hàng
- * Kiểm tra quyền Admin dựa trên localStorage nếu cần bảo mật thêm tại đây
+ * 7. Cập nhật trạng thái đơn hàng (General)
  */
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
-    const isAdmin = localStorage.getItem('adminToken') === 'true';
-    if (!isAdmin && newStatus !== 'CANCEL_REQUESTED') {
-      throw new Error("Hành động bị từ chối: Thiếu quyền Admin.");
-    }
-
     const orderRef = doc(db, COLLECTION_NAME, orderId);
     await updateDoc(orderRef, {
       status: newStatus,
@@ -139,7 +164,6 @@ export const updateOrderStatus = async (orderId, newStatus) => {
     });
     return { success: true };
   } catch (error) {
-    console.error("Lỗi updateOrderStatus:", error);
     return { success: false, error: error.message };
   }
 };
