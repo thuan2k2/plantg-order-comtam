@@ -5,6 +5,7 @@ const COLLECTION_NAME = 'users';
 
 /**
  * Đăng ký tài khoản khách hàng mới
+ * Mặc định mỗi tài khoản tạo ra sẽ có role là 'user'
  */
 export const registerUser = async (userData) => {
   try {
@@ -18,10 +19,11 @@ export const registerUser = async (userData) => {
       return { success: false, error: 'Số điện thoại này đã được đăng ký!' };
     }
 
-    // 2. Thêm khách hàng mới với trạng thái mặc định
+    // 2. Thêm khách hàng mới với role mặc định là 'user'
     const newUser = {
       ...userData,
-      status: 'ACTIVE', // Trạng thái mặc định: Đang hoạt động
+      role: 'user',   // Mặc định là khách hàng
+      status: 'ACTIVE', 
       totalOrders: 0,
       createdAt: serverTimestamp()
     };
@@ -35,7 +37,39 @@ export const registerUser = async (userData) => {
 };
 
 /**
- * Lấy thông tin khách hàng bằng Số điện thoại (Dành cho trang Order)
+ * Đăng nhập dành riêng cho Admin
+ * Kiểm tra SĐT, Mật khẩu và Quyền hạn (role)
+ */
+export const loginAdmin = async (username, password) => {
+  try {
+    const user = await getUserByPhone(username);
+    
+    if (!user) {
+      return { success: false, error: 'Tài khoản không tồn tại!' };
+    }
+
+    // Kiểm tra quyền Admin và Mật khẩu bạn đã quy định
+    if (user.role === 'admin' && password === 'Thuan021208@') {
+      // Lưu phiên đăng nhập vào LocalStorage
+      localStorage.setItem('adminToken', 'true');
+      localStorage.setItem('adminInfo', JSON.stringify({
+        username: user.username,
+        fullName: user.fullName
+      }));
+      return { success: true };
+    } else if (user.role !== 'admin') {
+      return { success: false, error: 'Bạn không có quyền truy cập trang Admin!' };
+    } else {
+      return { success: false, error: 'Mật khẩu Admin không chính xác!' };
+    }
+  } catch (error) {
+    console.error("Lỗi đăng nhập Admin:", error);
+    return { success: false, error: 'Lỗi hệ thống, vui lòng thử lại.' };
+  }
+};
+
+/**
+ * Lấy thông tin khách hàng bằng Số điện thoại
  */
 export const getUserByPhone = async (phone) => {
   try {
@@ -44,10 +78,9 @@ export const getUserByPhone = async (phone) => {
     const snapshot = await getDocs(q);
     
     if (snapshot.empty) {
-      return null; // Không tìm thấy khách hàng
+      return null;
     }
     
-    // Trả về thông tin của khách hàng đầu tiên tìm thấy
     const userDoc = snapshot.docs[0];
     return { id: userDoc.id, ...userDoc.data() };
   } catch (error) {
@@ -57,7 +90,7 @@ export const getUserByPhone = async (phone) => {
 };
 
 /**
- * Lấy toàn bộ danh sách khách hàng (Dành cho Admin/ManageUsers)
+ * Lấy toàn bộ danh sách khách hàng (Dành cho Admin)
  */
 export const getAllUsers = async () => {
   try {
@@ -66,11 +99,11 @@ export const getAllUsers = async () => {
     const users = [];
     
     snapshot.forEach((doc) => {
+      const data = doc.data();
       users.push({
         id: doc.id,
-        ...doc.data(),
-        // Format ngày tham gia cho đẹp
-        joinDate: doc.data().createdAt?.toDate().toLocaleDateString('vi-VN') || 'N/A'
+        ...data,
+        joinDate: data.createdAt?.toDate().toLocaleDateString('vi-VN') || 'N/A'
       });
     });
     
@@ -82,15 +115,19 @@ export const getAllUsers = async () => {
 };
 
 /**
- * Khoá/Mở khoá tài khoản khách (Dành cho Admin)
+ * Cập nhật trạng thái hoặc quyền hạn (Dành cho Admin)
+ * Ví dụ: Khóa tài khoản hoặc nâng cấp lên Admin
  */
-export const updateUserStatus = async (userId, newStatus) => {
+export const updateUserProfile = async (userId, updateData) => {
   try {
     const userRef = doc(db, COLLECTION_NAME, userId);
-    await updateDoc(userRef, { status: newStatus });
+    await updateDoc(userRef, {
+      ...updateData,
+      updatedAt: serverTimestamp()
+    });
     return { success: true };
   } catch (error) {
-    console.error("Lỗi cập nhật trạng thái khách:", error);
+    console.error("Lỗi cập nhật thông tin:", error);
     return { success: false, error: error.message };
   }
 };
