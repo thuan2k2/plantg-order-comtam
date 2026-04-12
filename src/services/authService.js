@@ -1,34 +1,35 @@
-import { collection, addDoc, getDocs, query, where, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, updateDoc, doc, serverTimestamp, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 const COLLECTION_NAME = 'users';
 
 /**
  * Đăng ký tài khoản khách hàng mới
- * Mặc định mỗi tài khoản tạo ra sẽ có role là 'user'
  */
 export const registerUser = async (userData) => {
   try {
     const usersRef = collection(db, COLLECTION_NAME);
     
     // 1. Kiểm tra xem Username (SĐT) đã tồn tại chưa
-    const q = query(usersRef, where("username", "==", userData.username));
+    const q = query(usersRef, where("username", "==", userData.username.trim()));
     const snapshot = await getDocs(q);
     
     if (!snapshot.empty) {
       return { success: false, error: 'Số điện thoại này đã được đăng ký!' };
     }
 
-    // 2. Thêm khách hàng mới với role mặc định là 'user'
+    // 2. Thêm khách hàng mới
     const newUser = {
       ...userData,
-      role: 'user',   // Mặc định là khách hàng
+      username: userData.username.trim(),
+      role: 'user',   
       status: 'ACTIVE', 
       totalOrders: 0,
       createdAt: serverTimestamp()
     };
 
     const docRef = await addDoc(usersRef, newUser);
+    console.log("Đăng ký thành công khách hàng ID:", docRef.id);
     return { success: true, id: docRef.id };
   } catch (error) {
     console.error("Lỗi khi đăng ký:", error);
@@ -38,7 +39,6 @@ export const registerUser = async (userData) => {
 
 /**
  * Đăng nhập dành riêng cho Admin
- * Kiểm tra SĐT, Mật khẩu và Quyền hạn (role)
  */
 export const loginAdmin = async (username, password) => {
   try {
@@ -48,9 +48,8 @@ export const loginAdmin = async (username, password) => {
       return { success: false, error: 'Tài khoản không tồn tại!' };
     }
 
-    // Kiểm tra quyền Admin và Mật khẩu bạn đã quy định
+    // Kiểm tra quyền Admin và Mật khẩu
     if (user.role === 'admin' && password === 'Thuan021208@') {
-      // Lưu phiên đăng nhập vào LocalStorage
       localStorage.setItem('adminToken', 'true');
       localStorage.setItem('adminInfo', JSON.stringify({
         username: user.username,
@@ -64,7 +63,7 @@ export const loginAdmin = async (username, password) => {
     }
   } catch (error) {
     console.error("Lỗi đăng nhập Admin:", error);
-    return { success: false, error: 'Lỗi hệ thống, vui lòng thử lại.' };
+    return { success: false, error: 'Lỗi hệ thống.' };
   }
 };
 
@@ -73,8 +72,9 @@ export const loginAdmin = async (username, password) => {
  */
 export const getUserByPhone = async (phone) => {
   try {
+    if (!phone) return null;
     const usersRef = collection(db, COLLECTION_NAME);
-    const q = query(usersRef, where("username", "==", phone));
+    const q = query(usersRef, where("username", "==", phone.trim()));
     const snapshot = await getDocs(q);
     
     if (snapshot.empty) {
@@ -84,39 +84,45 @@ export const getUserByPhone = async (phone) => {
     const userDoc = snapshot.docs[0];
     return { id: userDoc.id, ...userDoc.data() };
   } catch (error) {
-    console.error("Lỗi khi lấy thông tin khách:", error);
+    console.error("Lỗi getUserByPhone:", error);
     return null;
   }
 };
 
 /**
  * Lấy toàn bộ danh sách khách hàng (Dành cho Admin)
+ * Cập nhật: Thêm sắp xếp và check log dữ liệu
  */
 export const getAllUsers = async () => {
   try {
     const usersRef = collection(db, COLLECTION_NAME);
-    const snapshot = await getDocs(usersRef);
-    const users = [];
+    // Thêm orderBy để người mới đăng ký hiện lên đầu
+    const q = query(usersRef, orderBy("createdAt", "desc"));
+    const snapshot = await getDocs(q);
     
+    const users = [];
     snapshot.forEach((doc) => {
       const data = doc.data();
       users.push({
         id: doc.id,
         ...data,
-        joinDate: data.createdAt?.toDate().toLocaleDateString('vi-VN') || 'N/A'
+        // Chuyển đổi Timestamp an toàn để tránh lỗi .toDate() of null
+        joinDate: data.createdAt && typeof data.createdAt.toDate === 'function' 
+          ? data.createdAt.toDate().toLocaleDateString('vi-VN') 
+          : 'Mới tạo'
       });
     });
     
+    console.log("Tổng số khách hàng lấy được từ Firebase:", users.length);
     return users;
   } catch (error) {
-    console.error("Lỗi khi tải danh sách khách hàng:", error);
+    console.error("Lỗi getAllUsers:", error);
     return [];
   }
 };
 
 /**
- * Cập nhật trạng thái hoặc quyền hạn (Dành cho Admin)
- * Ví dụ: Khóa tài khoản hoặc nâng cấp lên Admin
+ * Cập nhật thông tin khách hàng
  */
 export const updateUserProfile = async (userId, updateData) => {
   try {
@@ -127,7 +133,7 @@ export const updateUserProfile = async (userId, updateData) => {
     });
     return { success: true };
   } catch (error) {
-    console.error("Lỗi cập nhật thông tin:", error);
+    console.error("Lỗi updateUserProfile:", error);
     return { success: false, error: error.message };
   }
 };
