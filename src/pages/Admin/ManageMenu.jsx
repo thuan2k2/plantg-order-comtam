@@ -1,22 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { getMenu, addMenuItem, updateMenuItem, deleteMenuItem } from '../../services/menuService';
+import { getMenu, addMenuItem, updateMenuItem, deleteMenuItem, uploadImage } from '../../services/menuService';
 
 const ManageMenu = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Trạng thái khi đang upload/lưu
   
-  // State quản lý Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null); 
   
+  const [imageFile, setImageFile] = useState(null); // Lưu file ảnh được chọn
+  const [previewUrl, setPreviewUrl] = useState(''); // Lưu link ảnh xem trước
+
   const [formData, setFormData] = useState({
     name: '',
     price: '',
     description: '',
-    isAvailable: true
+    isAvailable: true,
+    image: '' // Link ảnh từ Storage
   });
 
-  // 1. Tải thực đơn từ Firebase khi mở trang
   useEffect(() => {
     fetchData();
   }, []);
@@ -30,22 +33,26 @@ const ManageMenu = () => {
 
   const handleAddNew = () => {
     setEditingItem(null);
-    setFormData({ name: '', price: '', description: '', isAvailable: true });
+    setImageFile(null);
+    setPreviewUrl('');
+    setFormData({ name: '', price: '', description: '', isAvailable: true, image: '' });
     setIsModalOpen(true);
   };
 
   const handleEdit = (item) => {
     setEditingItem(item);
+    setImageFile(null);
+    setPreviewUrl(item.image || ''); // Hiển thị ảnh cũ nếu có
     setFormData({ 
       name: item.name, 
       price: item.price, 
       description: item.description, 
-      isAvailable: item.isAvailable 
+      isAvailable: item.isAvailable,
+      image: item.image || ''
     });
     setIsModalOpen(true);
   };
 
-  // 2. Xử lý Xoá món thật trên Firebase
   const handleDelete = async (id, name) => {
     if (window.confirm(`Bạn có chắc chắn muốn xoá món "${name}" khỏi thực đơn không?`)) {
       const result = await deleteMenuItem(id);
@@ -57,7 +64,6 @@ const ManageMenu = () => {
     }
   };
 
-  // 3. Xử lý đổi trạng thái nhanh
   const toggleAvailability = async (item) => {
     const newStatus = !item.isAvailable;
     const result = await updateMenuItem(item.id, { isAvailable: newStatus });
@@ -68,7 +74,15 @@ const ManageMenu = () => {
     }
   };
 
-  // 4. Xử lý Lưu (Thêm/Sửa) vào Firestore
+  // Xử lý chọn ảnh
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImageFile(file);
+      setPreviewUrl(URL.createObjectURL(file)); // Tạo link xem trước tạm thời
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (!formData.name || !formData.price) {
@@ -76,24 +90,41 @@ const ManageMenu = () => {
       return;
     }
 
-    if (editingItem) {
-      // Logic Sửa món
-      const result = await updateMenuItem(editingItem.id, formData);
-      if (result.success) {
-        setMenuItems(menuItems.map(item => 
-          item.id === editingItem.id ? { ...item, ...formData } : item
-        ));
+    setIsSubmitting(true);
+    let finalImageUrl = formData.image;
+
+    try {
+      // 1. Nếu có chọn file mới, upload lên Storage trước
+      if (imageFile) {
+        const uploadedUrl = await uploadImage(imageFile);
+        if (uploadedUrl) {
+          finalImageUrl = uploadedUrl;
+        }
       }
-    } else {
-      // Logic Thêm món mới
-      const result = await addMenuItem(formData);
-      if (result.success) {
-        // Thêm vào state cục bộ để UI cập nhật ngay mà không cần reload
-        setMenuItems([...menuItems, { id: result.id, ...formData }]);
+
+      const saveDate = { ...formData, image: finalImageUrl };
+
+      // 2. Lưu vào Firestore
+      if (editingItem) {
+        const result = await updateMenuItem(editingItem.id, saveDate);
+        if (result.success) {
+          setMenuItems(menuItems.map(item => 
+            item.id === editingItem.id ? { ...item, ...saveDate } : item
+          ));
+        }
+      } else {
+        const result = await addMenuItem(saveDate);
+        if (result.success) {
+          setMenuItems([...menuItems, { id: result.id, ...saveDate }]);
+        }
       }
+      setIsModalOpen(false);
+    } catch (error) {
+      console.error("Lỗi khi lưu:", error);
+      alert("Đã có lỗi xảy ra khi lưu món ăn.");
+    } finally {
+      setIsSubmitting(false);
     }
-    
-    setIsModalOpen(false);
   };
 
   if (isLoading) {
@@ -128,6 +159,7 @@ const ManageMenu = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 text-gray-500 text-sm border-b border-gray-100">
+                <th className="px-6 py-3 font-medium">Hình ảnh</th>
                 <th className="px-6 py-3 font-medium">Tên Món</th>
                 <th className="px-6 py-3 font-medium w-32">Giá</th>
                 <th className="px-6 py-3 font-medium text-center w-32">Trạng thái</th>
@@ -137,6 +169,13 @@ const ManageMenu = () => {
             <tbody className="divide-y divide-gray-100">
               {menuItems.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-6 py-4">
+                    <img 
+                      src={item.image || 'https://via.placeholder.com/50'} 
+                      alt={item.name} 
+                      className="w-12 h-12 object-cover rounded-lg border border-gray-100 shadow-sm"
+                    />
+                  </td>
                   <td className="px-6 py-4">
                     <p className={`font-medium ${item.isAvailable ? 'text-gray-800' : 'text-gray-400'}`}>
                       {item.name}
@@ -190,43 +229,88 @@ const ManageMenu = () => {
       {/* Modal Form */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="text-lg font-bold">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="text-lg font-bold text-gray-800">
                 {editingItem ? 'Chỉnh sửa món' : 'Thêm món mới'}
               </h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
+            
             <form onSubmit={handleSave} className="p-6 space-y-4">
+              {/* PHẦN CHỌN ẢNH */}
               <div>
-                <label className="block text-sm font-semibold mb-1">Tên món *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Hình ảnh món ăn</label>
+                <div className="flex items-center gap-4">
+                  <div className="w-20 h-20 border-2 border-dashed border-gray-200 rounded-xl overflow-hidden flex items-center justify-center bg-gray-50">
+                    {previewUrl ? (
+                      <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </div>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleFileChange}
+                    className="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Tên món *</label>
                 <input 
                   type="text" 
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  className="w-full border rounded-lg px-4 py-2 text-sm focus:border-blue-500 outline-none"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:border-blue-500 outline-none"
+                  placeholder="VD: Cơm Gà KATSU"
                 />
               </div>
+
               <div>
-                <label className="block text-sm font-semibold mb-1">Giá bán *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Giá tiền *</label>
                 <input 
                   type="text" 
                   value={formData.price}
                   onChange={(e) => setFormData({...formData, price: e.target.value})}
-                  className="w-full border rounded-lg px-4 py-2 text-sm focus:border-blue-500 outline-none"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:border-blue-500 outline-none"
+                  placeholder="VD: 70,000đ"
                 />
               </div>
+
               <div>
-                <label className="block text-sm font-semibold mb-1">Mô tả</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Mô tả món ăn</label>
                 <textarea 
                   value={formData.description}
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
-                  className="w-full border rounded-lg px-4 py-2 text-sm focus:border-blue-500 outline-none resize-none"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:border-blue-500 outline-none resize-none"
                   rows="3"
                 ></textarea>
               </div>
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 border py-2 rounded-lg">Huỷ</button>
-                <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-semibold">Lưu</button>
+
+              <div className="flex gap-3 pt-4 border-t border-gray-100">
+                <button 
+                  type="button" 
+                  onClick={() => setIsModalOpen(false)} 
+                  className="flex-1 bg-white border border-gray-300 py-2 rounded-lg text-sm font-semibold"
+                >
+                  Huỷ
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSubmitting}
+                  className={`flex-1 text-white py-2 rounded-lg font-semibold shadow-md transition-all ${isSubmitting ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+                >
+                  {isSubmitting ? 'Đang lưu...' : (editingItem ? 'Lưu thay đổi' : 'Thêm ngay')}
+                </button>
               </div>
             </form>
           </div>

@@ -1,16 +1,38 @@
 import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, orderBy, query } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'; // Thêm Storage
+import { db, storage } from '../firebase/config'; // Thêm storage từ config
 
 const COLLECTION_NAME = 'menu';
 
 /**
+ * Hàm hỗ trợ: Tải ảnh lên Firebase Storage
+ * @param {File} file - Tệp tin hình ảnh từ input
+ * @returns {string|null} - Link ảnh công khai
+ */
+export const uploadImage = async (file) => {
+  if (!file) return null;
+  try {
+    // Tạo đường dẫn lưu file: menu/ten_file_thoi_gian.png
+    const storageRef = ref(storage, `menu/${Date.now()}_${file.name}`);
+    
+    // Tải tệp lên
+    const snapshot = await uploadBytes(storageRef, file);
+    
+    // Lấy link URL công khai của tệp vừa tải
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return downloadURL;
+  } catch (error) {
+    console.error("Lỗi upload ảnh lên Storage:", error);
+    return null;
+  }
+};
+
+/**
  * Lấy danh sách toàn bộ thực đơn
- * Sẽ dùng chung cho cả trang Order.jsx (của khách) và ManageMenu.jsx (của Admin)
  */
 export const getMenu = async () => {
   try {
     const menuRef = collection(db, COLLECTION_NAME);
-    // Sắp xếp theo tên món cho gọn gàng
     const q = query(menuRef, orderBy("name", "asc"));
     const snapshot = await getDocs(q);
     
@@ -30,12 +52,16 @@ export const getMenu = async () => {
 };
 
 /**
- * Thêm một món ăn mới vào thực đơn (Từ Admin)
+ * Thêm một món ăn mới vào thực đơn (Đã hỗ trợ link ảnh)
  */
 export const addMenuItem = async (itemData) => {
   try {
     const menuRef = collection(db, COLLECTION_NAME);
-    const docRef = await addDoc(menuRef, itemData);
+    const docRef = await addDoc(menuRef, {
+      ...itemData,
+      // Đảm bảo có trường image (nếu không có thì để rỗng)
+      image: itemData.image || '' 
+    });
     return { success: true, id: docRef.id };
   } catch (error) {
     console.error("Lỗi thêm món ăn:", error);
@@ -44,7 +70,7 @@ export const addMenuItem = async (itemData) => {
 };
 
 /**
- * Cập nhật thông tin món ăn (Sửa tên, giá, đổi trạng thái hết món)
+ * Cập nhật thông tin món ăn
  */
 export const updateMenuItem = async (itemId, updatedData) => {
   try {

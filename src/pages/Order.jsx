@@ -2,25 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import MenuItem from '../components/MenuItem';
 import { createOrder } from '../services/orderService';
-import { getUserByPhone } from '../services/authService'; // Service lấy khách hàng
-import { getMenu } from '../services/menuService';       // Service lấy thực đơn
+import { getUserByPhone } from '../services/authService'; 
+import { getMenu } from '../services/menuService';       
 
 const Order = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
-  // Lấy username từ URL nếu có (ví dụ sau khi đăng ký xong chuyển qua)
   const initialUser = searchParams.get('user') || '';
 
-  // State quản lý dữ liệu
   const [username, setUsername] = useState(initialUser);
   const [customerInfo, setCustomerInfo] = useState(null);
-  const [menu, setMenu] = useState([]); // Chuyển từ mockMenu sang state động
+  const [menu, setMenu] = useState([]); 
   const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  // 1. Lấy thực đơn từ Firebase khi vừa mở trang
+  // 1. Lấy thực đơn từ Firebase (Đã bao gồm link ảnh)
   useEffect(() => {
     const fetchMenu = async () => {
       const data = await getMenu();
@@ -30,7 +28,7 @@ const Order = () => {
     fetchMenu();
   }, []);
 
-  // 2. Tự động tìm thông tin khách khi nhập đủ Số điện thoại
+  // 2. Tự động tìm thông tin khách
   useEffect(() => {
     const fetchUser = async () => {
       if (username && username.length >= 10) {
@@ -49,7 +47,6 @@ const Order = () => {
       }
     };
 
-    // Debounce nhẹ để tránh gọi API liên tục khi đang gõ
     const timer = setTimeout(() => {
       fetchUser();
     }, 500);
@@ -78,7 +75,6 @@ const Order = () => {
       return;
     }
 
-    // Nhóm các món để tính tổng và tạo chuỗi mô tả
     const groupedItems = cart.reduce((acc, item) => {
       acc[item.name] = (acc[item.name] || 0) + 1;
       return acc;
@@ -134,7 +130,7 @@ const Order = () => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
         </button>
-        <h1 className="text-[16px] font-medium text-gray-800">Thực đơn đặt món</h1>
+        <h1 className="text-[16px] font-bold text-gray-800">Thực đơn nhà Plant G</h1>
         <div className="w-8"></div>
       </div>
 
@@ -171,7 +167,7 @@ const Order = () => {
         
         {customerInfo ? (
           <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-            <p className="text-sm text-green-800 font-semibold">Chào {customerInfo.name}!</p>
+            <p className="text-sm text-green-800 font-bold">Chào {customerInfo.name}!</p>
             <p className="text-[13px] text-green-700 mt-1 italic">Địa chỉ: {customerInfo.address}</p>
           </div>
         ) : username.length >= 10 ? (
@@ -201,6 +197,7 @@ const Order = () => {
               name={item.name}
               price={item.price}
               description={item.description}
+              image={item.image} // <<< QUAN TRỌNG: Thêm dòng này để hiển thị ảnh
               onAdd={() => handleAddToCart(item)}
             />
           ))}

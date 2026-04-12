@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 // Cấu hình Firebase của bạn (Lấy từ Firebase Console)
 const firebaseConfig = {
@@ -13,6 +14,5 @@ const firebaseConfig = {
 
 // Khởi tạo Firebase
 const app = initializeApp(firebaseConfig);
-
-// Khởi tạo và xuất Firestore Database để các file khác sử dụng
 export const db = getFirestore(app);
+export const storage = getStorage(app); // Xuất ra để sử dụng
