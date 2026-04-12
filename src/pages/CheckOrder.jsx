@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getAllOrders, updateOrderStatus } from "../../services/orderService";
+import { getOrdersByPhone, updateOrderStatus } from "../services/orderService";
 
 // Từ điển trạng thái đồng bộ với hệ thống
 const ORDER_STATUSES = {
