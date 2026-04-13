@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import StatusBadge from '../components/StatusBadge'; 
+import CountdownBorder from '../components/CountdownBorder'; // Import Component đếm ngược
 import { 
   subscribeToOrdersByPhone, 
   updateOrderStatus, 
@@ -96,87 +97,110 @@ const OrderCard = ({ order }) => {
     }
   };
 
+  const isProcessing = order.status === 'PREPARING' || order.status === 'DELIVERING';
+
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 p-6 overflow-hidden transition-all animate-in slide-in-from-bottom-4">
-      <div className="flex justify-between items-center mb-4">
-        <div>
-          <span className="font-mono text-[10px] font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg uppercase tracking-widest transition-colors">
-            #{order.id.slice(-6).toUpperCase()}
-          </span>
-          <p className="text-[10px] text-gray-400 dark:text-gray-500 font-bold mt-1 uppercase italic transition-colors">{order.time}</p>
-        </div>
-        <StatusBadge status={order.status} />
-      </div>
+    <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 p-6 overflow-hidden transition-all animate-in slide-in-from-bottom-4 relative">
+      
+      {/* VÒNG ĐẾM NGƯỢC */}
+      <CountdownBorder 
+        startTime={order.confirmedAt} 
+        isActive={isProcessing} 
+      />
 
-      <div className="space-y-3 mb-6">
-        <p className="text-[15px] text-gray-800 dark:text-gray-100 font-black leading-tight transition-colors">{order.items}</p>
-        <div className="flex justify-between items-end border-t border-dashed dark:border-gray-700 pt-3 transition-colors">
-          <span className="text-[10px] text-gray-400 dark:text-gray-500 font-black uppercase">Thành tiền:</span>
-          <p className="text-xl font-black text-red-500 dark:text-red-400 tracking-tighter transition-colors">{order.total}</p>
-        </div>
-      </div>
-
-      {order.status !== 'CANCELLED' && (
-        <div className="bg-gray-50 dark:bg-gray-900/50 rounded-3xl p-4 mb-4 border border-gray-100 dark:border-gray-700 transition-colors">
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Thanh toán</span>
-            <span className={`text-[10px] font-black uppercase ${order.paymentStatus === 'PAID' ? 'text-green-500' : 'text-orange-500'}`}>
-              {order.paymentStatus === 'PAID' ? '✓ Đã thanh toán' : 
-               order.paymentStatus === 'WAITING_CONFIRM' ? '⏳ Đang chờ xác nhận' : 
-               order.paymentMethod === 'CASH' ? 'Tiền mặt' : 'Chưa thanh toán'}
+      <div className="relative z-10">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <span className="font-mono text-[10px] font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg uppercase tracking-widest transition-colors">
+              #{order.id.slice(-6).toUpperCase()}
             </span>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 font-bold mt-1 uppercase italic transition-colors">{order.time}</p>
           </div>
-          {order.paymentMethod === 'CASH' && order.paymentStatus === 'UNPAID' && order.updatedAt && (
-             <p className="text-[9px] text-red-500 dark:text-red-400 font-black mb-3 italic bg-red-50 dark:bg-red-900/20 p-2 rounded-xl border border-red-100 dark:border-red-900/30 transition-colors">
-               * Hệ thống chưa ghi nhận giao dịch, phương thức tự động chuyển sang Tiền mặt!
-             </p>
-          )}
-          {order.paymentStatus !== 'PAID' && (
-            <div className="space-y-3">
-              {order.paymentMethod === 'CASH' && !showPaymentSelection ? (
-                <button onClick={() => setShowPaymentSelection(true)} className="w-full py-2 text-[10px] font-black text-blue-500 dark:text-blue-400 uppercase tracking-widest underline">Đổi sang Chuyển khoản</button>
-              ) : order.paymentMethod === 'TRANSFER' && !showPaymentSelection ? (
-                <div className="text-center">
-                  <img src={`https://api.vietqr.io/image/970423-00006464313-compact.jpg?amount=${parseInt(order.total.replace(/\D/g,''))}&addInfo=TT ${order.id.slice(-6).toUpperCase()}`} className="w-40 h-40 mx-auto rounded-2xl mb-3 shadow-md border-4 border-white dark:border-gray-700" alt="QR" />
-                  <button onClick={() => updatePaymentMethod(order.id, 'TRANSFER', true)} className="w-full py-3 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all">Tôi đã chuyển khoản</button>
-                  <button onClick={() => setShowPaymentSelection(true)} className="text-[9px] font-black text-gray-400 dark:text-gray-500 mt-2 uppercase transition-colors">Đổi phương thức</button>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <button onClick={() => handlePaymentSelect('CASH')} className="flex-1 py-3 bg-gray-800 dark:bg-gray-700 text-white rounded-2xl text-[10px] font-black uppercase active:scale-95 transition-all">💵 Tiền mặt</button>
-                  <button onClick={() => handlePaymentSelect('TRANSFER')} className="flex-1 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase active:scale-95 transition-all">🏦 Chuyển khoản</button>
-                </div>
-              )}
-            </div>
-          )}
+          <StatusBadge status={order.status} />
         </div>
-      )}
 
-      <button onClick={handleReOrder} className="w-full py-4 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-orange-100 dark:border-orange-900/30 flex items-center justify-center gap-2 mb-4 transition-all active:scale-95">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-        Đặt lại đơn này
-      </button>
+        <div className="space-y-3 mb-6">
+          <p className="text-[15px] text-gray-800 dark:text-gray-100 font-black leading-tight transition-colors">{order.items}</p>
+          <div className="flex justify-between items-end border-t border-dashed dark:border-gray-700 pt-3 transition-colors">
+            <span className="text-[10px] text-gray-400 dark:text-gray-500 font-black uppercase">Thành tiền:</span>
+            <p className="text-xl font-black text-red-500 dark:text-red-400 tracking-tighter transition-colors">{order.total}</p>
+          </div>
+        </div>
 
-      <div className="space-y-2">
-        {order.status === 'CANCEL_REQUESTED' ? (
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 text-[10px] font-black p-3 rounded-2xl text-center border border-yellow-100 dark:border-yellow-900/30 transition-colors">Đang chờ Bếp xác nhận hủy...</div>
-        ) : !['COMPLETED', 'CANCELLED'].includes(order.status) && (
-          <>
-            {!showCancelReason ? (
-              <button onClick={handleCancelClick} className="w-full py-3 rounded-2xl text-[10px] font-black uppercase text-red-400 dark:text-red-500 border border-red-50 dark:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all">
-                {order.status === 'PENDING' && timeLeft > 0 ? `Hủy đơn nhanh (${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, '0')})` : 'Yêu cầu hủy đơn'}
-              </button>
-            ) : (
-              <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-3xl border border-red-100 dark:border-red-900/30 animate-in fade-in transition-colors">
-                <textarea placeholder="Lý do hủy..." value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} className="w-full p-3 text-xs bg-white dark:bg-gray-700 dark:text-white rounded-xl mb-3 outline-none transition-colors" rows="2" />
-                <div className="flex gap-2">
-                  <button onClick={() => setShowCancelReason(false)} className="flex-1 py-2 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase">Đóng</button>
-                  <button onClick={submitCancelRequest} className="flex-1 py-2 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all">Gửi lý do</button>
-                </div>
+        {order.status !== 'CANCELLED' && (
+          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-3xl p-4 mb-4 border border-gray-100 dark:border-gray-700 transition-colors">
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Thanh toán</span>
+              <span className={`text-[10px] font-black uppercase ${order.paymentStatus === 'PAID' ? 'text-green-500' : 'text-orange-500'}`}>
+                {order.paymentStatus === 'PAID' ? '✓ Đã thanh toán' : 
+                 order.paymentStatus === 'WAITING_CONFIRM' ? '⏳ Đang chờ xác nhận' : 
+                 order.paymentMethod === 'CASH' ? 'Tiền mặt' : 'Chưa thanh toán'}
+              </span>
+            </div>
+            {order.paymentMethod === 'CASH' && order.paymentStatus === 'UNPAID' && order.updatedAt && (
+               <p className="text-[9px] text-red-500 dark:text-red-400 font-black mb-3 italic bg-red-50 dark:bg-red-900/20 p-2 rounded-xl border border-red-100 dark:border-red-900/30 transition-colors">
+                 * Hệ thống chưa ghi nhận giao dịch, phương thức tự động chuyển sang Tiền mặt!
+               </p>
+            )}
+            {order.paymentStatus !== 'PAID' && (
+              <div className="space-y-3">
+                {order.paymentMethod === 'CASH' && !showPaymentSelection ? (
+                  <button onClick={() => setShowPaymentSelection(true)} className="w-full py-2 text-[10px] font-black text-blue-500 dark:text-blue-400 uppercase tracking-widest underline">Đổi sang Chuyển khoản</button>
+                ) : order.paymentMethod === 'TRANSFER' && !showPaymentSelection ? (
+                  <div className="text-center">
+                    <img src={`https://api.vietqr.io/image/970423-00006464313-compact.jpg?amount=${parseInt(order.total.replace(/\D/g,''))}&addInfo=TT ${order.id.slice(-6).toUpperCase()}`} className="w-40 h-40 mx-auto rounded-2xl mb-3 shadow-md border-4 border-white dark:border-gray-700" alt="QR" />
+                    <button onClick={() => updatePaymentMethod(order.id, 'TRANSFER', true)} className="w-full py-3 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all">Tôi đã chuyển khoản</button>
+                    <button onClick={() => setShowPaymentSelection(true)} className="text-[9px] font-black text-gray-400 dark:text-gray-500 mt-2 uppercase transition-colors">Đổi phương thức</button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button onClick={() => handlePaymentSelect('CASH')} className="flex-1 py-3 bg-gray-800 dark:bg-gray-700 text-white rounded-2xl text-[10px] font-black uppercase active:scale-95 transition-all">💵 Tiền mặt</button>
+                    <button onClick={() => handlePaymentSelect('TRANSFER')} className="flex-1 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase active:scale-95 transition-all">🏦 Chuyển khoản</button>
+                  </div>
+                )}
               </div>
             )}
-          </>
+          </div>
         )}
+
+        <button onClick={handleReOrder} className="w-full py-4 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-orange-100 dark:border-orange-900/30 flex items-center justify-center gap-2 mb-4 transition-all active:scale-95">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          Đặt lại đơn này
+        </button>
+
+        {/* THÔNG BÁO VOUCHER KHI ĐƯỢC TẶNG */}
+        {order.lateVoucherStatus === 'AWARDED' && (
+          <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-3xl border border-green-100 dark:border-green-900/30 mb-4 animate-in fade-in transition-colors">
+            <p className="text-[10px] font-black text-green-600 dark:text-green-400 uppercase text-center tracking-widest">
+              🎁 Quán xin lỗi vì giao trễ!
+            </p>
+            <p className="text-xs font-bold text-green-700 dark:text-green-500 text-center mt-1">
+              Bạn đã nhận được 1 Voucher giảm giá 5.000đ. Kiểm tra trong "Kho mã" ở lần đặt sau nhé.
+            </p>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {order.status === 'CANCEL_REQUESTED' ? (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 text-[10px] font-black p-3 rounded-2xl text-center border border-yellow-100 dark:border-yellow-900/30 transition-colors">Đang chờ Bếp xác nhận hủy...</div>
+          ) : !['COMPLETED', 'CANCELLED'].includes(order.status) && (
+            <>
+              {!showCancelReason ? (
+                <button onClick={handleCancelClick} className="w-full py-3 rounded-2xl text-[10px] font-black uppercase text-red-400 dark:text-red-500 border border-red-50 dark:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all">
+                  {order.status === 'PENDING' && timeLeft > 0 ? `Hủy đơn nhanh (${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, '0')})` : 'Yêu cầu hủy đơn'}
+                </button>
+              ) : (
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-3xl border border-red-100 dark:border-red-900/30 animate-in fade-in transition-colors">
+                  <textarea placeholder="Lý do hủy..." value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} className="w-full p-3 text-xs bg-white dark:bg-gray-700 dark:text-white rounded-xl mb-3 outline-none transition-colors" rows="2" />
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowCancelReason(false)} className="flex-1 py-2 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase">Đóng</button>
+                    <button onClick={submitCancelRequest} className="flex-1 py-2 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all">Gửi lý do</button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

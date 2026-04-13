@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { getAuth } from 'firebase/auth'; // Thêm Firebase Auth
+import { getAuth } from 'firebase/auth'; 
+import { doc, updateDoc } from 'firebase/firestore'; // Thêm để cập nhật Firestore nội bộ
+import { db } from '../../firebase/config'; // Import database config
 import { 
   subscribeToOrdersByDate, 
   updateOrderStatus, 
   confirmPaymentStatus,
   deleteOrderSoft,
-  completeOrderWithBonus 
+  completeOrderWithBonus,
+  awardLateVoucher // Thêm hàm tặng Voucher từ Service
 } from '../../services/orderService';
 import StatusBadge from '../../components/StatusBadge';
+import CountdownBorder from '../../components/CountdownBorder'; // Import Component đếm ngược
 
 const ORDER_STATUSES = {
   PENDING: { label: 'Chờ xác nhận', color: 'bg-gray-100 text-gray-700 border-gray-200' },
@@ -21,6 +25,7 @@ const ORDER_STATUSES = {
 const ManageOrders = () => {
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [now, setNow] = useState(new Date().getTime()); // State lưu thời gian thực để check trễ
   const auth = getAuth(); 
   
   // TABS
@@ -38,6 +43,7 @@ const ManageOrders = () => {
   const [deleteModal, setDeleteModal] = useState({ show: false, orderId: null });
   const [deleteData, setDeleteData] = useState({ reason: '', confirmEmail: '' }); 
 
+  // Lấy dữ liệu & Cập nhật biến Now mỗi phút
   useEffect(() => {
     setIsLoading(true);
     const todayStr = new Date().toLocaleDateString('vi-VN');
@@ -45,7 +51,12 @@ const ManageOrders = () => {
       setOrders(data);
       setIsLoading(false);
     });
-    return () => unsubscribe();
+
+    const timer = setInterval(() => setNow(new Date().getTime()), 60000); // Update mỗi 60s
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+    };
   }, []);
 
   const handleUpdateStatus = async (orderId, newStatus) => {
@@ -56,11 +67,7 @@ const ManageOrders = () => {
     if (window.confirm("Xác nhận đơn hàng đã giao thành công?")) {
       const res = await completeOrderWithBonus(order);
       if (res.success) {
-        if (res.late) {
-          alert("⚠️ Đơn này giao trễ >30p. Hệ thống đã tự động tặng 1 Voucher 5k cho khách!");
-        } else {
-          alert("✅ Đơn hàng đã hoàn thành thành công!");
-        }
+        alert("✅ Đơn hàng đã hoàn thành thành công!");
       }
     }
   };
@@ -138,119 +145,179 @@ const ManageOrders = () => {
         </div>
       </div>
 
-      {/* DANH SÁCH ĐƠN HÀNG: Cấu hình Responsive tự co giãn */}
+      {/* DANH SÁCH ĐƠN HÀNG */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
         {filteredOrders.map(order => {
           const statusConfig = ORDER_STATUSES[order.status] || ORDER_STATUSES.PENDING;
+          
+          // Logic xác định đơn có bị trễ hay không
+          const isProcessing = order.status === 'PREPARING' || order.status === 'DELIVERING';
+          const isLate = isProcessing && order.confirmedAt && (now > (order.confirmedAt.toDate().getTime() + 30 * 60 * 1000));
 
           return (
             <div key={order.id} className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col relative group">
-              {/* Vạch màu trạng thái bên trái */}
-              <div className={`absolute left-0 top-0 bottom-0 w-2 ${
-                order.status === 'PENDING' ? 'bg-yellow-400' : 
-                order.status === 'PREPARING' ? 'bg-orange-400' : 
-                order.status === 'DELIVERING' ? 'bg-purple-500' : 
-                order.status === 'COMPLETED' ? 'bg-green-500' : 'bg-red-500'
-              }`}></div>
+              
+              {/* 1. VÒNG ĐẾM NGƯỢC CHẠY QUANH RÌA */}
+              <CountdownBorder 
+                startTime={order.confirmedAt} 
+                isActive={isProcessing} 
+              />
 
-              {/* Top Bar */}
-              <div className="pl-6 px-4 py-4 bg-gray-50/50 border-b border-gray-100 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono font-black text-gray-800 text-lg">#{order.id.slice(-6).toUpperCase()}</span>
-                  <span className={`px-3 py-1 rounded-xl text-[9px] uppercase font-black border ${statusConfig.color}`}>
-                    {statusConfig.label}
-                  </span>
+              {/* Lớp bọc nội dung (để không bị đường viền SVG đè lên) */}
+              <div className="relative z-10 flex flex-col h-full">
+                
+                {/* Vạch màu trạng thái bên trái */}
+                <div className={`absolute left-0 top-0 bottom-0 w-2 ${
+                  order.status === 'PENDING' ? 'bg-yellow-400' : 
+                  order.status === 'PREPARING' ? 'bg-orange-400' : 
+                  order.status === 'DELIVERING' ? 'bg-purple-500' : 
+                  order.status === 'COMPLETED' ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+
+                {/* Top Bar */}
+                <div className="pl-6 px-4 py-4 bg-gray-50/50 border-b border-gray-100 flex justify-between items-center rounded-t-[2.5rem]">
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono font-black text-gray-800 text-lg">#{order.id.slice(-6).toUpperCase()}</span>
+                    <span className={`px-3 py-1 rounded-xl text-[9px] uppercase font-black border ${statusConfig.color}`}>
+                      {statusConfig.label}
+                    </span>
+                  </div>
+                  {/* NÚT XÓA MỞ MODAL */}
+                  <button onClick={() => openDeleteModal(order.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors" title="Xóa đơn hàng">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
                 </div>
-                {/* NÚT XÓA MỞ MODAL */}
-                <button onClick={() => openDeleteModal(order.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors" title="Xóa đơn hàng">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                </button>
-              </div>
 
-              <div className="p-6 pl-8 space-y-4 flex-1">
-                {/* Khối Thanh toán */}
-                {order.status !== 'CANCELLED' && (
-                  <div className={`p-4 rounded-2xl border flex items-center justify-between ${order.paymentStatus === 'WAITING_CONFIRM' ? 'bg-blue-50 border-blue-200 animate-pulse' : 'bg-gray-50 border-gray-100'}`}>
+                <div className="p-6 pl-8 space-y-4 flex-1">
+                  {/* Khối Thanh toán */}
+                  {order.status !== 'CANCELLED' && (
+                    <div className={`p-4 rounded-2xl border flex items-center justify-between ${order.paymentStatus === 'WAITING_CONFIRM' ? 'bg-blue-50 border-blue-200 animate-pulse' : 'bg-gray-50 border-gray-100'}`}>
+                      <div>
+                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Thanh toán</p>
+                        <p className="text-xs font-black text-gray-800 uppercase">
+                          {order.paymentMethod === 'TRANSFER' ? '🏦 Chuyển khoản' : '💵 Tiền mặt'}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        {order.paymentStatus !== 'PAID' ? (
+                          <div className="flex flex-col gap-1">
+                            <button onClick={() => handleConfirmPayment(order.id, true)} className="bg-green-600 text-white px-2 py-1 rounded-lg text-[8px] font-black uppercase shadow-md hover:bg-green-700">Nhận tiền</button>
+                            <button onClick={() => handleConfirmPayment(order.id, false)} className="bg-white text-red-500 border border-red-100 px-2 py-1 rounded-lg text-[8px] font-black uppercase hover:bg-red-50">Chưa nhận</button>
+                          </div>
+                        ) : (
+                          <span className="text-green-600 font-black text-[10px] uppercase flex items-center gap-1">✓ Đã thu</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Khách xin hủy */}
+                  {order.status === 'CANCEL_REQUESTED' && (
+                    <div className="bg-red-50 p-4 rounded-2xl border border-red-200 animate-in fade-in">
+                      <p className="text-[10px] font-black text-red-600 uppercase mb-1">Lý do hủy từ khách:</p>
+                      <p className="text-xs font-bold text-red-900 italic">"{order.cancelReason || 'Không có lý do'}"</p>
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => handleUpdateStatus(order.id, 'CANCELLED')} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-red-200 hover:bg-red-700">Đồng ý</button>
+                        <button onClick={() => handleUpdateStatus(order.id, 'PREPARING')} className="flex-1 bg-white text-gray-600 border border-gray-200 py-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-gray-100">Từ chối</button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Thanh toán</p>
-                      <p className="text-xs font-black text-gray-800 uppercase">
-                        {order.paymentMethod === 'TRANSFER' ? '🏦 Chuyển khoản' : '💵 Tiền mặt'}
-                      </p>
+                      <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Khách hàng</p>
+                      <p className="font-black text-gray-800 leading-none truncate">{order.customer}</p>
+                      <p className="text-blue-600 font-bold mt-1 text-[10px]">{order.phone}</p>
                     </div>
+                    <div>
+                      <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Thời gian</p>
+                      <p className="font-medium text-gray-600 leading-tight text-xs">{order.time}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                    <p className="text-[9px] font-black text-gray-400 uppercase mb-2 tracking-widest">Chi tiết món</p>
+                    <p className="text-sm font-black text-gray-800 leading-relaxed">{order.items}</p>
+                    {order.note && (
+                      <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
+                         <p className="text-[10px] text-orange-600 font-bold uppercase">Ghi chú: <span className="italic text-gray-600 normal-case font-medium">"{order.note}"</span></p>
+                      </div>
+                    )}
+                    {order.address && (
+                      <p className="text-[10px] font-bold text-gray-500 mt-2 uppercase tracking-wide">📍 Giao tới: <span className="text-gray-700 normal-case block line-clamp-2">{order.address}</span></p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. KHỐI XỬ LÝ BỒI THƯỜNG KHI ĐƠN TRỄ */}
+                { isLate && !order.lateVoucherStatus && (
+                  <div className="mx-6 mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl animate-pulse">
+                    <p className="text-[10px] font-black text-red-600 uppercase text-center mb-3">
+                      ⚠️ ĐƠN TRỄ 30P! TẶNG VOUCHER 5K?
+                    </p>
                     <div className="flex gap-2">
-                      {order.paymentStatus !== 'PAID' ? (
-                        <div className="flex flex-col gap-1">
-                          <button onClick={() => handleConfirmPayment(order.id, true)} className="bg-green-600 text-white px-2 py-1 rounded-lg text-[8px] font-black uppercase shadow-md">Nhận tiền</button>
-                          <button onClick={() => handleConfirmPayment(order.id, false)} className="bg-white text-red-500 border border-red-100 px-2 py-1 rounded-lg text-[8px] font-black uppercase hover:bg-red-50">Chưa nhận</button>
-                        </div>
-                      ) : (
-                        <span className="text-green-600 font-black text-[10px] uppercase flex items-center gap-1">✓ Đã thu</span>
-                      )}
+                      <button 
+                        onClick={async () => {
+                          if (window.confirm("Đồng ý tặng khách 5.000đ bồi thường?")) {
+                            await awardLateVoucher(order.phone, order.id);
+                            alert("Đã tặng mã thành công!");
+                          }
+                        }}
+                        className="flex-1 bg-green-600 text-white py-2 rounded-xl text-[9px] font-black uppercase shadow-md hover:bg-green-700 transition-colors"
+                      >
+                        Đồng ý tặng
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          if (window.confirm("Từ chối bồi thường đơn này?")) {
+                            const ref = doc(db, 'orders', order.id);
+                            await updateDoc(ref, { lateVoucherStatus: 'DECLINED' });
+                          }
+                        }}
+                        className="flex-1 bg-white text-gray-500 border border-gray-300 py-2 rounded-xl text-[9px] font-black uppercase hover:bg-gray-100 transition-colors"
+                      >
+                        Từ chối
+                      </button>
                     </div>
                   </div>
                 )}
 
-                {/* Khách xin hủy */}
-                {order.status === 'CANCEL_REQUESTED' && (
-                  <div className="bg-red-50 p-4 rounded-2xl border border-red-200 animate-in fade-in">
-                    <p className="text-[10px] font-black text-red-600 uppercase mb-1">Lý do hủy từ khách:</p>
-                    <p className="text-xs font-bold text-red-900 italic">"{order.cancelReason || 'Không có lý do'}"</p>
-                    <div className="flex gap-2 mt-3">
-                      <button onClick={() => handleUpdateStatus(order.id, 'CANCELLED')} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-red-200">Đồng ý</button>
-                      <button onClick={() => handleUpdateStatus(order.id, 'PREPARING')} className="flex-1 bg-white text-gray-600 border border-gray-200 py-2.5 rounded-xl text-[10px] font-black uppercase">Từ chối</button>
-                    </div>
-                  </div>
+                {order.lateVoucherStatus === 'AWARDED' && (
+                  <p className="mx-6 mb-4 text-[9px] font-black text-green-600 uppercase text-center bg-green-50 py-2 rounded-xl border border-green-100">
+                    ✓ Đã gửi Voucher bồi thường
+                  </p>
+                )}
+                {order.lateVoucherStatus === 'DECLINED' && (
+                  <p className="mx-6 mb-4 text-[9px] font-black text-gray-400 uppercase text-center bg-gray-50 py-2 rounded-xl border border-gray-200">
+                    ✕ Đã từ chối bồi thường
+                  </p>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Khách hàng</p>
-                    <p className="font-black text-gray-800 leading-none truncate">{order.customer}</p>
-                    <p className="text-blue-600 font-bold mt-1 text-[10px]">{order.phone}</p>
+                {/* Footer Actions */}
+                <div className="pl-6 px-4 py-4 bg-gray-50/30 border-t border-gray-100 flex flex-wrap justify-between items-center gap-3 rounded-b-[2.5rem]">
+                  <span className="text-xl font-black text-red-500 tracking-tighter">{order.total}</span>
+                  <div className="flex gap-2">
+                    {!['COMPLETED', 'CANCELLED', 'CANCEL_REQUESTED'].includes(order.status) && (
+                      <button 
+                        onClick={() => { if(window.confirm("Xác nhận hủy đơn của khách?")) handleUpdateStatus(order.id, 'CANCELLED') }}
+                        className="bg-white border border-red-200 text-red-500 hover:bg-red-50 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase transition-colors"
+                      >
+                        Hủy
+                      </button>
+                    )}
+
+                    {order.status === 'PENDING' && (
+                      <button onClick={() => handleUpdateStatus(order.id, 'PREPARING')} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-blue-100 active:scale-95 hover:bg-blue-700">Nhận đơn</button>
+                    )}
+                    {order.status === 'PREPARING' && (
+                      <button onClick={() => handleUpdateStatus(order.id, 'DELIVERING')} className="bg-orange-500 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-orange-100 active:scale-95 hover:bg-orange-600">Giao ship</button>
+                    )}
+                    {order.status === 'DELIVERING' && (
+                      <button onClick={() => handleFinishOrder(order)} className="bg-green-600 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-green-100 active:scale-95 hover:bg-green-700">Hoàn thành</button>
+                    )}
                   </div>
-                  <div>
-                    <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Thời gian</p>
-                    <p className="font-medium text-gray-600 leading-tight text-xs">{order.time}</p>
-                  </div>
                 </div>
 
-                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                  <p className="text-[9px] font-black text-gray-400 uppercase mb-2 tracking-widest">Chi tiết món</p>
-                  <p className="text-sm font-black text-gray-800 leading-relaxed">{order.items}</p>
-                  {order.note && (
-                    <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
-                       <p className="text-[10px] text-orange-600 font-bold uppercase">Ghi chú: <span className="italic text-gray-600 normal-case font-medium">"{order.note}"</span></p>
-                    </div>
-                  )}
-                  {order.address && (
-                    <p className="text-[10px] font-bold text-gray-500 mt-2 uppercase tracking-wide">📍 Giao tới: <span className="text-gray-700 normal-case block line-clamp-2">{order.address}</span></p>
-                  )}
-                </div>
-              </div>
-
-              {/* Footer Actions */}
-              <div className="pl-6 px-4 py-4 bg-gray-50/30 border-t border-gray-100 flex flex-wrap justify-between items-center gap-3">
-                <span className="text-xl font-black text-red-500 tracking-tighter">{order.total}</span>
-                <div className="flex gap-2">
-                  {!['COMPLETED', 'CANCELLED', 'CANCEL_REQUESTED'].includes(order.status) && (
-                    <button 
-                      onClick={() => { if(window.confirm("Xác nhận hủy đơn của khách?")) handleUpdateStatus(order.id, 'CANCELLED') }}
-                      className="bg-white border border-red-200 text-red-500 hover:bg-red-50 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase transition-colors"
-                    >
-                      Hủy
-                    </button>
-                  )}
-
-                  {order.status === 'PENDING' && (
-                    <button onClick={() => handleUpdateStatus(order.id, 'PREPARING')} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-blue-100 active:scale-95">Nhận đơn</button>
-                  )}
-                  {order.status === 'PREPARING' && (
-                    <button onClick={() => handleUpdateStatus(order.id, 'DELIVERING')} className="bg-orange-500 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-orange-100 active:scale-95">Giao ship</button>
-                  )}
-                  {order.status === 'DELIVERING' && (
-                    <button onClick={() => handleFinishOrder(order)} className="bg-green-600 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-green-100 active:scale-95">Hoàn thành</button>
-                  )}
-                </div>
               </div>
             </div>
           );
