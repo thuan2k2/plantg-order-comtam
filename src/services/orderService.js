@@ -12,7 +12,7 @@ import {
   serverTimestamp, 
   onSnapshot,
   increment,
-  runTransaction // Import thêm runTransaction cho thanh toán an toàn
+  runTransaction // Dùng transaction để đảm bảo an toàn ví
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -27,22 +27,64 @@ let isSubmittingOrder = false;
  * ==========================================
  */
 
-export const createOrder = async (orderData) => {
+// FIX LỖI: Tạo đơn hàng kèm thanh toán Ví an toàn tuyệt đối
+export const createOrderSecure = async (orderData) => {
   if (isSubmittingOrder) {
     return { success: false, error: "Hệ thống đang xử lý đơn hàng, vui lòng không ấn liên tiếp!" };
   }
   isSubmittingOrder = true;
+
   try {
-    const newOrder = {
-      ...orderData,
-      status: 'PENDING',
-      paymentStatus: orderData.paymentMethod === 'WALLET' ? 'PAID' : 'UNPAID', // Nếu dùng ví thì tự set PAID
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp() 
-    };
-    const docRef = await addDoc(collection(db, COLLECTION_NAME), newOrder);
-    
-    // Trừ lượt dùng Voucher an toàn
+    const cleanPhone = orderData.phone.trim();
+    const isWallet = orderData.paymentMethod === 'WALLET';
+    const totalAmount = parseInt(orderData.total.replace(/\D/g, '')) || 0;
+
+    // 1. Dùng Transaction để đảm bảo tính nhất quán dữ liệu
+    const result = await runTransaction(db, async (transaction) => {
+      let userRef = null;
+
+      // Tìm user document ID để trừ tiền
+      const q = query(collection(db, 'users'), where("username", "==", cleanPhone));
+      const userSnap = await getDocs(q);
+      
+      if (!userSnap.empty) {
+        userRef = doc(db, 'users', userSnap.docs[0].id);
+      }
+
+      if (isWallet) {
+        if (!userRef) throw new Error("Không tìm thấy thông tin ví!");
+        const userDoc = await transaction.get(userRef);
+        const currentBalance = userDoc.data().walletBalance || 0;
+
+        if (currentBalance < totalAmount) {
+          throw new Error("Số dư ví không đủ! Vui lòng nạp thêm.");
+        }
+
+        // Thực hiện trừ tiền
+        transaction.update(userRef, {
+          walletBalance: increment(-totalAmount),
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      // 2. Tạo đơn hàng (Vẫn nằm trong vòng transaction)
+      // Lưu ý: Thêm adminNote và isPaid nếu dùng Ví
+      const orderRef = doc(collection(db, COLLECTION_NAME));
+      const newOrder = {
+        ...orderData,
+        status: 'PENDING',
+        paymentStatus: isWallet ? 'PAID' : 'UNPAID', // Nếu dùng ví thì tự set PAID
+        adminNote: isWallet ? "THANH TOÁN VÍ (Thu 0đ)" : "",
+        isPaid: isWallet,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp() 
+      };
+      
+      transaction.set(orderRef, newOrder);
+      return { id: orderRef.id };
+    });
+
+    // 3. Trừ lượt dùng Voucher an toàn (Sau khi giao dịch chính thành công)
     if (orderData.usedVouchers && orderData.usedVouchers.length > 0) {
       for (const v of orderData.usedVouchers) {
         await updateDoc(doc(db, VOUCHER_COL, v.id), {
@@ -52,10 +94,10 @@ export const createOrder = async (orderData) => {
     }
 
     isSubmittingOrder = false;
-    return { success: true, id: docRef.id };
+    return { success: true, id: result.id };
   } catch (error) {
     isSubmittingOrder = false;
-    console.error("Lỗi createOrder:", error);
+    console.error("Lỗi createOrderSecure:", error);
     return { success: false, error: error.message };
   }
 };
@@ -87,10 +129,10 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
  * ==========================================
  */
 
-// Hàm trừ tiền ví khi đặt hàng (Sử dụng Transaction để đảm bảo tính nhất quán)
+// Hàm trừ tiền ví khi đặt hàng (Đã được chuyển vào trong hàm createOrderSecure)
+// Giữ lại nếu bạn có nhu cầu gọi riêng lẻ sau này
 export const processWalletPayment = async (phone, amount) => {
   try {
-    // Tìm user document ID dựa trên số điện thoại
     const q = query(collection(db, 'users'), where("username", "==", phone.trim()));
     const snapshot = await getDocs(q);
     if (snapshot.empty) return { success: false, error: "Người dùng không tồn tại!" };
@@ -98,7 +140,6 @@ export const processWalletPayment = async (phone, amount) => {
     const userDocId = snapshot.docs[0].id;
     const userRef = doc(db, 'users', userDocId);
 
-    // Chạy Transaction để trừ tiền an toàn
     await runTransaction(db, async (transaction) => {
       const userSnap = await transaction.get(userRef);
       if (!userSnap.exists()) throw new Error("Không tìm thấy tài khoản!");
@@ -124,15 +165,12 @@ export const completeOrderWithBonus = async (order) => {
     const orderRef = doc(db, COLLECTION_NAME, order.id);
     const now = new Date();
     
-    // Cập nhật trạng thái đơn
     await updateDoc(orderRef, {
       status: 'COMPLETED',
       completedAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
 
-    // TÍCH ĐIỂM: Tính số Xu được nhận (Chỉ tính nếu không thanh toán bằng Ví để tránh lạm phát Xu nội bộ, hoặc tùy chính sách quán)
-    // Ở đây tính cho MỌI đơn hàng để khuyến khích
     const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
     const earnedXu = Math.floor(totalAmount / 1000) * 10;
 
@@ -144,12 +182,11 @@ export const completeOrderWithBonus = async (order) => {
         const userRef = doc(db, 'users', snap.docs[0].id);
         await updateDoc(userRef, {
           totalXu: increment(earnedXu),
-          totalSpend: increment(totalAmount) // Ghi nhận tổng chi tiêu
+          totalSpend: increment(totalAmount) 
         });
       }
     }
 
-    // Logic kiểm tra đơn trễ (Cho tính năng Voucher trễ)
     if (order.confirmedAt) {
       const confirmTime = order.confirmedAt.toDate();
       const diffInMinutes = Math.floor((now - confirmTime) / (1000 * 60));
@@ -299,6 +336,7 @@ export const confirmPaymentStatus = async (orderId, isPaid) => {
   } catch (error) { return { success: false, error: error.message }; }
 };
 
+// FIX LỖI HOÀN TIỀN VÍ
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
@@ -314,7 +352,7 @@ export const updateOrderStatus = async (orderId, newStatus) => {
     
     await updateDoc(orderRef, updateData);
 
-    // CƠ CHẾ HOÀN MÃ VÀ HOÀN TIỀN VÍ
+    // CƠ CHẾ HOÀN MÃ VÀ HOÀN TIỀN VÍ (CHỈ KHI HỦY ĐƠN PENDING)
     if (newStatus === 'CANCELLED' && order.status === 'PENDING') {
       // 1. Hoàn Voucher
       if (order.usedVouchers) {
@@ -325,8 +363,8 @@ export const updateOrderStatus = async (orderId, newStatus) => {
         }
       }
       
-      // 2. Hoàn Tiền Ví (Nếu đơn bị hủy mà khách đã thanh toán bằng ví)
-      if (order.paymentMethod === 'WALLET') {
+      // 2. Hoàn Tiền Ví (Chỉ hoàn nếu KHÁCH ĐÃ THANH TOÁN BẰNG VÍ và ĐƠN ĐÃ PAID)
+      if (order.paymentMethod === 'WALLET' && order.paymentStatus === 'PAID') {
         const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
         if (totalAmount > 0) {
           const q = query(collection(db, 'users'), where("username", "==", order.phone.trim()));
@@ -422,7 +460,7 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
         }
       }
 
-      if (order.paymentMethod === 'WALLET') {
+      if (order.paymentMethod === 'WALLET' && order.paymentStatus === 'PAID') {
         const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
         if (totalAmount > 0) {
           const q = query(collection(db, 'users'), where("username", "==", order.phone.trim()));

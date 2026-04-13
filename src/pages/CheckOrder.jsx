@@ -47,7 +47,8 @@ const ORDER_TABS = [
   { id: 'PREPARING', label: 'Bếp làm' },
   { id: 'DELIVERING', label: 'Đang giao' },
   { id: 'COMPLETED', label: 'Hoàn thành' },
-  { id: 'CANCEL_REQUESTED', label: 'Hủy đơn' }
+  { id: 'CANCEL_REQUESTED', label: 'Yêu cầu Hủy' },
+  { id: 'CANCELLED', label: 'Đã Hủy' }
 ];
 
 // --- COMPONENT CARD ĐƠN HÀNG ---
@@ -79,7 +80,7 @@ const OrderCard = ({ order }) => {
   const handleCancelClick = async () => {
     if (order.status === 'PENDING' && timeLeft > 0) {
       if (window.confirm('Bạn muốn hủy đơn hàng này?')) {
-        await updateOrderStatus(order.id, 'CANCELLED');
+        await requestCancelOrder(order.id, 'PENDING');
       }
     } else {
       setShowCancelReason(true);
@@ -306,14 +307,14 @@ const CheckOrder = () => {
     navigate(`/checkorder?user=${phoneInput.trim()}`);
   };
 
-  // LOGIC LỌC ĐƠN THEO TAB
+  // LOGIC LỌC ĐƠN THEO TAB MƯỢT MÀ
   const filteredOrders = useMemo(() => {
     if (activeTab === 'ALL') return orders;
     return orders.filter(o => o.status === activeTab);
   }, [orders, activeTab]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-20 font-sans transition-colors duration-300">
+    <div className="min-h-screen bg-[#f8f9fa] dark:bg-gray-900 pb-20 font-sans transition-colors duration-300">
       
       {/* HEADER & RANK */}
       <div className="bg-white dark:bg-gray-800 px-6 py-5 border-b dark:border-gray-700 flex items-center justify-between transition-colors relative z-40">
@@ -347,8 +348,8 @@ const CheckOrder = () => {
 
       {/* STICKY TAB BAR (BỘ LỌC TRẠNG THÁI) */}
       {userPhoneParam && orders.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 shadow-sm sticky top-0 z-30 transition-colors">
-          <div className="flex px-4 py-3 gap-2 overflow-x-auto no-scrollbar scroll-smooth snap-x">
+        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-b dark:border-gray-700 shadow-sm sticky top-0 z-30 transition-colors">
+          <div className="max-w-2xl mx-auto flex px-4 py-3 gap-2 overflow-x-auto no-scrollbar scroll-smooth">
             {ORDER_TABS.map(tab => {
               const count = orders.filter(o => tab.id === 'ALL' ? true : o.status === tab.id).length;
               const isActive = activeTab === tab.id;
@@ -357,14 +358,14 @@ const CheckOrder = () => {
                 <button 
                   key={tab.id} 
                   onClick={() => setActiveTab(tab.id)} 
-                  className={`snap-start px-4 py-2.5 text-[10px] font-black uppercase rounded-2xl transition-all whitespace-nowrap flex items-center gap-2 border-2 
+                  className={`flex-shrink-0 px-5 py-2.5 text-[10px] font-black uppercase rounded-2xl transition-all whitespace-nowrap flex items-center gap-2 border-2 
                     ${isActive 
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200 dark:shadow-none scale-105' 
-                      : 'text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-700 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600'}`}
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200 dark:shadow-none' 
+                      : 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600'}`}
                 >
                   {tab.label}
                   {count > 0 && tab.id !== 'ALL' && (
-                    <span className={`px-1.5 py-0.5 rounded-lg text-[9px] ${isActive ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] ${isActive ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400'}`}>
                       {count}
                     </span>
                   )}
@@ -375,9 +376,9 @@ const CheckOrder = () => {
         </div>
       )}
 
-      <div className="p-6 max-w-lg mx-auto mt-2">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto mt-2">
         {/* SEARCH FORM */}
-        <form onSubmit={handleSearch} className="mb-8 bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 transition-colors">
+        <form onSubmit={handleSearch} className="mb-8 max-w-lg mx-auto bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
           <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 ml-1 text-center transition-colors">Nhập SĐT của bạn</label>
           <div className="flex gap-2">
             <input
@@ -391,12 +392,15 @@ const CheckOrder = () => {
           </div>
         </form>
 
-        {/* DANH SÁCH ĐƠN HÀNG ĐÃ LỌC */}
-        <div className="space-y-6">
+        {/* DANH SÁCH ĐƠN HÀNG ĐÃ LỌC (GRID RESPONSIVE) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredOrders.slice(0, visibleCount).map((order) => (
             <OrderCard key={order.id} order={order} />
           ))}
+        </div>
 
+        {/* NÚT XEM THÊM (NẰM DƯỚI GRID) */}
+        <div className="max-w-lg mx-auto mt-6 space-y-4">
           {filteredOrders.length > visibleCount && visibleCount < 30 && (
             <button 
               onClick={() => setVisibleCount(prev => Math.min(prev + 10, 30))}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { doc, onSnapshot, collection, query, where } from 'firebase/firestore'; 
 import { db } from '../firebase/config';
-import { createOrder, validateVoucher, getMyVouchers } from '../services/orderService';
+import { createOrderSecure, validateVoucher, getMyVouchers } from '../services/orderService'; // Đổi sang createOrderSecure
 import { verifyPasscode } from '../services/authService'; 
 import { subscribeToMenu } from '../services/menuService';
 
@@ -273,7 +273,7 @@ const Order = () => {
     const orderData = {
       phone: cleanPhone,
       customer: customerInfo?.name || "Khách vãng lai", 
-      address: selectedAddress.trim(), // Lưu địa chỉ đã chọn vào Database
+      address: selectedAddress.trim(), 
       items: Object.values(cart).map(item => `${item.qty}x ${item.name}`).join(', '),
       subTotal: getSubTotal(),
       shippingFee,
@@ -285,7 +285,8 @@ const Order = () => {
     };
 
     try {
-      const result = await createOrder(orderData);
+      // SỬ DỤNG HÀM SECURE ĐỂ ĐẢM BẢO TRỪ VÍ & TẠO ĐƠN CÙNG LÚC
+      const result = await createOrderSecure(orderData);
       if (result.success) {
         const currentPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
         if (!currentPhones.includes(cleanPhone)) {
