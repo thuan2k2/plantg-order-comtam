@@ -1,7 +1,7 @@
 import { db } from '../firebase/config';
 import { 
   collection, doc, setDoc, updateDoc, deleteDoc, 
-  onSnapshot, query, orderBy, serverTimestamp, arrayUnion, getDocs 
+  onSnapshot, query, orderBy, serverTimestamp, arrayUnion 
 } from 'firebase/firestore';
 
 const CHAT_COLLECTION = 'support_chats';
@@ -45,4 +45,13 @@ export const markRead = async (chatId, role) => {
 // 4. Kết thúc và Xóa sạch dữ liệu (Tiết kiệm bộ nhớ)
 export const closeChat = async (chatId) => {
   await deleteDoc(doc(db, CHAT_COLLECTION, chatId));
+};
+
+// 5. Lắng nghe toàn bộ chat cho Admin (ĐÂY LÀ HÀM FIX LỖI BUILD)
+export const subscribeToAdminChats = (callback) => {
+  const q = query(collection(db, CHAT_COLLECTION), orderBy('lastUpdated', 'desc'));
+  return onSnapshot(q, (snapshot) => {
+    const chats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    callback(chats);
+  });
 };
