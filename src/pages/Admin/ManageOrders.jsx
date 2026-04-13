@@ -3,7 +3,8 @@ import {
   subscribeToOrdersByDate, 
   updateOrderStatus, 
   confirmPaymentStatus,
-  deleteOrderSoft 
+  deleteOrderSoft,
+  completeOrderWithBonus 
 } from '../../services/orderService';
 import StatusBadge from '../../components/StatusBadge';
 
@@ -31,17 +32,31 @@ const ManageOrders = () => {
     return () => unsubscribe();
   }, []);
 
+  // Hàm cập nhật trạng thái thông thường
   const handleUpdateStatus = async (orderId, newStatus) => {
     await updateOrderStatus(orderId, newStatus);
   };
 
+  // Hàm Hoàn thành đơn có kiểm tra đền bù giao trễ
+  const handleFinishOrder = async (order) => {
+    if (window.confirm("Xác nhận đơn hàng đã giao thành công?")) {
+      const res = await completeOrderWithBonus(order);
+      if (res.success) {
+        if (res.late) {
+          alert("⚠️ Đơn này giao trễ >30p. Hệ thống đã tự động tặng 1 Voucher 5k cho khách!");
+        } else {
+          alert("✅ Đơn hàng đã hoàn thành thành công!");
+        }
+      }
+    }
+  };
+
   const handleDeleteOrder = async (orderId) => {
-    if (window.confirm("Xóa đơn này khỏi danh sách hôm nay? (Vẫn lưu trong lịch sử nhưng không tính thu nhập)")) {
+    if (window.confirm("Xóa đơn này khỏi danh sách hôm nay?")) {
       await deleteOrderSoft(orderId);
     }
   };
 
-  // FIX: Đảm bảo nút "Chưa nhận tiền" gọi đúng hàm confirmPaymentStatus với tham số false
   const handleConfirmPayment = async (orderId, isPaid) => {
     try {
       await confirmPaymentStatus(orderId, isPaid);
@@ -61,7 +76,7 @@ const ManageOrders = () => {
   if (isLoading) return (
     <div className="p-20 text-center">
        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4"></div>
-       <p className="text-xs font-black uppercase text-blue-500 tracking-widest">Đang tải đơn bếp...</p>
+       <p className="text-xs font-black uppercase text-blue-500 tracking-widest">Đang đồng bộ đơn bếp...</p>
     </div>
   );
 
@@ -97,7 +112,7 @@ const ManageOrders = () => {
               {/* Top Bar */}
               <div className="px-6 py-4 bg-gray-50/50 border-b border-gray-100 flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <span className="font-mono font-black text-gray-800 text-lg">#{order.id.slice(-6)}</span>
+                  <span className="font-mono font-black text-gray-800 text-lg">#{order.id.slice(-6).toUpperCase()}</span>
                   <span className={`px-3 py-1 rounded-xl text-[9px] uppercase font-black border ${statusConfig.color}`}>
                     {statusConfig.label}
                   </span>
@@ -108,7 +123,7 @@ const ManageOrders = () => {
               </div>
 
               <div className="p-6 space-y-4 flex-1">
-                {/* FIX: Chỉ hiển thị khối thanh toán khi đơn CHƯA HỦY */}
+                {/* Khối Thanh toán */}
                 {order.status !== 'CANCELLED' && (
                   <div className={`p-4 rounded-2xl border flex items-center justify-between ${order.paymentStatus === 'WAITING_CONFIRM' ? 'bg-blue-50 border-blue-200 animate-pulse' : 'bg-gray-50 border-gray-100'}`}>
                     <div>
@@ -120,7 +135,7 @@ const ManageOrders = () => {
                     <div className="flex gap-2">
                       {order.paymentStatus !== 'PAID' ? (
                         <>
-                          <button onClick={() => handleConfirmPayment(order.id, true)} className="bg-green-600 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md shadow-green-100">Đã nhận tiền</button>
+                          <button onClick={() => handleConfirmPayment(order.id, true)} className="bg-green-600 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md">Đã nhận tiền</button>
                           <button onClick={() => handleConfirmPayment(order.id, false)} className="bg-white text-red-500 border border-red-100 px-3 py-2 rounded-xl text-[9px] font-black uppercase">Chưa nhận</button>
                         </>
                       ) : (
@@ -130,6 +145,7 @@ const ManageOrders = () => {
                   </div>
                 )}
 
+                {/* Khách xin hủy */}
                 {order.status === 'CANCEL_REQUESTED' && (
                   <div className="bg-red-50 p-4 rounded-2xl border border-red-200">
                     <p className="text-[10px] font-black text-red-600 uppercase mb-1">Lý do hủy từ khách:</p>
@@ -141,7 +157,7 @@ const ManageOrders = () => {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Khách hàng</p>
                     <p className="font-black text-gray-800 leading-none">{order.customer}</p>
@@ -149,24 +165,28 @@ const ManageOrders = () => {
                   </div>
                   <div>
                     <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Địa chỉ</p>
-                    <p className="font-medium text-gray-600 leading-tight">{order.address}</p>
+                    <p className="font-medium text-gray-600 leading-tight text-xs">{order.address}</p>
                   </div>
                 </div>
 
                 <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
                   <p className="text-[9px] font-black text-gray-400 uppercase mb-2 tracking-widest">Chi tiết món</p>
                   <p className="text-sm font-black text-gray-800 leading-relaxed">{order.items}</p>
+                  {order.note && (
+                    <div className="mt-2 pt-2 border-t border-dashed border-gray-200">
+                       <p className="text-[10px] text-orange-600 font-bold uppercase">Ghi chú: <span className="italic text-gray-600 normal-case">"{order.note}"</span></p>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Action Buttons */}
+              {/* Footer Actions */}
               <div className="px-6 py-5 bg-gray-50/30 border-t border-gray-100 flex justify-between items-center">
                 <span className="text-2xl font-black text-red-500 tracking-tighter">{order.total}</span>
                 <div className="flex gap-2">
-                  {/* FIX: Thêm nút Hủy đơn chung cho Admin nếu đơn chưa hoàn thành hoặc đã hủy */}
                   {!['COMPLETED', 'CANCELLED', 'CANCEL_REQUESTED'].includes(order.status) && (
                     <button 
-                      onClick={() => { if(window.confirm("Admin xác nhận hủy đơn này?")) handleUpdateStatus(order.id, 'CANCELLED') }}
+                      onClick={() => { if(window.confirm("Xác nhận hủy đơn?")) handleUpdateStatus(order.id, 'CANCELLED') }}
                       className="bg-white border border-red-200 text-red-500 px-4 py-3 rounded-2xl text-[10px] font-black uppercase"
                     >
                       Hủy đơn
@@ -177,10 +197,10 @@ const ManageOrders = () => {
                     <button onClick={() => handleUpdateStatus(order.id, 'PREPARING')} className="bg-blue-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-blue-100">Nhận đơn</button>
                   )}
                   {order.status === 'PREPARING' && (
-                    <button onClick={() => handleUpdateStatus(order.id, 'DELIVERING')} className="bg-orange-500 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-orange-100">Giao hàng</button>
+                    <button onClick={() => handleUpdateStatus(order.id, 'DELIVERING')} className="bg-orange-500 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-orange-100">Giao shipper</button>
                   )}
                   {order.status === 'DELIVERING' && (
-                    <button onClick={() => handleUpdateStatus(order.id, 'COMPLETED')} className="bg-green-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-green-100">Hoàn thành</button>
+                    <button onClick={() => handleFinishOrder(order)} className="bg-green-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-green-100">Hoàn thành</button>
                   )}
                 </div>
               </div>

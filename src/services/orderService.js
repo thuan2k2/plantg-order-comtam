@@ -51,7 +51,7 @@ export const createOrder = async (orderData) => {
 };
 
 /**
- * 2. CẬP NHẬT PHƯƠNG THỨC THANH TOÁN (FIX LỖI MISSING EXPORT)
+ * 2. Cập nhật phương thức thanh toán
  */
 export const updatePaymentMethod = async (orderId, method, isTransferred = false) => {
   try {
@@ -75,10 +75,9 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
 };
 
 /**
- * 3. QUẢN LÝ VOUCHER (FIX LỖI MISSING EXPORT)
+ * 3. QUẢN LÝ VOUCHER & LOGIC ĐỀN BÙ GIAO TRỄ
  */
 
-// Lấy toàn bộ danh sách Voucher (Cho Admin)
 export const getAllVouchers = async () => {
   try {
     const q = query(collection(db, VOUCHER_COL), orderBy("createdAt", "desc"));
@@ -87,6 +86,45 @@ export const getAllVouchers = async () => {
   } catch (error) {
     console.error("Lỗi getAllVouchers:", error);
     return [];
+  }
+};
+
+// Hàm hoàn thành đơn hàng và TỰ ĐỘNG KIỂM TRA GIAO TRỄ 30P
+export const completeOrderWithBonus = async (order) => {
+  try {
+    const orderRef = doc(db, COLLECTION_NAME, order.id);
+    const now = new Date();
+    
+    // 1. Cập nhật trạng thái Hoàn thành
+    await updateDoc(orderRef, {
+      status: 'COMPLETED',
+      completedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    // 2. Kiểm tra logic giao trễ (30 phút từ lúc confirmedAt)
+    if (order.confirmedAt) {
+      const confirmTime = order.confirmedAt.toDate();
+      const diffInMinutes = Math.floor((now - confirmTime) / (1000 * 60));
+
+      if (diffInMinutes >= 30) {
+        // Tự động tạo Voucher giảm 5,000đ xin lỗi khách
+        const bonusVoucher = {
+          code: `LATE${Math.floor(1000 + Math.random() * 9000)}`,
+          value: 5000,
+          type: 'CASH',
+          assignedPhone: order.phone,
+          usageLimit: 1,
+          description: "Bồi thường giao trễ hơn 30 phút",
+          createdAt: serverTimestamp()
+        };
+        await addDoc(collection(db, VOUCHER_COL), bonusVoucher);
+        return { success: true, late: true };
+      }
+    }
+    return { success: true, late: false };
+  } catch (error) {
+    return { success: false, error: error.message };
   }
 };
 
@@ -152,8 +190,23 @@ export const confirmPaymentStatus = async (orderId, isPaid) => {
 };
 
 /**
- * 5. SUBSCRIPTIONS (REAL-TIME)
+ * 5. SUBSCRIPTIONS & STATUS (REAL-TIME)
  */
+export const updateOrderStatus = async (orderId, newStatus) => {
+  try {
+    const orderRef = doc(db, COLLECTION_NAME, orderId);
+    const updateData = { status: newStatus, updatedAt: serverTimestamp() };
+    
+    // Ghi lại mốc thời gian bắt đầu làm đơn để tính 30p
+    if (newStatus === 'PREPARING') {
+      updateData.confirmedAt = serverTimestamp();
+    }
+    
+    await updateDoc(orderRef, updateData);
+    return { success: true };
+  } catch (error) { return { success: false, error: error.message }; }
+};
+
 export const subscribeToOrdersByPhone = (phone, callback) => {
   if (!phone) return () => {};
   const q = query(collection(db, COLLECTION_NAME), where("phone", "==", phone.trim()), orderBy("createdAt", "desc"));
@@ -177,14 +230,6 @@ export const subscribeToAllOrders = (callback) => {
   return onSnapshot(q, (snapshot) => {
     callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'N/A' })));
   });
-};
-
-export const updateOrderStatus = async (orderId, newStatus) => {
-  try {
-    const orderRef = doc(db, COLLECTION_NAME, orderId);
-    await updateDoc(orderRef, { status: newStatus, updatedAt: serverTimestamp() });
-    return { success: true };
-  } catch (error) { return { success: false, error: error.message }; }
 };
 
 export const deleteOrderSoft = async (orderId) => {
