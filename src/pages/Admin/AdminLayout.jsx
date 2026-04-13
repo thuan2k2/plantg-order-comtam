@@ -27,6 +27,7 @@ const AdminLayout = () => {
     }
   };
 
+  // CẬP NHẬT: Thêm mục Quản lý Voucher vào danh sách Menu
   const menuItems = [
     { path: '/admin', label: 'Tổng quan', icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
@@ -40,6 +41,9 @@ const AdminLayout = () => {
     { path: '/admin/menu', label: 'Thực đơn', icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
     )},
+    { path: '/admin/vouchers', label: 'Quản lý Voucher', icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" /></svg>
+    )},
     { path: '/admin/users', label: 'Khách hàng', icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
     )},
@@ -48,7 +52,7 @@ const AdminLayout = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex overflow-hidden">
       
-      {/* SIDEBAR - Cập nhật cơ chế co giãn */}
+      {/* SIDEBAR */}
       <aside 
         className={`bg-gray-900 text-white flex flex-col sticky top-0 h-screen transition-all duration-300 ease-in-out z-50 shadow-2xl
           ${isSidebarOpen ? 'w-64' : 'w-20'}`}
@@ -65,7 +69,6 @@ const AdminLayout = () => {
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="p-2 hover:bg-gray-800 rounded-xl transition-all active:scale-90"
           >
-            {/* Icon 3 dấu gạch (Hamburger) */}
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16m-7 6h7" />
             </svg>
@@ -93,7 +96,6 @@ const AdminLayout = () => {
                 </span>
               )}
 
-              {/* Tooltip khi đóng Sidebar */}
               {!isSidebarOpen && (
                 <div className="absolute left-full ml-4 px-3 py-2 bg-gray-800 text-white text-[9px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
                   {item.label}
@@ -118,14 +120,13 @@ const AdminLayout = () => {
 
       {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        
-        {/* Header trên cùng - Bo góc và đổ bóng mượt */}
         <header className="bg-white/80 backdrop-blur-md h-20 flex items-center justify-between px-8 z-20 border-b border-gray-100">
           <div className="flex flex-col">
             <h1 className="text-sm font-black text-gray-800 uppercase tracking-tighter">
               {isActive('/admin') && 'Bảng điều khiển hệ thống'}
               {isActive('/admin/orders') && 'Quản lý đơn bếp hôm nay'}
               {isActive('/admin/statistics') && 'Báo cáo & Lịch sử vĩnh viễn'}
+              {isActive('/admin/vouchers') && 'Quản lý kho Voucher'}
               {isActive('/admin/users') && 'Cơ sở dữ liệu khách hàng'}
               {isActive('/admin/menu') && 'Thiết lập danh mục thực đơn'}
             </h1>
@@ -143,7 +144,6 @@ const AdminLayout = () => {
           </div>
         </header>
 
-        {/* Khu vực nội dung chính - Bo góc cực đại ở Container ngoài */}
         <div className="flex-1 overflow-auto bg-gray-50/50 p-6">
           <div className="max-w-[1600px] mx-auto animate-in fade-in duration-700">
             <Outlet />
@@ -151,7 +151,6 @@ const AdminLayout = () => {
         </div>
       </main>
 
-      {/* Hiệu ứng mờ nền khi ở Mobile (Nếu bạn phát triển thêm Mobile Sidebar) */}
       {!isSidebarOpen && <div className="fixed inset-0 bg-black/5 z-40 md:hidden pointer-events-none"></div>}
     </div>
   );

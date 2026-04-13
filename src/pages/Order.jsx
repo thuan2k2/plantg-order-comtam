@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { createOrder, validateVoucher } from '../services/orderService';
+import { createOrder, validateVoucher, getMyVouchers } from '../services/orderService';
 import { getUserByPhone } from '../services/authService'; 
 import { subscribeToMenu } from '../services/menuService';        
 
@@ -19,12 +19,14 @@ const Order = () => {
   const [note, setNote] = useState('');
   const [recentPhones, setRecentPhones] = useState([]);
 
-  // --- TRẠNG THÁI MỚI: VOUCHER & PHÍ SHIP ---
-  const [isSubmitting, setIsSubmitting] = useState(false); // Chống spam
-  const [voucherCode, setVoucherCode] = useState(''); // Mã nhập tay
-  const [appliedVoucher, setAppliedVoucher] = useState(null); // Voucher giảm giá
-  const [appliedFreeship, setAppliedFreeship] = useState(null); // Voucher freeship
-  const [shippingFee, setShippingFee] = useState(5000); // Mặc định 5,000đ
+  // --- TRẠNG THÁI VOUCHER & PHÍ SHIP NÂNG CAO ---
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [voucherCode, setVoucherCode] = useState('');
+  const [appliedVoucher, setAppliedVoucher] = useState(null);
+  const [appliedFreeship, setAppliedFreeship] = useState(null);
+  const [shippingFee, setShippingFee] = useState(5000);
+  const [myVouchers, setMyVouchers] = useState([]); // Kho voucher của riêng SĐT
+  const [showVoucherList, setShowVoucherList] = useState(false); // Hiển thị Modal danh sách mã
 
   // 1. Lắng nghe Thực đơn Real-time
   useEffect(() => {
@@ -38,22 +40,30 @@ const Order = () => {
     return () => unsubscribe();
   }, [userPhoneParam]);
 
-  // 2. Logic Xử lý Đặt lại đơn và Tự động áp Voucher khi có SĐT
+  // 2. LOGIC TỰ ĐỘNG ÁP FREESHIP5K & TẢI KHO VOUCHER CỦA KHÁCH
   useEffect(() => {
-    const handleAutoVoucher = async () => {
-      if (customerInfo?.phone) {
-        // Tự động kiểm tra Voucher Freeship gán cho SĐT này
-        const resFs = await validateVoucher('FREESHIP', customerInfo.phone);
-        if (resFs.valid) {
-          setAppliedFreeship(resFs.voucher);
+    const handleVoucherSync = async () => {
+      if (username && username.trim().length >= 10) {
+        const data = await getMyVouchers(username.trim());
+        setMyVouchers(data);
+
+        // LƯU Ý: Chỉ tự động áp mã FREESHIP5K nếu SĐT này đang sở hữu
+        const autoFs = data.find(v => v.code === 'FREESHIP5K' && v.usageLimit > 0);
+        if (autoFs) {
+          setAppliedFreeship(autoFs);
           setShippingFee(0);
         } else {
+          setAppliedFreeship(null);
           setShippingFee(5000);
         }
+      } else {
+        setMyVouchers([]);
+        setAppliedFreeship(null);
+        setShippingFee(5000);
       }
     };
-    handleAutoVoucher();
-  }, [customerInfo]);
+    handleVoucherSync();
+  }, [username]);
 
   // 3. Tự động tìm thông tin khách hàng
   useEffect(() => {
@@ -69,19 +79,16 @@ const Order = () => {
     return () => clearTimeout(timer);
   }, [username]);
 
-  // --- LOGIC CẬP NHẬT GIỎ HÀNG + GIỚI HẠN SỐ LƯỢNG ---
+  // --- LOGIC GIỎ HÀNG ---
   const updateQuantity = (item, delta) => {
     setCart(prev => {
       const currentItem = prev[item.id];
       const currentQty = currentItem ? currentItem.qty : 0;
-      
-      // Kiểm tra giới hạn mua tối đa từ Admin
-      const maxAllowed = item.maxQty || 10; // Mặc định 10 nếu admin không set
+      const maxAllowed = item.maxQty || 10;
       if (delta > 0 && currentQty >= maxAllowed) {
         alert(`Món này chỉ được mua tối đa ${maxAllowed} phần!`);
         return prev;
       }
-
       const newQty = currentQty + delta;
       if (newQty <= 0) {
         const { [item.id]: removed, ...rest } = prev;
@@ -94,7 +101,6 @@ const Order = () => {
   const cartArray = Object.values(cart);
   const totalItems = cartArray.reduce((sum, item) => sum + item.qty, 0);
 
-  // --- TÍNH TOÁN TỔNG TIỀN PHỨC TẠP ---
   const getSubTotal = () => {
     return cartArray.reduce((total, item) => {
       const price = parseInt(item.price.replace(/\D/g, '')) || 0;
@@ -105,13 +111,16 @@ const Order = () => {
   const getFinalTotal = () => {
     const subTotal = getSubTotal();
     const discount = appliedVoucher ? appliedVoucher.value : 0;
-    return subTotal + shippingFee - discount;
+    const total = subTotal + shippingFee - discount;
+    return total > 0 ? total : 0;
   };
 
-  // Hàm áp dụng mã voucher thủ công
-  const handleApplyVoucher = async () => {
-    if (!voucherCode.trim()) return;
-    const res = await validateVoucher(voucherCode, username);
+  // Áp dụng mã thủ công
+  const handleApplyVoucher = async (codeOverride = null) => {
+    const targetCode = codeOverride || voucherCode;
+    if (!targetCode.trim()) return;
+
+    const res = await validateVoucher(targetCode.trim().toUpperCase(), username);
     if (res.valid) {
       if (res.voucher.type === 'FREESHIP') {
         setAppliedFreeship(res.voucher);
@@ -119,18 +128,18 @@ const Order = () => {
       } else {
         setAppliedVoucher(res.voucher);
       }
-      alert("Áp dụng mã thành công!");
+      alert(`Đã áp dụng mã: ${res.voucher.code}`);
+      setVoucherCode('');
     } else {
       alert(res.msg);
     }
   };
 
   const handleOrderSubmit = async () => {
-    if (isSubmitting) return; // CHỐNG SPAM
-    
+    if (isSubmitting) return;
     setIsSubmitting(true);
-    const itemsString = cartArray.map(item => `${item.qty}x ${item.name}`).join(', ');
     
+    const itemsString = cartArray.map(item => `${item.qty}x ${item.name}`).join(', ');
     const orderData = {
       phone: username.trim(),
       customer: customerInfo.name, 
@@ -141,7 +150,7 @@ const Order = () => {
       discount: appliedVoucher ? appliedVoucher.value : 0,
       total: getFinalTotal().toLocaleString('vi-VN') + 'đ',
       note: note.trim(),
-      // Gửi kèm ID voucher để service trừ lượt dùng
+      // Gửi kèm ID Voucher để trừ lượt dùng (Trừ mã giảm giá hoặc Freeship)
       appliedVoucherId: appliedVoucher?.id || appliedFreeship?.id || null,
       currentUsageLimit: appliedVoucher?.usageLimit || appliedFreeship?.usageLimit || 0
     };
@@ -153,7 +162,7 @@ const Order = () => {
         navigate(`/checkorder?user=${username.trim()}`);
       }
     } catch (error) {
-      alert('Lỗi kết nối. Vui lòng thử lại!');
+      alert('Lỗi đặt đơn. Vui lòng thử lại!');
     } finally {
       setIsSubmitting(false);
     }
@@ -181,16 +190,42 @@ const Order = () => {
         </div>
       </div>
 
-      {/* Nhận diện khách hàng */}
+      {/* SĐT khách hàng */}
       <div className="bg-white p-6 mb-4 rounded-b-[2.5rem] shadow-sm">
         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">SĐT đặt hàng *</label>
         <input type="tel" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="0333 xxx xxx" className="w-full bg-gray-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-blue-600 outline-none transition-all" />
         {customerInfo && (
           <div className="mt-4 p-4 bg-blue-50 rounded-2xl border border-blue-100 animate-in fade-in">
             <div className="text-xs font-black text-blue-700 uppercase">Chào {customerInfo.name}!</div>
-            <div className="text-[9px] text-blue-500 font-bold mt-1 opacity-70 italic">📍 {customerInfo.address}</div>
+            <div className="text-[9px] text-blue-500 font-bold mt-1 opacity-70 italic tracking-tighter">📍 {customerInfo.address}</div>
           </div>
         )}
+      </div>
+
+      {/* NHẬP VOUCHER & KIỂM TRA MÃ */}
+      <div className="px-4 mb-6">
+        <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100">
+           <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3 ml-1">Ưu đãi giảm giá</p>
+           <div className="flex gap-2 mb-3">
+              <input 
+                type="text" value={voucherCode} 
+                onChange={e => setVoucherCode(e.target.value.toUpperCase())} 
+                placeholder="Nhập mã code..." 
+                className="flex-1 bg-gray-50 border-none rounded-xl px-4 py-3 text-xs font-bold outline-none" 
+              />
+              <button onClick={() => handleApplyVoucher()} className="bg-gray-800 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase">Áp dụng</button>
+           </div>
+           
+           {/* Nút kiểm tra kho mã của riêng SĐT */}
+           {myVouchers.length > 0 && (
+             <button 
+               onClick={() => setShowVoucherList(true)}
+               className="w-full py-2.5 bg-blue-50 text-blue-600 rounded-xl text-[9px] font-black uppercase tracking-widest border border-blue-100 active:scale-95 transition-all"
+             >
+               🎁 Bạn có {myVouchers.length} mã khả dụng. Xem ngay →
+             </button>
+           )}
+        </div>
       </div>
 
       {/* Menu List */}
@@ -199,47 +234,70 @@ const Order = () => {
           <div key={item.id} className="bg-white p-4 rounded-[2rem] flex items-center gap-4 shadow-sm border border-gray-50">
             <img src={item.image || 'https://via.placeholder.com/150'} className="w-24 h-24 rounded-[1.5rem] object-cover" alt={item.name} />
             <div className="flex-1">
-              <h3 className="text-sm font-black text-gray-800 uppercase tracking-tight">{item.name}</h3>
-              <p className="text-[9px] text-gray-400 font-bold mt-1 line-clamp-1">{item.description}</p>
+              <h3 className="text-sm font-black text-gray-800 uppercase tracking-tight leading-tight">{item.name}</h3>
+              <p className="text-[9px] text-gray-400 font-bold mt-1 line-clamp-1 italic">{item.description}</p>
               {item.maxQty && <span className="text-[8px] bg-orange-50 text-orange-500 px-2 py-0.5 rounded-full font-black uppercase mt-1 inline-block">Tối đa {item.maxQty} phần</span>}
-              <p className="text-base font-black text-red-500 mt-2">{item.price}</p>
+              <p className="text-base font-black text-red-500 mt-2 tracking-tighter">{item.price}</p>
             </div>
             <div className="flex flex-col items-center gap-1 bg-gray-50 p-1.5 rounded-2xl">
-              <button onClick={() => updateQuantity(item, 1)} className="w-9 h-9 bg-blue-600 rounded-xl text-white font-black">+</button>
-              <span className="text-xs font-black">{cart[item.id]?.qty || 0}</span>
+              <button onClick={() => updateQuantity(item, 1)} className="w-9 h-9 bg-blue-600 rounded-xl text-white font-black shadow-md shadow-blue-100">+</button>
+              <span className="text-xs font-black py-1">{cart[item.id]?.qty || 0}</span>
               <button onClick={() => updateQuantity(item, -1)} className="w-9 h-9 bg-white border border-gray-200 rounded-xl text-gray-400 font-black">-</button>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Thanh toán & Voucher */}
+      {/* Thanh Giỏ hàng nổi */}
       {totalItems > 0 && (
         <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/90 backdrop-blur-xl border-t border-gray-100 z-40 shadow-2xl rounded-t-[2.5rem]">
-          <div className="flex gap-2 mb-4">
-            <input 
-              type="text" 
-              value={voucherCode} 
-              onChange={e => setVoucherCode(e.target.value)} 
-              placeholder="Nhập mã giảm giá..." 
-              className="flex-1 bg-gray-50 border-none rounded-xl px-4 py-3 text-xs font-bold outline-none" 
-            />
-            <button onClick={handleApplyVoucher} className="bg-gray-800 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase">Áp dụng</button>
-          </div>
-          <button onClick={() => setShowConfirm(true)} disabled={isSubmitting} className={`w-full ${isSubmitting ? 'bg-gray-400' : 'bg-blue-600'} text-white font-black py-5 rounded-[2rem] flex items-center justify-between px-8 shadow-xl shadow-blue-200`}>
+          <button onClick={() => setShowConfirm(true)} disabled={isSubmitting} className={`w-full ${isSubmitting ? 'bg-gray-400' : 'bg-blue-600'} text-white font-black py-5 rounded-[2rem] flex items-center justify-between px-8 shadow-xl shadow-blue-200 active:scale-95 transition-all`}>
             <span className="text-[10px] uppercase tracking-widest">{totalItems} món • {getFinalTotal().toLocaleString()}đ</span>
-            <span className="text-xs font-black uppercase uppercase tracking-widest">{isSubmitting ? 'ĐANG XỬ LÝ...' : 'TIẾP TỤC →'}</span>
+            <span className="text-xs font-black uppercase tracking-widest">TIẾP TỤC →</span>
           </button>
         </div>
       )}
 
-      {/* POPUP XÁC NHẬN CHUYÊN SÂU */}
+      {/* MODAL DANH SÁCH VOUCHER CỦA KHÁCH */}
+      {showVoucherList && (
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-sm font-black uppercase text-gray-800 tracking-widest">Ví Voucher của bạn</h3>
+              <button onClick={() => setShowVoucherList(false)} className="w-10 h-10 flex items-center justify-center bg-gray-50 rounded-full text-gray-400">&times;</button>
+            </div>
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-2 no-scrollbar">
+              {myVouchers.filter(v => v.usageLimit > 0).map(v => (
+                <button 
+                  key={v.id}
+                  onClick={() => {
+                    handleApplyVoucher(v.code);
+                    setShowVoucherList(false);
+                  }}
+                  className="w-full flex justify-between items-center p-5 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-left"
+                >
+                  <div>
+                    <p className="font-black text-gray-800 text-sm tracking-widest uppercase">{v.code}</p>
+                    <p className="text-[10px] text-blue-600 font-bold uppercase mt-1">
+                      {v.type === 'FREESHIP' ? 'Freeship vận chuyển' : `Giảm ngay -${v.value.toLocaleString()}đ`}
+                    </p>
+                    <p className="text-[9px] text-gray-400 mt-1 font-medium italic">Sở hữu: {v.usageLimit} lượt dùng</p>
+                  </div>
+                  <div className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase">Dùng</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP XÁC NHẬN ĐƠN HÀNG */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10">
-            <h2 className="text-xl font-black text-gray-800 uppercase tracking-tighter mb-4">Xác nhận đơn hàng</h2>
+            <h2 className="text-xl font-black text-gray-800 uppercase tracking-tighter mb-4">Xác nhận đơn</h2>
             
-            <div className="space-y-3 mb-6 max-h-40 overflow-y-auto pr-2 border-b border-dashed pb-4">
+            <div className="space-y-3 mb-6 max-h-40 overflow-y-auto pr-2 border-b border-dashed border-gray-100 pb-5">
               {cartArray.map(item => (
                 <div key={item.id} className="flex justify-between text-sm">
                   <span className="font-bold text-gray-600">{item.qty}x {item.name}</span>
@@ -249,30 +307,30 @@ const Order = () => {
             </div>
 
             <div className="space-y-2 mb-6">
-              <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase">
+              <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest">
                 <span>Tiền cơm:</span><span>{getSubTotal().toLocaleString()}đ</span>
               </div>
-              <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase">
+              <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest">
                 <span>Phí vận chuyển:</span>
-                <span className={shippingFee === 0 ? "text-green-500" : ""}>{shippingFee === 0 ? "MIỄN PHÍ" : "5,000đ"}</span>
+                <span className={shippingFee === 0 ? "text-green-500 font-black" : ""}>{shippingFee === 0 ? "MIỄN PHÍ" : "5,000đ"}</span>
               </div>
-              {appliedVoucher && (
-                <div className="flex justify-between text-[11px] font-black text-green-600 uppercase">
-                  <span>Voucher giảm giá:</span><span>-{appliedVoucher.value.toLocaleString()}đ</span>
+              {(appliedVoucher || (appliedFreeship && appliedFreeship.code !== 'FREESHIP5K')) && (
+                <div className="flex justify-between text-[11px] font-black text-green-600 uppercase tracking-widest">
+                  <span>Giảm giá:</span><span>-{ (appliedVoucher?.value || 0).toLocaleString() }đ</span>
                 </div>
               )}
-              <div className="flex justify-between items-center pt-2 border-t mt-2">
-                <span className="text-xs font-black text-gray-800 uppercase">Tổng cộng:</span>
-                <span className="text-2xl font-black text-red-500 tracking-tighter">{getFinalTotal().toLocaleString()}đ</span>
+              <div className="flex justify-between items-center pt-3 border-t border-gray-100 mt-2">
+                <span className="text-xs font-black text-gray-800 uppercase tracking-widest">Thanh toán:</span>
+                <span className="text-3xl font-black text-red-500 tracking-tighter">{getFinalTotal().toLocaleString()}đ</span>
               </div>
             </div>
 
-            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú thêm cho bếp..." className="w-full p-4 bg-gray-50 rounded-2xl text-xs mb-6 outline-none" rows="2" />
+            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú cho bếp (VD: Không hành...)" className="w-full p-4 bg-gray-50 rounded-2xl text-xs mb-6 outline-none font-bold" rows="2" />
 
             <div className="flex gap-4">
-              <button onClick={() => setShowConfirm(false)} className="flex-1 py-5 text-[10px] font-black text-gray-400 uppercase bg-gray-50 rounded-2xl">Quay lại</button>
-              <button onClick={handleOrderSubmit} disabled={isSubmitting} className="flex-[2] py-5 bg-blue-600 text-white text-[10px] font-black rounded-2xl shadow-xl shadow-blue-100 uppercase tracking-widest">
-                {isSubmitting ? 'ĐANG ĐẶT...' : 'XÁC NHẬN ĐẶT'}
+              <button onClick={() => setShowConfirm(false)} className="flex-1 py-5 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 rounded-2xl active:scale-95">Quay lại</button>
+              <button onClick={handleOrderSubmit} disabled={isSubmitting} className="flex-[2] bg-blue-600 text-white text-[10px] font-black rounded-2xl shadow-xl shadow-blue-100 uppercase tracking-[0.2em] active:scale-95 transition-all">
+                {isSubmitting ? 'ĐANG XỬ LÝ...' : 'XÁC NHẬN ĐẶT'}
               </button>
             </div>
           </div>
