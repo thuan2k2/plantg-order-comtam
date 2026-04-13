@@ -12,7 +12,9 @@ import {
   where, 
   updateDoc, 
   doc, 
-  deleteDoc, // Bổ sung import deleteDoc
+  getDoc,
+  setDoc,
+  deleteDoc, 
   serverTimestamp, 
   orderBy,
   onSnapshot 
@@ -23,7 +25,13 @@ const auth = getAuth(app);
 const COLLECTION_NAME = 'users';
 
 /**
- * 1. Đăng ký tài khoản khách hàng mới
+ * ==========================================
+ * PHẦN 1: QUẢN LÝ TÀI KHOẢN KHÁCH HÀNG
+ * ==========================================
+ */
+
+/**
+ * 1. Đăng ký tài khoản khách hàng mới (Đã thêm Passcode & Ví)
  */
 export const registerUser = async (userData) => {
   try {
@@ -42,10 +50,16 @@ export const registerUser = async (userData) => {
       status: 'ACTIVE', 
       totalOrders: 0,
       createdAt: serverTimestamp(),
-      isBanned: false, // Bổ sung trường mặc định
-      banUntil: null
+      isBanned: false, 
+      banUntil: null,
+      
+      // BỔ SUNG BẢO MẬT & VÍ TÀI KHOẢN
+      passcode: "123456", // Passcode mặc định để giao dịch
+      walletBalance: 0,    // Số dư ví (VNĐ)
+      avatarUrl: ""       // Ảnh đại diện
     };
 
+    // Sử dụng addDoc để tạo ID tự động, hoặc setDoc để dùng SĐT làm ID (Khuyên dùng SĐT làm ID để query nhanh hơn)
     const docRef = await addDoc(usersRef, newUser);
     return { success: true, id: docRef.id };
   } catch (error) {
@@ -55,47 +69,7 @@ export const registerUser = async (userData) => {
 };
 
 /**
- * 2. ĐĂNG NHẬP ADMIN (Firebase Auth)
- */
-export const loginAdmin = async (email, password) => {
-  try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
-    localStorage.setItem('adminToken', 'true');
-    return { success: true, user };
-  } catch (error) {
-    console.error("Lỗi đăng nhập Admin:", error);
-    let errorMessage = "Lỗi hệ thống";
-    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-      errorMessage = "Email hoặc mật khẩu không chính xác";
-    }
-    return { success: false, error: errorMessage };
-  }
-};
-
-/**
- * 3. ĐĂNG XUẤT ADMIN
- */
-export const logoutAdmin = async () => {
-  try {
-    await signOut(auth);
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('adminInfo');
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-};
-
-/**
- * 4. THEO DÕI TRẠNG THÁI ĐĂNG NHẬP
- */
-export const subscribeToAuth = (callback) => {
-  return onAuthStateChanged(auth, callback);
-};
-
-/**
- * 5. Lấy thông tin khách bằng SĐT (Có kiểm tra trạng thái cấm)
+ * 2. Lấy thông tin khách bằng SĐT (Có kiểm tra trạng thái cấm)
  */
 export const getUserByPhone = async (phone) => {
   try {
@@ -132,8 +106,145 @@ export const getUserByPhone = async (phone) => {
   }
 };
 
+
 /**
- * 6. LẤY TOÀN BỘ KHÁCH HÀNG (Dạng tĩnh)
+ * ==========================================
+ * PHẦN 2: BẢO MẬT & XÁC THỰC PASSCODE KHÁCH HÀNG
+ * ==========================================
+ */
+
+/**
+ * Xác thực Passcode (Dùng khi thanh toán ví hoặc đổi thông tin cá nhân)
+ */
+export const verifyPasscode = async (phone, inputPasscode) => {
+  try {
+    const q = query(collection(db, COLLECTION_NAME), where("username", "==", phone.trim()));
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) return false;
+    const user = snapshot.docs[0].data();
+    
+    // Kiểm tra Passcode
+    return user.passcode === inputPasscode;
+  } catch (e) {
+    return false;
+  }
+};
+
+/**
+ * Cập nhật hồ sơ có yêu cầu Passcode
+ */
+export const updateCustomerSecure = async (phone, newData, inputPasscode) => {
+  const isValid = await verifyPasscode(phone, inputPasscode);
+  if (!isValid) return { success: false, error: "Mã Passcode không chính xác!" };
+
+  try {
+    const q = query(collection(db, COLLECTION_NAME), where("username", "==", phone.trim()));
+    const snapshot = await getDocs(q);
+    const userId = snapshot.docs[0].id;
+    
+    const userRef = doc(db, COLLECTION_NAME, userId);
+    await updateDoc(userRef, { ...newData, updatedAt: serverTimestamp() });
+    
+    return { success: true };
+  } catch (e) { 
+    return { success: false, error: e.message }; 
+  }
+};
+
+/**
+ * Đổi mật khẩu/Passcode mới
+ */
+export const changeCustomerPasscode = async (phone, oldPasscode, newPasscode) => {
+  const isValid = await verifyPasscode(phone, oldPasscode);
+  if (!isValid) return { success: false, error: "Mã Passcode hiện tại không chính xác!" };
+
+  try {
+    const q = query(collection(db, COLLECTION_NAME), where("username", "==", phone.trim()));
+    const snapshot = await getDocs(q);
+    const userId = snapshot.docs[0].id;
+    
+    const userRef = doc(db, COLLECTION_NAME, userId);
+    await updateDoc(userRef, { passcode: newPasscode, updatedAt: serverTimestamp() });
+    
+    return { success: true };
+  } catch (e) { 
+    return { success: false, error: e.message }; 
+  }
+};
+
+
+/**
+ * ==========================================
+ * PHẦN 3: QUẢN LÝ ADMIN & QUYỀN TRUY CẬP
+ * ==========================================
+ */
+
+/**
+ * ĐĂNG NHẬP ADMIN (Firebase Auth)
+ */
+export const loginAdmin = async (email, password) => {
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+    localStorage.setItem('adminToken', 'true');
+    return { success: true, user };
+  } catch (error) {
+    console.error("Lỗi đăng nhập Admin:", error);
+    let errorMessage = "Lỗi hệ thống";
+    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+      errorMessage = "Email hoặc mật khẩu không chính xác";
+    }
+    return { success: false, error: errorMessage };
+  }
+};
+
+/**
+ * ĐĂNG XUẤT ADMIN
+ */
+export const logoutAdmin = async () => {
+  try {
+    await signOut(auth);
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminInfo');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * THEO DÕI TRẠNG THÁI ĐĂNG NHẬP ADMIN
+ */
+export const subscribeToAuth = (callback) => {
+  return onAuthStateChanged(auth, callback);
+};
+
+/**
+ * Admin cấp lại Passcode cho khách (Khi khách quên mật khẩu)
+ */
+export const resetPasscodeByAdmin = async (userId, newPasscode) => {
+  try {
+    const userRef = doc(db, COLLECTION_NAME, userId);
+    await updateDoc(userRef, { 
+      passcode: newPasscode,
+      updatedAt: serverTimestamp()
+    });
+    return { success: true };
+  } catch (e) { 
+    return { success: false, error: e.message }; 
+  }
+};
+
+
+/**
+ * ==========================================
+ * PHẦN 4: LẤY VÀ LẮNG NGHE DỮ LIỆU DANH SÁCH
+ * ==========================================
+ */
+
+/**
+ * LẤY TOÀN BỘ KHÁCH HÀNG (Dạng tĩnh)
  */
 export const getAllUsers = async () => {
   try {
@@ -153,7 +264,7 @@ export const getAllUsers = async () => {
 };
 
 /**
- * 7. LẮNG NGHE KHÁCH HÀNG (Real-time)
+ * LẮNG NGHE KHÁCH HÀNG (Real-time)
  */
 export const subscribeToAllUsers = (callback) => {
   const usersRef = collection(db, COLLECTION_NAME);
@@ -172,7 +283,7 @@ export const subscribeToAllUsers = (callback) => {
 };
 
 /**
- * 8. Cập nhật thông tin khách hàng
+ * Cập nhật thông tin khách hàng (Từ Admin)
  */
 export const updateUserProfile = async (userId, updateData) => {
   try {
@@ -189,7 +300,7 @@ export const updateUserProfile = async (userId, updateData) => {
 };
 
 /**
- * 9. Xóa người dùng vĩnh viễn khỏi Firebase
+ * Xóa người dùng vĩnh viễn khỏi Firebase
  */
 export const deleteUser = async (userId) => {
   try {
@@ -203,7 +314,7 @@ export const deleteUser = async (userId) => {
 };
 
 /**
- * 10. Cập nhật trạng thái Cấm / Gỡ cấm người dùng
+ * Cập nhật trạng thái Cấm / Gỡ cấm người dùng
  */
 export const updateUserBanStatus = async (userId, banData) => {
   try {
