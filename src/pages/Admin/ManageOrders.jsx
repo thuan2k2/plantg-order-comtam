@@ -57,10 +57,8 @@ const ManageOrders = () => {
       const currentPendingCount = data.filter(o => o.status === 'PENDING').length;
 
       // 2. LOGIC PHÁT ÂM THANH
-      // Chỉ kêu khi: Không phải lần load đầu tiên VÀ có thêm đơn PENDING mới
       if (!isInitialLoad.current && currentPendingCount > prevPendingCount.current) {
         try {
-          // Play âm thanh từ thư mục public
           const audio = new Audio('/new-order.mp3');
           audio.play().catch(e => console.warn("Trình duyệt chặn autoplay âm thanh:", e));
         } catch (error) {
@@ -91,7 +89,14 @@ const ManageOrders = () => {
     if (window.confirm("Xác nhận đơn hàng đã giao thành công?")) {
       const res = await completeOrderWithBonus(order);
       if (res.success) {
-        alert("✅ Đơn hàng đã hoàn thành thành công!");
+        // Thông báo chi tiết hơn nếu có nhận Xu
+        if (res.earnedXu > 0) {
+          alert(`✅ Đơn hàng hoàn thành!\nKhách hàng đã được tích thêm +${res.earnedXu} Xu.`);
+        } else {
+          alert("✅ Đơn hàng đã hoàn thành thành công!");
+        }
+      } else {
+        alert("❌ Lỗi: " + res.error);
       }
     }
   };
@@ -177,6 +182,9 @@ const ManageOrders = () => {
           // Logic xác định đơn có bị trễ hay không
           const isProcessing = order.status === 'PREPARING' || order.status === 'DELIVERING';
           const isLate = isProcessing && order.confirmedAt && (now > (order.confirmedAt.toDate().getTime() + 30 * 60 * 1000));
+          
+          // Kiểm tra xem đơn này có thanh toán bằng ví không
+          const isWalletPayment = order.paymentMethod === 'WALLET';
 
           return (
             <div key={order.id} className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col relative group">
@@ -187,7 +195,7 @@ const ManageOrders = () => {
                 isActive={isProcessing} 
               />
 
-              {/* Lớp bọc nội dung (để không bị đường viền SVG đè lên) */}
+              {/* Lớp bọc nội dung */}
               <div className="relative z-10 flex flex-col h-full">
                 
                 {/* Vạch màu trạng thái bên trái */}
@@ -213,17 +221,22 @@ const ManageOrders = () => {
                 </div>
 
                 <div className="p-6 pl-8 space-y-4 flex-1">
+                  
                   {/* Khối Thanh toán */}
                   {order.status !== 'CANCELLED' && (
-                    <div className={`p-4 rounded-2xl border flex items-center justify-between ${order.paymentStatus === 'WAITING_CONFIRM' ? 'bg-blue-50 border-blue-200 animate-pulse' : 'bg-gray-50 border-gray-100'}`}>
+                    <div className={`p-4 rounded-2xl border flex items-center justify-between 
+                      ${isWalletPayment ? 'bg-green-50 border-green-200' : (order.paymentStatus === 'WAITING_CONFIRM' ? 'bg-blue-50 border-blue-200 animate-pulse' : 'bg-gray-50 border-gray-100')}
+                    `}>
                       <div>
                         <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Thanh toán</p>
-                        <p className="text-xs font-black text-gray-800 uppercase">
-                          {order.paymentMethod === 'TRANSFER' ? '🏦 Chuyển khoản' : '💵 Tiền mặt'}
+                        <p className={`text-xs font-black uppercase ${isWalletPayment ? 'text-green-600' : 'text-gray-800'}`}>
+                          {isWalletPayment ? '💳 Ví Plant G' : (order.paymentMethod === 'TRANSFER' ? '🏦 Chuyển khoản' : '💵 Tiền mặt')}
                         </p>
                       </div>
                       <div className="flex gap-2">
-                        {order.paymentStatus !== 'PAID' ? (
+                        {isWalletPayment ? (
+                           <span className="text-green-600 font-black text-[10px] uppercase flex items-center gap-1">✓ Đã trừ ví</span>
+                        ) : order.paymentStatus !== 'PAID' ? (
                           <div className="flex flex-col gap-1">
                             <button onClick={() => handleConfirmPayment(order.id, true)} className="bg-green-600 text-white px-2 py-1 rounded-lg text-[8px] font-black uppercase shadow-md hover:bg-green-700">Nhận tiền</button>
                             <button onClick={() => handleConfirmPayment(order.id, false)} className="bg-white text-red-500 border border-red-100 px-2 py-1 rounded-lg text-[8px] font-black uppercase hover:bg-red-50">Chưa nhận</button>
@@ -273,7 +286,7 @@ const ManageOrders = () => {
                   </div>
                 </div>
 
-                {/* 2. KHỐI XỬ LÝ BỒI THƯỜNG KHI ĐƠN TRỄ */}
+                {/* KHỐI XỬ LÝ BỒI THƯỜNG KHI ĐƠN TRỄ */}
                 { isLate && !order.lateVoucherStatus && (
                   <div className="mx-6 mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl animate-pulse">
                     <p className="text-[10px] font-black text-red-600 uppercase text-center mb-3">
@@ -319,7 +332,19 @@ const ManageOrders = () => {
 
                 {/* Footer Actions */}
                 <div className="pl-6 px-4 py-4 bg-gray-50/30 border-t border-gray-100 flex flex-wrap justify-between items-center gap-3 rounded-b-[2.5rem]">
-                  <span className="text-xl font-black text-red-500 tracking-tighter">{order.total}</span>
+                  
+                  {/* HIỂN THỊ TỔNG TIỀN THEO HÌNH THỨC */}
+                  <div className="flex flex-col">
+                    <span className={`text-xl font-black tracking-tighter ${isWalletPayment ? 'text-gray-400 line-through' : 'text-red-500'}`}>
+                      {order.total}
+                    </span>
+                    {isWalletPayment && (
+                      <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md uppercase mt-1">
+                        Thu 0đ
+                      </span>
+                    )}
+                  </div>
+
                   <div className="flex gap-2">
                     {!['COMPLETED', 'CANCELLED', 'CANCEL_REQUESTED'].includes(order.status) && (
                       <button 

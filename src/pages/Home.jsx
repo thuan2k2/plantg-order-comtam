@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, onSnapshot } from 'firebase/firestore'; // Dùng onSnapshot thay vì getDoc
+import { doc, onSnapshot } from 'firebase/firestore'; 
 import { db } from '../firebase/config';
 import UsernamePopup from '../components/UsernamePopup';
 import { useSettings } from '../contexts/SettingsContext'; 
@@ -15,6 +15,9 @@ const Home = () => {
   const [savedPhone, setSavedPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [showThemeMenu, setShowThemeMenu] = useState(false);
+
+  // MỚI: State lưu trữ Xu tích lũy
+  const [totalXu, setTotalXu] = useState(0);
 
   const [sysConfig, setSysConfig] = useState({
     isOpen: true,
@@ -32,7 +35,7 @@ const Home = () => {
       console.error("Lỗi lắng nghe cấu hình:", error);
     });
 
-    // 2. Logic đồng bộ thông tin khách hàng (Chỉ chạy 1 lần khi load)
+    // 2. Logic đồng bộ thông tin khách hàng và Lắng nghe Xu Real-time
     const syncWithFirebase = async () => {
       const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
       const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
@@ -41,6 +44,15 @@ const Home = () => {
         const phone = savedPhones[0];
         setSavedPhone(phone);
         setHasOrderedBefore(true);
+
+        // LẮNG NGHE XU THEO THỜI GIAN THỰC
+        const unsubUser = onSnapshot(doc(db, 'users', phone), (snap) => {
+          if (snap.exists()) {
+            setTotalXu(snap.data().totalXu || 0);
+            // Cập nhật lại tên nếu có thay đổi từ Admin
+            if (snap.data().fullName) setCustomerName(snap.data().fullName);
+          }
+        });
 
         try {
           if (!userProfile.fullName) {
@@ -61,13 +73,18 @@ const Home = () => {
           alert(error.message);
           handleLogoutCustomer(false); 
         }
+
+        return unsubUser; // Trả về để dọn dẹp sau
       }
     };
 
-    syncWithFirebase();
+    const cleanupUser = syncWithFirebase();
 
     // Cleanup function để hủy lắng nghe khi thoát Component
-    return () => unsubConfig();
+    return () => {
+      unsubConfig();
+      if (typeof cleanupUser === 'function') cleanupUser();
+    };
   }, []);
 
   const handleLogoutCustomer = (confirm = true) => {
@@ -77,6 +94,7 @@ const Home = () => {
       setHasOrderedBefore(false);
       setSavedPhone('');
       setCustomerName('');
+      setTotalXu(0);
       window.location.reload(); 
     }
   };
@@ -101,8 +119,6 @@ const Home = () => {
 
       {/* TOP BAR: THIẾT LẬP */}
       <div className="absolute top-6 right-6 flex gap-3 z-50">
-        
-        {/* Nút Cài đặt Cá nhân (Chỉ hiện khi đã đăng nhập) */}
         {hasOrderedBefore && (
           <button 
             onClick={() => navigate('/settings')}
@@ -169,25 +185,44 @@ const Home = () => {
         </div>
       </div>
 
-      {/* CUSTOMER GREETING */}
-      <div className="w-full max-w-xs mb-10">
+      {/* CUSTOMER GREETING & XU REWARDS */}
+      <div className="w-full max-w-xs mb-10 flex flex-col items-center">
         {hasOrderedBefore ? (
-          <div className="bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-orange-100 dark:border-gray-700 text-center relative overflow-hidden transition-colors group">
-            <div className="absolute top-0 right-0 w-12 h-12 bg-orange-50 dark:bg-gray-700 rounded-bl-full opacity-50 transition-all group-hover:scale-150"></div>
-            
-            <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.2em] mb-1">Thành viên thân thiết</p>
-            <h2 className="text-lg font-black text-gray-800 dark:text-white truncate transition-colors">
-                Chào mừng {customerName || 'Bạn'}!
-            </h2>
-            <p className="text-xs text-gray-400 font-bold mb-4">{savedPhone}</p>
-            
-            <button 
-              onClick={handleLogoutCustomer}
-              className="text-[10px] font-black text-red-500 border border-red-100 dark:border-red-900/50 px-4 py-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors uppercase tracking-widest"
-            >
-              Đổi số khác
-            </button>
-          </div>
+          <>
+            <div className="w-full bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-orange-100 dark:border-gray-700 text-center relative overflow-hidden transition-colors group">
+              <div className="absolute top-0 right-0 w-12 h-12 bg-orange-50 dark:bg-gray-700 rounded-bl-full opacity-50 transition-all group-hover:scale-150"></div>
+              
+              <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.2em] mb-1">Thành viên thân thiết</p>
+              <h2 className="text-lg font-black text-gray-800 dark:text-white truncate transition-colors">
+                  Chào mừng {customerName || 'Bạn'}!
+              </h2>
+              <p className="text-xs text-gray-400 font-bold mb-4">{savedPhone}</p>
+              
+              <button 
+                onClick={handleLogoutCustomer}
+                className="text-[10px] font-black text-red-500 border border-red-100 dark:border-red-900/50 px-4 py-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors uppercase tracking-widest"
+              >
+                Đổi số khác
+              </button>
+            </div>
+
+            {/* MỚI: NÚT ĐỔI THƯỞNG XU */}
+            <div className="w-full mt-4">
+              <button 
+                onClick={() => navigate('/rewards')}
+                className="w-full bg-gradient-to-r from-orange-400 to-red-500 p-4 rounded-2xl flex items-center justify-between shadow-lg shadow-orange-200 dark:shadow-none active:scale-95 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl drop-shadow-md">🪙</span>
+                  <div className="text-left">
+                    <p className="text-[9px] font-black text-white/80 uppercase leading-none">Xu Plant G của bạn</p>
+                    <p className="text-sm font-black text-white mt-1">{totalXu.toLocaleString()} Xu</p>
+                  </div>
+                </div>
+                <span className="bg-white/20 text-white text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest backdrop-blur-sm">Đổi quà →</span>
+              </button>
+            </div>
+          </>
         ) : (
           <div className="text-center">
             <p className="text-sm text-gray-400 dark:text-gray-400 font-medium italic transition-colors">

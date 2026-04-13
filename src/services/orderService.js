@@ -11,7 +11,8 @@ import {
   orderBy, 
   serverTimestamp, 
   onSnapshot,
-  increment 
+  increment,
+  runTransaction // Import thêm runTransaction cho thanh toán an toàn
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -21,8 +22,11 @@ const VOUCHER_COL = 'vouchers';
 let isSubmittingOrder = false;
 
 /**
- * 1. Tạo đơn hàng mới (Chống Spam & Trừ lượt dùng Voucher an toàn)
+ * ==========================================
+ * 1. QUẢN LÝ ĐƠN HÀNG (TẠO, CẬP NHẬT)
+ * ==========================================
  */
+
 export const createOrder = async (orderData) => {
   if (isSubmittingOrder) {
     return { success: false, error: "Hệ thống đang xử lý đơn hàng, vui lòng không ấn liên tiếp!" };
@@ -32,13 +36,13 @@ export const createOrder = async (orderData) => {
     const newOrder = {
       ...orderData,
       status: 'PENDING',
-      paymentStatus: 'UNPAID',
+      paymentStatus: orderData.paymentMethod === 'WALLET' ? 'PAID' : 'UNPAID', // Nếu dùng ví thì tự set PAID
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp() // Thêm updatedAt ngay khi tạo
+      updatedAt: serverTimestamp() 
     };
     const docRef = await addDoc(collection(db, COLLECTION_NAME), newOrder);
     
-    // Duyệt qua danh sách TẤT CẢ voucher đã dùng và trừ đi 1 lượt
+    // Trừ lượt dùng Voucher an toàn
     if (orderData.usedVouchers && orderData.usedVouchers.length > 0) {
       for (const v of orderData.usedVouchers) {
         await updateDoc(doc(db, VOUCHER_COL, v.id), {
@@ -56,9 +60,6 @@ export const createOrder = async (orderData) => {
   }
 };
 
-/**
- * 2. Cập nhật phương thức thanh toán
- */
 export const updatePaymentMethod = async (orderId, method, isTransferred = false) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
@@ -81,8 +82,96 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
 };
 
 /**
- * 3. QUẢN LÝ VOUCHER 
+ * ==========================================
+ * 2. HỆ THỐNG THANH TOÁN VÍ & TÍCH ĐIỂM (MỚI)
+ * ==========================================
  */
+
+// Hàm trừ tiền ví khi đặt hàng (Sử dụng Transaction để đảm bảo tính nhất quán)
+export const processWalletPayment = async (phone, amount) => {
+  try {
+    // Tìm user document ID dựa trên số điện thoại
+    const q = query(collection(db, 'users'), where("username", "==", phone.trim()));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return { success: false, error: "Người dùng không tồn tại!" };
+    
+    const userDocId = snapshot.docs[0].id;
+    const userRef = doc(db, 'users', userDocId);
+
+    // Chạy Transaction để trừ tiền an toàn
+    await runTransaction(db, async (transaction) => {
+      const userSnap = await transaction.get(userRef);
+      if (!userSnap.exists()) throw new Error("Không tìm thấy tài khoản!");
+
+      const currentBalance = userSnap.data().walletBalance || 0;
+      if (currentBalance < amount) throw new Error("Số dư ví Plant G không đủ để thanh toán!");
+
+      transaction.update(userRef, {
+        walletBalance: increment(-amount),
+        updatedAt: serverTimestamp()
+      });
+    });
+
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message || e };
+  }
+};
+
+// Hoàn thành đơn hàng & Tích Xu (1,000đ = 10 Xu)
+export const completeOrderWithBonus = async (order) => {
+  try {
+    const orderRef = doc(db, COLLECTION_NAME, order.id);
+    const now = new Date();
+    
+    // Cập nhật trạng thái đơn
+    await updateDoc(orderRef, {
+      status: 'COMPLETED',
+      completedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    // TÍCH ĐIỂM: Tính số Xu được nhận (Chỉ tính nếu không thanh toán bằng Ví để tránh lạm phát Xu nội bộ, hoặc tùy chính sách quán)
+    // Ở đây tính cho MỌI đơn hàng để khuyến khích
+    const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
+    const earnedXu = Math.floor(totalAmount / 1000) * 10;
+
+    if (earnedXu > 0) {
+      const q = query(collection(db, 'users'), where("username", "==", order.phone.trim()));
+      const snap = await getDocs(q);
+      
+      if (!snap.empty) {
+        const userRef = doc(db, 'users', snap.docs[0].id);
+        await updateDoc(userRef, {
+          totalXu: increment(earnedXu),
+          totalSpend: increment(totalAmount) // Ghi nhận tổng chi tiêu
+        });
+      }
+    }
+
+    // Logic kiểm tra đơn trễ (Cho tính năng Voucher trễ)
+    if (order.confirmedAt) {
+      const confirmTime = order.confirmedAt.toDate();
+      const diffInMinutes = Math.floor((now - confirmTime) / (1000 * 60));
+
+      if (diffInMinutes >= 30) {
+        return { success: true, late: true, earnedXu };
+      }
+    }
+    
+    return { success: true, late: false, earnedXu };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+
+/**
+ * ==========================================
+ * 3. QUẢN LÝ VOUCHER 
+ * ==========================================
+ */
+
 export const getMyVouchers = async (phone) => {
   try {
     const vouchersRef = collection(db, VOUCHER_COL);
@@ -164,12 +253,11 @@ export const deleteVoucher = async (vId) => {
   } catch (e) { return { success: false, error: e.message }; }
 };
 
-// Hàm xử lý tặng Voucher khi giao trễ thủ công (Vòng đếm ngược)
 export const awardLateVoucher = async (phone, orderId) => {
   try {
     const voucherCode = `XL-${orderId.slice(-4).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
     const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + 3); // HSD 3 ngày
+    expiryDate.setDate(expiryDate.getDate() + 3);
 
     await addDoc(collection(db, VOUCHER_COL), {
       code: voucherCode,
@@ -182,7 +270,6 @@ export const awardLateVoucher = async (phone, orderId) => {
       createdAt: serverTimestamp()
     });
 
-    // Đánh dấu đơn hàng đã được xử lý bồi thường
     const orderRef = doc(db, COLLECTION_NAME, orderId);
     await updateDoc(orderRef, { 
       lateVoucherStatus: 'AWARDED',
@@ -195,43 +282,12 @@ export const awardLateVoucher = async (phone, orderId) => {
   }
 };
 
-export const completeOrderWithBonus = async (order) => {
-  try {
-    const orderRef = doc(db, COLLECTION_NAME, order.id);
-    const now = new Date();
-    
-    await updateDoc(orderRef, {
-      status: 'COMPLETED',
-      completedAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-
-    if (order.confirmedAt) {
-      const confirmTime = order.confirmedAt.toDate();
-      const diffInMinutes = Math.floor((now - confirmTime) / (1000 * 60));
-
-      if (diffInMinutes >= 30) {
-        // Đã vô hiệu hóa tự động phát Voucher.
-        // Chỉ trả về trạng thái late: true để Admin biết đơn bị trễ (nếu cần dùng)
-        return { success: true, late: true };
-      }
-    }
-    return { success: true, late: false };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-};
 
 /**
- * 4. QUẢN LÝ KHÁCH HÀNG & THANH TOÁN
+ * ==========================================
+ * 4. CÁC HÀM SUBSCRIPTIONS & STATUS
+ * ==========================================
  */
-export const updateCustomerProfile = async (userId, updatedData) => {
-  try {
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, { ...updatedData, updatedAt: serverTimestamp() });
-    return { success: true };
-  } catch (error) { return { success: false, error: error.message }; }
-};
 
 export const confirmPaymentStatus = async (orderId, isPaid) => {
   try {
@@ -243,9 +299,6 @@ export const confirmPaymentStatus = async (orderId, isPaid) => {
   } catch (error) { return { success: false, error: error.message }; }
 };
 
-/**
- * 5. SUBSCRIPTIONS & STATUS
- */
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
@@ -255,18 +308,34 @@ export const updateOrderStatus = async (orderId, newStatus) => {
     const order = orderSnap.data();
     const updateData = { status: newStatus, updatedAt: serverTimestamp() };
     
-    // Thiết lập mốc thời gian bắt đầu đếm ngược 30 phút
     if (newStatus === 'PREPARING') {
       updateData.confirmedAt = serverTimestamp();
     }
     
     await updateDoc(orderRef, updateData);
 
-    // CƠ CHẾ HOÀN MÃ: Nếu Admin hủy đơn khi đang PENDING, hoàn lại Voucher Tiền Mặt
-    if (newStatus === 'CANCELLED' && order.status === 'PENDING' && order.usedVouchers) {
-      for (const v of order.usedVouchers) {
-        if (v.type !== 'FREESHIP') {
-          await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(1) });
+    // CƠ CHẾ HOÀN MÃ VÀ HOÀN TIỀN VÍ
+    if (newStatus === 'CANCELLED' && order.status === 'PENDING') {
+      // 1. Hoàn Voucher
+      if (order.usedVouchers) {
+        for (const v of order.usedVouchers) {
+          if (v.type !== 'FREESHIP') {
+            await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(1) });
+          }
+        }
+      }
+      
+      // 2. Hoàn Tiền Ví (Nếu đơn bị hủy mà khách đã thanh toán bằng ví)
+      if (order.paymentMethod === 'WALLET') {
+        const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
+        if (totalAmount > 0) {
+          const q = query(collection(db, 'users'), where("username", "==", order.phone.trim()));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            await updateDoc(doc(db, 'users', snap.docs[0].id), {
+               walletBalance: increment(totalAmount)
+            });
+          }
         }
       }
     }
@@ -303,7 +372,6 @@ export const subscribeToAllOrders = (callback) => {
   });
 };
 
-// Lưu Tên người xóa, Lý do xóa và Hoàn lại MỌI voucher
 export const deleteOrderSoft = async (orderId, reason = "Xóa thủ công", deleterName = "Admin") => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
@@ -319,7 +387,6 @@ export const deleteOrderSoft = async (orderId, reason = "Xóa thủ công", dele
       updatedAt: serverTimestamp() 
     });
 
-    // Nếu Admin xóa đơn hoàn toàn, tự động hoàn trả MỌI voucher đã dùng của đơn đó
     if (order.usedVouchers) {
       for (const v of order.usedVouchers) {
         await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(1) });
@@ -330,7 +397,6 @@ export const deleteOrderSoft = async (orderId, reason = "Xóa thủ công", dele
   } catch (error) { return { success: false, error: error.message }; }
 };
 
-// Xử lý Khách hàng tự hủy đơn
 export const requestCancelOrder = async (orderId, status, reason = "") => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
@@ -346,11 +412,26 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
       updatedAt: serverTimestamp()
     });
 
-    // CƠ CHẾ HOÀN MÃ: Khách hủy đơn lúc PENDING -> Hoàn Voucher Tiền mặt
-    if (isDirectCancel && order.usedVouchers) {
-      for (const v of order.usedVouchers) {
-        if (v.type !== 'FREESHIP') {
-          await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(1) });
+    // CƠ CHẾ HOÀN MÃ VÀ TIỀN: Khách hủy đơn lúc PENDING
+    if (isDirectCancel) {
+      if (order.usedVouchers) {
+        for (const v of order.usedVouchers) {
+          if (v.type !== 'FREESHIP') {
+            await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(1) });
+          }
+        }
+      }
+
+      if (order.paymentMethod === 'WALLET') {
+        const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
+        if (totalAmount > 0) {
+          const q = query(collection(db, 'users'), where("username", "==", order.phone.trim()));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            await updateDoc(doc(db, 'users', snap.docs[0].id), {
+               walletBalance: increment(totalAmount)
+            });
+          }
         }
       }
     }
@@ -359,12 +440,10 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
   } catch (error) { return { success: false, error: error.message }; }
 };
 
-// Hàm Hoàn tác đơn đã xóa
 export const undoDeleteOrder = async (orderId, usedVouchers = []) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
     
-    // Khôi phục trạng thái về PENDING và xóa các trường lưu vết
     await updateDoc(orderRef, { 
       status: 'PENDING', 
       deleteReason: null,
@@ -372,7 +451,6 @@ export const undoDeleteOrder = async (orderId, usedVouchers = []) => {
       updatedAt: serverTimestamp() 
     });
 
-    // Trừ lại số lượng voucher vì đơn đã sống lại
     if (usedVouchers && usedVouchers.length > 0) {
       for (const v of usedVouchers) {
         await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(-1) });

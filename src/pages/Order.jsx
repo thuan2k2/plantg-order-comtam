@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { doc, onSnapshot, collection, query, where } from 'firebase/firestore'; // Thêm collection, query, where
+import { doc, onSnapshot, collection, query, where } from 'firebase/firestore'; 
 import { db } from '../firebase/config';
 import { createOrder, validateVoucher, getMyVouchers } from '../services/orderService';
 import { verifyPasscode } from '../services/authService'; 
@@ -33,12 +33,12 @@ const Order = () => {
   const [sysConfig, setSysConfig] = useState({ isOpen: true, minOrder: 0 });
   const [showClosingPopup, setShowClosingPopup] = useState(false); 
 
-  // STATE MỚI: Quản lý Passcode Ví
+  // STATE: Quản lý Passcode Ví
   const [showWalletPasscode, setShowWalletPasscode] = useState(false);
   const [walletPasscode, setWalletPasscode] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH'); 
   
-  // STATE MỚI: Quản lý Địa chỉ giao hàng được chọn
+  // STATE: Quản lý Địa chỉ giao hàng được chọn
   const [selectedAddress, setSelectedAddress] = useState('');
 
   useEffect(() => {

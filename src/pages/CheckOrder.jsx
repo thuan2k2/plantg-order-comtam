@@ -40,6 +40,16 @@ const getRankInfo = (totalSpend) => {
   return { current, next, progress };
 };
 
+// --- CẤU HÌNH TABS TRẠNG THÁI ---
+const ORDER_TABS = [
+  { id: 'ALL', label: 'Tất cả' },
+  { id: 'PENDING', label: 'Chờ nhận' },
+  { id: 'PREPARING', label: 'Bếp làm' },
+  { id: 'DELIVERING', label: 'Đang giao' },
+  { id: 'COMPLETED', label: 'Hoàn thành' },
+  { id: 'CANCEL_REQUESTED', label: 'Hủy đơn' }
+];
+
 // --- COMPONENT CARD ĐƠN HÀNG ---
 const OrderCard = ({ order }) => {
   const navigate = useNavigate();
@@ -98,9 +108,10 @@ const OrderCard = ({ order }) => {
   };
 
   const isProcessing = order.status === 'PREPARING' || order.status === 'DELIVERING';
+  const isWalletPayment = order.paymentMethod === 'WALLET';
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 p-6 overflow-hidden transition-all animate-in slide-in-from-bottom-4 relative">
+    <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 p-6 overflow-hidden transition-all animate-in slide-in-from-bottom-4 relative group">
       
       {/* VÒNG ĐẾM NGƯỢC */}
       <CountdownBorder 
@@ -123,7 +134,12 @@ const OrderCard = ({ order }) => {
           <p className="text-[15px] text-gray-800 dark:text-gray-100 font-black leading-tight transition-colors">{order.items}</p>
           <div className="flex justify-between items-end border-t border-dashed dark:border-gray-700 pt-3 transition-colors">
             <span className="text-[10px] text-gray-400 dark:text-gray-500 font-black uppercase">Thành tiền:</span>
-            <p className="text-xl font-black text-red-500 dark:text-red-400 tracking-tighter transition-colors">{order.total}</p>
+            <div className="text-right">
+               <p className={`text-xl font-black tracking-tighter transition-colors ${isWalletPayment ? 'text-gray-400 line-through' : 'text-red-500 dark:text-red-400'}`}>
+                 {order.total}
+               </p>
+               {isWalletPayment && <p className="text-[9px] font-black text-green-500 uppercase mt-0.5">Đã thanh toán Ví</p>}
+            </div>
           </div>
         </div>
 
@@ -137,12 +153,14 @@ const OrderCard = ({ order }) => {
                  order.paymentMethod === 'CASH' ? 'Tiền mặt' : 'Chưa thanh toán'}
               </span>
             </div>
+            
             {order.paymentMethod === 'CASH' && order.paymentStatus === 'UNPAID' && order.updatedAt && (
                <p className="text-[9px] text-red-500 dark:text-red-400 font-black mb-3 italic bg-red-50 dark:bg-red-900/20 p-2 rounded-xl border border-red-100 dark:border-red-900/30 transition-colors">
                  * Hệ thống chưa ghi nhận giao dịch, phương thức tự động chuyển sang Tiền mặt!
                </p>
             )}
-            {order.paymentStatus !== 'PAID' && (
+            
+            {order.paymentStatus !== 'PAID' && !isWalletPayment && (
               <div className="space-y-3">
                 {order.paymentMethod === 'CASH' && !showPaymentSelection ? (
                   <button onClick={() => setShowPaymentSelection(true)} className="w-full py-2 text-[10px] font-black text-blue-500 dark:text-blue-400 uppercase tracking-widest underline">Đổi sang Chuyển khoản</button>
@@ -163,7 +181,7 @@ const OrderCard = ({ order }) => {
           </div>
         )}
 
-        <button onClick={handleReOrder} className="w-full py-4 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-orange-100 dark:border-orange-900/30 flex items-center justify-center gap-2 mb-4 transition-all active:scale-95">
+        <button onClick={handleReOrder} className="w-full py-4 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-orange-100 dark:border-orange-900/30 flex items-center justify-center gap-2 mb-4 transition-all active:scale-95 hover:bg-orange-100 dark:hover:bg-orange-900/40">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
           Đặt lại đơn này
         </button>
@@ -191,10 +209,10 @@ const OrderCard = ({ order }) => {
                 </button>
               ) : (
                 <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-3xl border border-red-100 dark:border-red-900/30 animate-in fade-in transition-colors">
-                  <textarea placeholder="Lý do hủy..." value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} className="w-full p-3 text-xs bg-white dark:bg-gray-700 dark:text-white rounded-xl mb-3 outline-none transition-colors" rows="2" />
+                  <textarea placeholder="Lý do hủy..." value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} className="w-full p-3 text-xs bg-white dark:bg-gray-700 dark:text-white rounded-xl mb-3 outline-none transition-colors focus:ring-2 focus:ring-red-200" rows="2" />
                   <div className="flex gap-2">
-                    <button onClick={() => setShowCancelReason(false)} className="flex-1 py-2 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase">Đóng</button>
-                    <button onClick={submitCancelRequest} className="flex-1 py-2 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all">Gửi lý do</button>
+                    <button onClick={() => setShowCancelReason(false)} className="flex-1 py-2 text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl transition-colors">Đóng</button>
+                    <button onClick={submitCancelRequest} className="flex-[2] py-2 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all shadow-md shadow-red-200 dark:shadow-none hover:bg-red-600">Gửi lý do</button>
                   </div>
                 </div>
               )}
@@ -216,6 +234,9 @@ const CheckOrder = () => {
   const [orders, setOrders] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [visibleCount, setVisibleCount] = useState(5);
+  
+  // STATE MỚI: Tab trạng thái hoạt động
+  const [activeTab, setActiveTab] = useState('ALL');
 
   // Refs để quản lý logic phát âm thanh
   const prevStatuses = useRef({});
@@ -285,11 +306,17 @@ const CheckOrder = () => {
     navigate(`/checkorder?user=${phoneInput.trim()}`);
   };
 
+  // LOGIC LỌC ĐƠN THEO TAB
+  const filteredOrders = useMemo(() => {
+    if (activeTab === 'ALL') return orders;
+    return orders.filter(o => o.status === activeTab);
+  }, [orders, activeTab]);
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-20 font-sans transition-colors duration-300">
       
-      {/* HEADER */}
-      <div className="bg-white dark:bg-gray-800 px-6 py-5 border-b dark:border-gray-700 flex items-center justify-between shadow-sm sticky top-0 z-30 transition-colors">
+      {/* HEADER & RANK */}
+      <div className="bg-white dark:bg-gray-800 px-6 py-5 border-b dark:border-gray-700 flex items-center justify-between transition-colors relative z-40">
         <div className="flex items-center">
           <button onClick={() => navigate(-1)} className="text-gray-800 dark:text-gray-100 p-2 mr-2 bg-gray-50 dark:bg-gray-700 rounded-2xl active:scale-90 transition-all">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -297,14 +324,14 @@ const CheckOrder = () => {
             </svg>
           </button>
           <h1 className="text-lg font-black text-gray-800 dark:text-white uppercase tracking-tighter transition-colors">
-            LỊCH SỬ ĐƠN HÀNG
+            LỊCH SỬ ĐƠN
           </h1>
         </div>
 
         {/* WIDGET RANK */}
         {userPhoneParam && orders.length > 0 && (
           <div className="flex flex-col items-end">
-            <div className={`bg-gradient-to-r ${rankData.current.color} px-4 py-1 rounded-2xl shadow-lg border-2 border-white dark:border-gray-700 flex items-center gap-2 animate-in slide-in-from-right-4 duration-500`}>
+            <div className={`bg-gradient-to-r ${rankData.current.color} px-4 py-1.5 rounded-2xl shadow-lg border-2 border-white dark:border-gray-700 flex items-center gap-2 animate-in slide-in-from-right-4 duration-500`}>
               <span className="text-sm">{rankData.current.icon}</span>
               <span className="text-[10px] font-black text-white uppercase tracking-widest">{rankData.current.name}</span>
             </div>
@@ -318,9 +345,39 @@ const CheckOrder = () => {
         )}
       </div>
 
-      <div className="p-6 max-w-lg mx-auto">
+      {/* STICKY TAB BAR (BỘ LỌC TRẠNG THÁI) */}
+      {userPhoneParam && orders.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 shadow-sm sticky top-0 z-30 transition-colors">
+          <div className="flex px-4 py-3 gap-2 overflow-x-auto no-scrollbar scroll-smooth snap-x">
+            {ORDER_TABS.map(tab => {
+              const count = orders.filter(o => tab.id === 'ALL' ? true : o.status === tab.id).length;
+              const isActive = activeTab === tab.id;
+
+              return (
+                <button 
+                  key={tab.id} 
+                  onClick={() => setActiveTab(tab.id)} 
+                  className={`snap-start px-4 py-2.5 text-[10px] font-black uppercase rounded-2xl transition-all whitespace-nowrap flex items-center gap-2 border-2 
+                    ${isActive 
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200 dark:shadow-none scale-105' 
+                      : 'text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-700 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600'}`}
+                >
+                  {tab.label}
+                  {count > 0 && tab.id !== 'ALL' && (
+                    <span className={`px-1.5 py-0.5 rounded-lg text-[9px] ${isActive ? 'bg-white/20 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400'}`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="p-6 max-w-lg mx-auto mt-2">
         {/* SEARCH FORM */}
-        <form onSubmit={handleSearch} className="mb-10 bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 transition-colors">
+        <form onSubmit={handleSearch} className="mb-8 bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 transition-colors">
           <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 ml-1 text-center transition-colors">Nhập SĐT của bạn</label>
           <div className="flex gap-2">
             <input
@@ -334,31 +391,34 @@ const CheckOrder = () => {
           </div>
         </form>
 
-        {/* LIST ORDERS */}
+        {/* DANH SÁCH ĐƠN HÀNG ĐÃ LỌC */}
         <div className="space-y-6">
-          {orders.slice(0, visibleCount).map((order) => (
+          {filteredOrders.slice(0, visibleCount).map((order) => (
             <OrderCard key={order.id} order={order} />
           ))}
 
-          {orders.length > visibleCount && visibleCount < 30 && (
+          {filteredOrders.length > visibleCount && visibleCount < 30 && (
             <button 
               onClick={() => setVisibleCount(prev => Math.min(prev + 10, 30))}
-              className="w-full py-4 bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 rounded-[2rem] text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.3em] hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm"
+              className="w-full py-4 bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 rounded-[2rem] text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.3em] hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm active:scale-95"
             >
-              Xem thêm đơn cũ ({orders.length - visibleCount})
+              Xem thêm đơn cũ ({filteredOrders.length - visibleCount})
             </button>
           )}
 
-          {visibleCount >= 30 && orders.length > 30 && (
+          {visibleCount >= 30 && filteredOrders.length > 30 && (
             <p className="text-center text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase tracking-widest italic animate-pulse transition-colors">
               * Hệ thống chỉ hiển thị 30 đơn gần nhất
             </p>
           )}
 
-          {userPhoneParam && orders.length === 0 && !isSearching && (
-            <div className="text-center py-20 animate-in fade-in">
-               <p className="text-4xl mb-4">🏜️</p>
-               <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest transition-colors">Chưa tìm thấy dữ liệu đơn hàng</p>
+          {/* TRẠNG THÁI TRỐNG */}
+          {userPhoneParam && filteredOrders.length === 0 && !isSearching && (
+            <div className="text-center py-20 bg-white dark:bg-gray-800 rounded-[2.5rem] border border-dashed border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in-95">
+               <p className="text-5xl mb-4 grayscale opacity-50">🏜️</p>
+               <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest transition-colors">
+                 {activeTab === 'ALL' ? 'Chưa có đơn hàng nào' : `Không có đơn ở trạng thái này`}
+               </p>
             </div>
           )}
         </div>

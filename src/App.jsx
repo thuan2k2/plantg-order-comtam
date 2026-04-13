@@ -12,6 +12,7 @@ import Register from './pages/Register';
 import Order from './pages/Order';
 import CheckOrder from './pages/CheckOrder';
 import UserSettings from './pages/UserSettings'; 
+import RewardCenter from './pages/RewardCenter'; // Import trang đổi thưởng mới
 
 // Import Widget Chat dành cho Khách hàng
 import CustomerChat from './components/CustomerChat';
@@ -65,7 +66,7 @@ function App() {
   return (
     <SettingsProvider>
       <Router>
-        <div className="app-container dark:bg-gray-900 transition-colors duration-300 min-h-screen">
+        <div className="app-container dark:bg-gray-900 transition-colors duration-300 min-h-screen relative">
           <Routes>
             {/* --- Cấu trúc các trang dành cho Khách hàng --- */}
             <Route path="/" element={<Home />} />
@@ -74,6 +75,9 @@ function App() {
             <Route path="/order/:username" element={<Order />} />
             <Route path="/checkorder" element={<CheckOrder />} />
             <Route path="/settings" element={<UserSettings />} /> 
+            
+            {/* MỚI: Route trang Đổi quà tích điểm */}
+            <Route path="/rewards" element={<RewardCenter />} />
 
             {/* --- Cấu trúc các trang dành cho Admin --- */}
             <Route path="/admin/login" element={<AdminLogin />} />
