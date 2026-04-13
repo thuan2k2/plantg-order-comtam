@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { doc, onSnapshot } from 'firebase/firestore'; // Thay getDoc bằng onSnapshot
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { createOrder, validateVoucher, getMyVouchers } from '../services/orderService';
-import { getUserByPhone } from '../services/authService'; 
+import { getUserByPhone, verifyPasscode } from '../services/authService'; // Bổ sung verifyPasscode
 import { subscribeToMenu } from '../services/menuService';
 
 const Order = () => {
@@ -31,7 +31,12 @@ const Order = () => {
 
   // STATE lưu trữ cấu hình hệ thống từ Admin
   const [sysConfig, setSysConfig] = useState({ isOpen: true, minOrder: 0 });
-  const [showClosingPopup, setShowClosingPopup] = useState(false); // State quản lý Popup đóng cửa
+  const [showClosingPopup, setShowClosingPopup] = useState(false); 
+
+  // STATE MỚI: Quản lý Passcode Ví
+  const [showWalletPasscode, setShowWalletPasscode] = useState(false);
+  const [walletPasscode, setWalletPasscode] = useState('');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH'); // CASH, TRANSFER, WALLET
 
   useEffect(() => {
     // 1. Lắng nghe trạng thái Hệ thống liên tục
@@ -43,9 +48,7 @@ const Order = () => {
         // NẾU ADMIN ĐÓNG CỬA ĐỘT XUẤT KHI KHÁCH ĐANG Ở TRANG NÀY
         if (data.isOpen === false) {
           setShowClosingPopup(true);
-          // Ẩn Confirm Modal nếu nó đang mở để tránh lỗi thao tác
           setShowConfirm(false); 
-          // Đếm ngược 3s rồi đẩy về Home
           setTimeout(() => {
             navigate('/');
           }, 3000);
@@ -83,7 +86,12 @@ const Order = () => {
       if (cleanPhone.length >= 10) {
         try {
           const userData = await getUserByPhone(cleanPhone);
-          setCustomerInfo(userData ? { name: userData.fullName, phone: userData.username, address: userData.address } : null);
+          setCustomerInfo(userData ? { 
+            name: userData.fullName, 
+            phone: userData.username, 
+            address: userData.address,
+            walletBalance: userData.walletBalance || 0 // Lấy thêm số dư ví
+          } : null);
 
           const autoFs = vouchers.find(v => v.code.trim().toUpperCase() === 'FREESHIP5K');
           if (autoFs) {
@@ -180,8 +188,44 @@ const Order = () => {
     setShowConfirm(true);
   };
 
+  // LOGIC XÁC THỰC VÍ
+  const handleConfirmWalletPayment = async () => {
+    if (walletPasscode.length !== 6) {
+      return alert("Vui lòng nhập đủ 6 số Passcode!");
+    }
+
+    setIsSubmitting(true);
+    const isValid = await verifyPasscode(username.trim(), walletPasscode);
+    
+    if (!isValid) {
+      setIsSubmitting(false);
+      return alert("Mã Passcode không chính xác!");
+    }
+
+    // Nếu Passcode đúng, đóng modal và gọi submit
+    setShowWalletPasscode(false);
+    setWalletPasscode('');
+    await proceedOrderSubmit();
+  };
+
   const handleOrderSubmit = async () => {
     if (isSubmitting) return;
+
+    // Nếu chọn thanh toán bằng ví, phải kiểm tra số dư và hỏi Passcode
+    if (selectedPaymentMethod === 'WALLET') {
+      if (!customerInfo || customerInfo.walletBalance < getFinalTotal()) {
+        return alert("Số dư ví không đủ để thanh toán đơn hàng này!");
+      }
+      setShowWalletPasscode(true); // Hiện bảng hỏi Passcode
+      return;
+    }
+
+    // Nếu thanh toán thường, chạy luôn
+    await proceedOrderSubmit();
+  };
+
+  // Tách hàm submit chính
+  const proceedOrderSubmit = async () => {
     setIsSubmitting(true);
     
     const usedVouchers = [];
@@ -200,7 +244,8 @@ const Order = () => {
       discount: appliedVoucher?.value || 0,
       total: getFinalTotal().toLocaleString('vi-VN') + 'đ',
       note: note.trim(),
-      usedVouchers 
+      usedVouchers,
+      paymentMethod: selectedPaymentMethod // Lưu phương thức thanh toán
     };
 
     try {
@@ -276,8 +321,13 @@ const Order = () => {
         />
         {customerInfo && (
           <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-2xl border border-blue-100 dark:border-blue-900/50 animate-in fade-in transition-colors">
-            <div className="text-xs font-black text-blue-700 dark:text-blue-400 uppercase">
-              Chào {customerInfo.name}!
+            <div className="flex justify-between items-center">
+              <div className="text-xs font-black text-blue-700 dark:text-blue-400 uppercase">
+                Chào {customerInfo.name}!
+              </div>
+              <div className="text-[10px] font-black text-green-600 bg-green-100 px-2 py-1 rounded-lg">
+                Ví: {(customerInfo.walletBalance || 0).toLocaleString()}đ
+              </div>
             </div>
             <div className="text-[9px] text-blue-500 dark:text-blue-300 font-bold mt-1 opacity-70 italic tracking-tighter">
               📍 {customerInfo.address}
@@ -410,7 +460,8 @@ const Order = () => {
         <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10 transition-colors">
             <h2 className="text-xl font-black text-gray-800 dark:text-white uppercase tracking-tighter mb-4">Chi tiết thanh toán</h2>
-            <div className="space-y-2 mb-6 border-b border-dashed dark:border-gray-700 pb-5">
+            
+            <div className="space-y-2 mb-4 border-b border-dashed dark:border-gray-700 pb-5">
               <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest"><span>Tiền cơm:</span><span>{getSubTotal().toLocaleString()}đ</span></div>
               <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest">
                 <span>Phí vận chuyển:</span>
@@ -424,16 +475,69 @@ const Order = () => {
                 <span className="text-3xl font-black text-red-500 dark:text-red-400 tracking-tighter">{getFinalTotal().toLocaleString()}đ</span>
               </div>
             </div>
+
+            {/* CHỌN PHƯƠNG THỨC THANH TOÁN */}
+            <div className="mb-6 space-y-2">
+               <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2">Phương thức thanh toán:</p>
+               <div className="grid grid-cols-2 gap-2">
+                 <button 
+                   onClick={() => setSelectedPaymentMethod('CASH')}
+                   className={`p-3 rounded-xl border-2 text-[10px] font-black uppercase transition-all ${selectedPaymentMethod === 'CASH' ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}
+                 >
+                   💵 Tiền mặt
+                 </button>
+                 <button 
+                   onClick={() => setSelectedPaymentMethod('TRANSFER')}
+                   className={`p-3 rounded-xl border-2 text-[10px] font-black uppercase transition-all ${selectedPaymentMethod === 'TRANSFER' ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}
+                 >
+                   🏦 Chuyển khoản
+                 </button>
+               </div>
+               
+               {customerInfo && (
+                 <button 
+                   onClick={() => setSelectedPaymentMethod('WALLET')}
+                   className={`w-full p-3 mt-2 rounded-xl border-2 text-[10px] font-black uppercase transition-all ${selectedPaymentMethod === 'WALLET' ? 'border-green-500 bg-green-50 text-green-600' : 'border-gray-100 text-gray-400'}`}
+                 >
+                   Thanh toán bằng Ví Plant G (Số dư: {(customerInfo.walletBalance || 0).toLocaleString()}đ)
+                 </button>
+               )}
+            </div>
+
             <textarea 
               value={note} 
               onChange={e => setNote(e.target.value)} 
               placeholder="Ghi chú (VD: Không hành, nhiều ớt...)" 
               className="w-full p-4 bg-gray-50 dark:bg-gray-700 dark:text-white border-none rounded-2xl text-xs mb-6 outline-none font-bold h-20 transition-colors placeholder:text-gray-300 dark:placeholder:text-gray-500" 
             />
+            
             <div className="flex gap-4">
               <button onClick={() => setShowConfirm(false)} className="flex-1 py-5 text-[10px] font-black text-gray-400 dark:text-gray-300 uppercase tracking-widest bg-gray-50 dark:bg-gray-700 rounded-2xl active:scale-95 transition-all">Quay lại</button>
               <button onClick={handleOrderSubmit} disabled={isSubmitting} className="flex-[2] bg-blue-600 text-white text-[10px] font-black rounded-2xl shadow-xl shadow-blue-100 dark:shadow-none uppercase tracking-[0.2em] active:scale-95 transition-all">
                 {isSubmitting ? 'ĐANG XỬ LÝ...' : 'ĐẶT CƠM NGAY'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: NHẬP PASSCODE VÍ */}
+      {showWalletPasscode && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] w-full max-w-xs shadow-2xl animate-in zoom-in-95">
+            <p className="text-center font-black uppercase text-xs mb-2 text-gray-800 dark:text-white">Bảo mật thanh toán</p>
+            <p className="text-center text-[10px] text-gray-500 mb-6 font-bold">Nhập Passcode để trừ {getFinalTotal().toLocaleString()}đ từ ví của bạn.</p>
+            
+            <input 
+              type="password" maxLength="6" placeholder="******"
+              className="w-full text-center text-3xl tracking-[0.5em] p-4 bg-gray-100 dark:bg-gray-700 dark:text-white rounded-2xl mb-6 outline-none border-none font-black"
+              onChange={(e) => setWalletPasscode(e.target.value)}
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button onClick={() => {setShowWalletPasscode(false); setIsSubmitting(false); setWalletPasscode('');}} className="flex-1 py-3 text-gray-400 font-black uppercase text-[10px] bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200">Hủy</button>
+              <button onClick={handleConfirmWalletPayment} disabled={isSubmitting} className="flex-1 py-3 bg-green-600 text-white rounded-xl font-black uppercase text-[10px] shadow-md shadow-green-200">
+                {isSubmitting ? '...' : 'Xác nhận'}
               </button>
             </div>
           </div>

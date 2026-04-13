@@ -102,7 +102,7 @@ export const getUserByPhone = async (phone) => {
     return userData;
   } catch (error) {
     console.error("Lỗi khi tìm user:", error);
-    throw error; // Ném lỗi để UI (ví dụ: màn hình Order) bắt và hiển thị Alert
+    throw error; // Ném lỗi để UI bắt và hiển thị Alert
   }
 };
 
@@ -132,7 +132,7 @@ export const verifyPasscode = async (phone, inputPasscode) => {
 };
 
 /**
- * Cập nhật hồ sơ có yêu cầu Passcode
+ * Cập nhật hồ sơ có yêu cầu Passcode (Chặn đổi ID/SĐT)
  */
 export const updateCustomerSecure = async (phone, newData, inputPasscode) => {
   const isValid = await verifyPasscode(phone, inputPasscode);
@@ -144,7 +144,14 @@ export const updateCustomerSecure = async (phone, newData, inputPasscode) => {
     const userId = snapshot.docs[0].id;
     
     const userRef = doc(db, COLLECTION_NAME, userId);
-    await updateDoc(userRef, { ...newData, updatedAt: serverTimestamp() });
+    
+    // BẢO MẬT: Bóc tách loại bỏ username khỏi newData để chặn việc khách cố tình đổi SĐT định danh
+    const { username, phone: _p, ...safeData } = newData;
+
+    await updateDoc(userRef, { 
+      ...safeData, 
+      updatedAt: serverTimestamp() 
+    });
     
     return { success: true };
   } catch (e) { 

@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  subscribeToAllUsers, // Chuyển sang dùng Real-time để cập nhật ngay lập tức
+  subscribeToAllUsers, 
   updateUserProfile, 
   deleteUser, 
-  updateUserBanStatus 
+  updateUserBanStatus,
+  resetPasscodeByAdmin // Thêm hàm cấp lại Passcode từ authService
 } from '../../services/authService';
 import { createVoucher, deleteVoucher, getAllVouchers } from '../../services/orderService';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase/config';
 
 const ManageUsers = () => {
   const [users, setUsers] = useState([]);
@@ -23,7 +22,7 @@ const ManageUsers = () => {
   // States cho Modal Cấm User
   const [showBanModal, setShowBanModal] = useState(false);
   const [banUserTarget, setBanUserTarget] = useState(null);
-  const [banDuration, setBanDuration] = useState('7'); // Mặc định 7 ngày
+  const [banDuration, setBanDuration] = useState('7'); 
   const [customBanDate, setCustomBanDate] = useState('');
 
   // SỬ DỤNG REAL-TIME LISTENER THAY VÌ LẤY 1 LẦN
@@ -72,6 +71,29 @@ const ManageUsers = () => {
     }
   };
 
+  // --- HÀM RESET PASSCODE CHO KHÁCH HÀNG ---
+  const handleResetPasscode = async (user) => {
+    const newPasscode = prompt(
+      `ĐẶT LẠI PASSCODE CHO KHÁCH:\n\nSĐT: ${user.username}\nTên: ${user.fullName}\n\nNhập Passcode mới (Mặc định: 123456):`, 
+      "123456"
+    );
+
+    if (newPasscode) {
+      if (newPasscode.length < 6) {
+        return alert("Passcode phải có ít nhất 6 ký tự!");
+      }
+      
+      if (window.confirm(`Xác nhận đặt lại Passcode của khách này thành "${newPasscode}"?`)) {
+        const result = await resetPasscodeByAdmin(user.id, newPasscode);
+        if (result.success) {
+          alert(`Đã đặt lại Passcode thành công cho khách ${user.fullName}. Hãy báo cho khách biết!`);
+        } else {
+          alert("Lỗi cấp lại Passcode: " + result.error);
+        }
+      }
+    }
+  };
+
   // --- HÀM XÓA USER VĨNH VIỄN ---
   const handleDeleteUser = async (user) => {
     if (window.confirm(`⚠️ NGUY HIỂM: Bạn có chắc chắn muốn XÓA VĨNH VIỄN khách hàng ${user.fullName} (${user.username}) không?\n\nHành động này không thể hoàn tác và sẽ xóa toàn bộ dữ liệu của họ khỏi hệ thống!`)) {
@@ -111,7 +133,6 @@ const ManageUsers = () => {
       }
       banUntil = new Date(customBanDate).getTime();
     } else {
-      // Tính toán số ngày từ thời điểm hiện tại
       const days = parseInt(banDuration);
       banUntil = new Date().getTime() + (days * 24 * 60 * 60 * 1000);
     }
@@ -220,6 +241,7 @@ const ManageUsers = () => {
                     )}
                   </td>
 
+                  {/* CỘT VOUCHER */}
                   <td className="px-8 py-5 text-center">
                     <button 
                       onClick={() => setVoucherModalUser(user)}
@@ -231,8 +253,19 @@ const ManageUsers = () => {
                   
                   {/* CỘT THAO TÁC */}
                   <td className="px-8 py-5 text-right space-x-2 whitespace-nowrap">
+                    {/* Cấp lại Passcode (Chìa khóa) */}
+                    <button 
+                      onClick={() => handleResetPasscode(user)} 
+                      title="Cấp lại Passcode (Chìa khóa)" 
+                      className="p-3 bg-yellow-50 text-yellow-600 hover:bg-yellow-100 hover:scale-110 rounded-xl transition-all inline-flex shadow-sm"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                      </svg>
+                    </button>
+
                     {/* Sửa thông tin */}
-                    <button onClick={() => setEditingUser(user)} title="Sửa thông tin" className="p-3 bg-gray-50 text-gray-400 hover:text-blue-600 rounded-xl transition-all inline-flex">
+                    <button onClick={() => setEditingUser(user)} title="Sửa thông tin" className="p-3 bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all inline-flex">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     </button>
                     
