@@ -14,9 +14,9 @@ const Home = () => {
   const [hasOrderedBefore, setHasOrderedBefore] = useState(false);
   const [savedPhone, setSavedPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState(''); // MỚI: State lưu trữ Avatar
   const [showThemeMenu, setShowThemeMenu] = useState(false);
 
-  // MỚI: State lưu trữ Xu tích lũy
   const [totalXu, setTotalXu] = useState(0);
 
   const [sysConfig, setSysConfig] = useState({
@@ -26,7 +26,7 @@ const Home = () => {
   });
 
   useEffect(() => {
-    // 1. Lắng nghe thay đổi Cấu hình hệ thống (Real-time)
+    // 1. Lắng nghe thay đổi Cấu hình hệ thống
     const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (doc) => {
       if (doc.exists()) {
         setSysConfig(doc.data());
@@ -35,7 +35,7 @@ const Home = () => {
       console.error("Lỗi lắng nghe cấu hình:", error);
     });
 
-    // 2. Logic đồng bộ thông tin khách hàng và Lắng nghe Xu Real-time
+    // 2. Logic đồng bộ thông tin khách hàng Real-time
     const syncWithFirebase = async () => {
       const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
       const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
@@ -45,22 +45,21 @@ const Home = () => {
         setSavedPhone(phone);
         setHasOrderedBefore(true);
 
-        // LẮNG NGHE XU THEO THỜI GIAN THỰC
-        // Sử dụng phone (đã được dọn dẹp) làm ID document để query trực tiếp
         const cleanPhone = phone.trim();
         const userRef = doc(db, 'users', cleanPhone);
 
+        // FIX ĐỒNG BỘ: Lắng nghe toàn bộ thay đổi của user bao gồm cả avatarUrl
         const unsubUser = onSnapshot(userRef, (snap) => {
           if (snap.exists()) {
             const data = snap.data();
-            setTotalXu(data.totalXu || 0); // Cập nhật Xu ngay lập tức
+            setTotalXu(data.totalXu || 0); 
+            setAvatarUrl(data.avatarUrl || ''); // Cập nhật Avatar lập tức
             
-            // Cập nhật lại tên nếu có thay đổi từ Admin
             if (data.fullName && data.fullName !== customerName) {
               setCustomerName(data.fullName);
               
-              // Cập nhật lại local cache để đồng bộ với cloud
-              const updatedProfile = { ...userProfile, fullName: data.fullName };
+              // Cập nhật local storage để dự phòng
+              const updatedProfile = { ...userProfile, fullName: data.fullName, avatarUrl: data.avatarUrl || '' };
               localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
             }
           }
@@ -68,12 +67,13 @@ const Home = () => {
           console.error("Lỗi đồng bộ dữ liệu User:", err);
         });
 
-        // Fetch lần đầu để lấy thông tin cơ bản nếu chưa có trong LocalStorage
+        // Load dữ liệu nền (fallback)
         try {
           if (!userProfile.fullName) {
             const cloudData = await getUserByPhone(cleanPhone);
             if (cloudData) {
               setCustomerName(cloudData.fullName);
+              setAvatarUrl(cloudData.avatarUrl || '');
               localStorage.setItem('userProfile', JSON.stringify({
                 fullName: cloudData.fullName,
                 username: cloudData.username,
@@ -83,24 +83,24 @@ const Home = () => {
             }
           } else {
             setCustomerName(userProfile.fullName);
+            setAvatarUrl(userProfile.avatarUrl || '');
           }
         } catch (error) {
           alert(error.message);
           handleLogoutCustomer(false); 
         }
 
-        return unsubUser; // Trả về để dọn dẹp sau
+        return unsubUser;
       }
     };
 
     const cleanupUser = syncWithFirebase();
 
-    // Cleanup function để hủy lắng nghe khi thoát Component
     return () => {
       unsubConfig();
       if (typeof cleanupUser === 'function') cleanupUser();
     };
-  }, []); // Cẩn thận dependency array để tránh lặp vô hạn
+  }, []);
 
   const handleLogoutCustomer = (confirm = true) => {
     if (!confirm || window.confirm("Bạn muốn đặt hàng bằng số điện thoại khác?")) {
@@ -109,6 +109,7 @@ const Home = () => {
       setHasOrderedBefore(false);
       setSavedPhone('');
       setCustomerName('');
+      setAvatarUrl('');
       setTotalXu(0);
       window.location.reload(); 
     }
@@ -132,15 +133,19 @@ const Home = () => {
         </div>
       )}
 
-      {/* TOP BAR: THIẾT LẬP */}
+      {/* TOP BAR: THIẾT LẬP & AVATAR */}
       <div className="absolute top-6 right-6 flex gap-3 z-50">
         {hasOrderedBefore && (
           <button 
             onClick={() => navigate('/settings')}
-            className="w-10 h-10 flex items-center justify-center bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-full shadow-md border border-gray-100 dark:border-gray-700 hover:scale-105 transition-transform"
+            className="w-10 h-10 flex items-center justify-center bg-white dark:bg-gray-800 rounded-full shadow-md border border-gray-100 dark:border-gray-700 hover:scale-105 transition-transform overflow-hidden"
             title="Cài đặt tài khoản"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+            )}
           </button>
         )}
 
@@ -221,7 +226,7 @@ const Home = () => {
               </button>
             </div>
 
-            {/* MỚI: NÚT ĐỔI THƯỞNG XU */}
+            {/* NÚT ĐỔI THƯỞNG XU */}
             <div className="w-full mt-4">
               <button 
                 onClick={() => navigate('/rewards')}
@@ -247,8 +252,10 @@ const Home = () => {
         )}
       </div>
 
-      {/* ACTION BUTTONS */}
+      {/* ACTION BUTTONS (Đã Cấu Trúc Lại Cân Đối) */}
       <div className="w-full max-w-xs space-y-4">
+        
+        {/* Nút 1: Đặt Cơm (To) */}
         <button
           onClick={handleOrderClick}
           className={`w-full ${sysConfig.isOpen ? 'bg-gray-800 dark:bg-orange-600 hover:bg-black dark:hover:bg-orange-700 shadow-xl shadow-gray-200 dark:shadow-none' : 'bg-gray-400 cursor-not-allowed'} text-white font-black py-5 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest`}
@@ -257,6 +264,7 @@ const Home = () => {
           {sysConfig.isOpen ? 'ĐẶT CƠM NGAY' : 'TẠM ĐÓNG CỬA'}
         </button>
 
+        {/* Nút 2: Kiểm Tra Đơn Hàng (To) */}
         <button
           onClick={() => navigate(hasOrderedBefore ? `/checkorder?user=${savedPhone}` : '/checkorder')}
           className="w-full bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-orange-400 hover:bg-gray-50 dark:hover:bg-gray-700 font-black py-5 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest"
@@ -265,13 +273,22 @@ const Home = () => {
           KIỂM TRA ĐƠN HÀNG
         </button>
 
+        {/* Nút 3 & 4: Đăng Nhập & Đăng Ký (Chia đôi nằm ngang) */}
         {!hasOrderedBefore && (
-          <button
-            onClick={() => navigate('/dangky')}
-            className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-5 rounded-2xl shadow-lg shadow-orange-200 dark:shadow-none transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-xs tracking-widest"
-          >
-            ĐĂNG KÝ THÀNH VIÊN
-          </button>
+          <div className="flex gap-4">
+            <button
+              onClick={() => setIsPopupOpen(true)}
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-lg shadow-blue-200 dark:shadow-none transition-all active:scale-95 uppercase text-xs tracking-widest"
+            >
+              ĐĂNG NHẬP
+            </button>
+            <button
+              onClick={() => navigate('/dangky')}
+              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-black py-5 rounded-2xl shadow-lg shadow-orange-200 dark:shadow-none transition-all active:scale-95 uppercase text-xs tracking-widest"
+            >
+              ĐĂNG KÝ
+            </button>
+          </div>
         )}
       </div>
 
