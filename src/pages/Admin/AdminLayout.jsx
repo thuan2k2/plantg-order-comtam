@@ -1,13 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { logoutAdmin } from '../../services/authService';
+import { subscribeToAdminChats } from '../../services/chatService'; // Import service chat
 
 const AdminLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
   
-  // 1. Cơ chế Đóng/Mở Sidebar
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [unreadChatCount, setUnreadChatCount] = useState(0); // State giữ số tin chưa đọc
+
+  // LẮNG NGHE TIN NHẮN MỚI REAL-TIME ĐỂ HIỆN THÔNG BÁO
+  useEffect(() => {
+    const unsub = subscribeToAdminChats((chats) => {
+      // Đếm số phòng chat có thuộc tính unreadAdmin === true
+      const count = chats.filter(c => c.unreadAdmin).length;
+      setUnreadChatCount(count);
+    });
+    return () => unsub();
+  }, []);
 
   const isActive = (path) => location.pathname === path;
 
@@ -27,13 +38,19 @@ const AdminLayout = () => {
     }
   };
 
-  // CẬP NHẬT: Thêm mục Quản lý Voucher vào danh sách Menu
   const menuItems = [
     { path: '/admin', label: 'Tổng quan', icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
     )},
     { path: '/admin/orders', label: 'Đơn hôm nay', icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+    )},
+    { 
+      path: '/admin/chat', 
+      label: 'Hỗ trợ khách', 
+      isChat: true, // Đánh dấu để hiện Badge
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
     )},
     { path: '/admin/statistics', label: 'Thống kê', icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
@@ -57,7 +74,6 @@ const AdminLayout = () => {
         className={`bg-gray-900 text-white flex flex-col sticky top-0 h-screen transition-all duration-300 ease-in-out z-50 shadow-2xl
           ${isSidebarOpen ? 'w-64' : 'w-20'}`}
       >
-        {/* Logo & Toggle Button */}
         <div className={`p-6 border-b border-gray-800 flex items-center ${isSidebarOpen ? 'justify-between' : 'justify-center'}`}>
           {isSidebarOpen && (
             <div className="animate-in fade-in slide-in-from-left-2 duration-500">
@@ -75,7 +91,6 @@ const AdminLayout = () => {
           </button>
         </div>
 
-        {/* Navigation Menu */}
         <nav className="flex-1 p-3 space-y-2 mt-4 overflow-y-auto no-scrollbar">
           {menuItems.map((item) => (
             <Link 
@@ -96,6 +111,15 @@ const AdminLayout = () => {
                 </span>
               )}
 
+              {/* BADGE THÔNG BÁO TIN NHẮN MỚI */}
+              {item.isChat && unreadChatCount > 0 && (
+                <span className={`absolute bg-red-500 text-white text-[9px] font-black flex items-center justify-center rounded-full animate-bounce shadow-lg
+                  ${isSidebarOpen ? 'right-4 w-5 h-5' : 'top-2 right-2 w-4 h-4'}`}
+                >
+                  {unreadChatCount}
+                </span>
+              )}
+
               {!isSidebarOpen && (
                 <div className="absolute left-full ml-4 px-3 py-2 bg-gray-800 text-white text-[9px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
                   {item.label}
@@ -105,7 +129,6 @@ const AdminLayout = () => {
           ))}
         </nav>
 
-        {/* NÚT THOÁT ADMIN */}
         <div className="p-3 border-t border-gray-800">
           <button 
             onClick={handleLogout}
@@ -118,13 +141,13 @@ const AdminLayout = () => {
         </div>
       </aside>
 
-      {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="bg-white/80 backdrop-blur-md h-20 flex items-center justify-between px-8 z-20 border-b border-gray-100">
           <div className="flex flex-col">
             <h1 className="text-sm font-black text-gray-800 uppercase tracking-tighter">
               {isActive('/admin') && 'Bảng điều khiển hệ thống'}
               {isActive('/admin/orders') && 'Quản lý đơn bếp hôm nay'}
+              {isActive('/admin/chat') && 'Hỗ trợ khách hàng trực tuyến'}
               {isActive('/admin/statistics') && 'Báo cáo & Lịch sử vĩnh viễn'}
               {isActive('/admin/vouchers') && 'Quản lý kho Voucher'}
               {isActive('/admin/users') && 'Cơ sở dữ liệu khách hàng'}

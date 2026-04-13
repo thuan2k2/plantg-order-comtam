@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { getAllUsers, updateUserProfile } from '../../services/authService';
+import { 
+  subscribeToAllUsers, // Chuyển sang dùng Real-time để cập nhật ngay lập tức
+  updateUserProfile, 
+  deleteUser, 
+  updateUserBanStatus 
+} from '../../services/authService';
 import { createVoucher, deleteVoucher, getAllVouchers } from '../../services/orderService';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/config';
@@ -10,24 +15,33 @@ const ManageUsers = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // State dành cho Modal chỉnh sửa thông tin
+  // States cho các Modals
   const [editingUser, setEditingUser] = useState(null);
-  
-  // State dành cho Modal quản lý Voucher khách
   const [voucherModalUser, setVoucherModalUser] = useState(null);
   const [newVoucher, setNewVoucher] = useState({ code: '', value: 0, type: 'CASH', usageLimit: 1 });
+  
+  // States cho Modal Cấm User
+  const [showBanModal, setShowBanModal] = useState(false);
+  const [banUserTarget, setBanUserTarget] = useState(null);
+  const [banDuration, setBanDuration] = useState('7'); // Mặc định 7 ngày
+  const [customBanDate, setCustomBanDate] = useState('');
 
+  // SỬ DỤNG REAL-TIME LISTENER THAY VÌ LẤY 1 LẦN
   useEffect(() => {
-    fetchInitialData();
-  }, []);
-
-  const fetchInitialData = async () => {
     setIsLoading(true);
-    const [userData, voucherData] = await Promise.all([getAllUsers(), getAllVouchers()]);
-    setUsers(userData);
-    setAllVouchers(voucherData);
-    setIsLoading(false);
-  };
+    const unsubscribeUsers = subscribeToAllUsers((userData) => {
+      setUsers(userData);
+      setIsLoading(false);
+    });
+
+    const fetchVouchers = async () => {
+      const voucherData = await getAllVouchers();
+      setAllVouchers(voucherData);
+    };
+    fetchVouchers();
+
+    return () => unsubscribeUsers();
+  }, []);
 
   const filteredUsers = users.filter(user => 
     (user.username && user.username.includes(searchQuery)) || 
@@ -41,19 +55,91 @@ const ManageUsers = () => {
       return;
     }
     try {
-      const userRef = doc(db, 'users', editingUser.id);
-      await updateDoc(userRef, {
+      const result = await updateUserProfile(editingUser.id, {
         fullName: editingUser.fullName,
         deliveryPhone: editingUser.deliveryPhone || editingUser.username,
-        address: editingUser.address,
-        updatedAt: serverTimestamp()
+        address: editingUser.address
       });
-      setUsers(prev => prev.map(u => u.id === editingUser.id ? editingUser : u));
-      setEditingUser(null);
-      alert("Cập nhật thông tin thành công!");
+      
+      if (result.success) {
+        setEditingUser(null);
+        alert("Cập nhật thông tin thành công!");
+      } else {
+        alert("Lỗi: " + result.error);
+      }
     } catch (error) {
       alert("Lỗi: " + error.message);
     }
+  };
+
+  // --- HÀM XÓA USER VĨNH VIỄN ---
+  const handleDeleteUser = async (user) => {
+    if (window.confirm(`⚠️ NGUY HIỂM: Bạn có chắc chắn muốn XÓA VĨNH VIỄN khách hàng ${user.fullName} (${user.username}) không?\n\nHành động này không thể hoàn tác và sẽ xóa toàn bộ dữ liệu của họ khỏi hệ thống!`)) {
+      const result = await deleteUser(user.id);
+      if (result.success) {
+        alert(`Đã xóa thành công người dùng: ${user.fullName}`);
+      } else {
+        alert("Lỗi khi xóa: " + result.error);
+      }
+    }
+  };
+
+  // --- HÀM QUẢN LÝ CẤM (BAN) USER ---
+  const openBanModal = (user) => {
+    setBanUserTarget(user);
+    setShowBanModal(true);
+  };
+
+  const handleUnbanUser = async (user) => {
+    if (window.confirm(`Xác nhận GỠ LỆNH CẤM cho khách hàng ${user.fullName}?`)) {
+      const result = await updateUserBanStatus(user.id, { isBanned: false, banUntil: null });
+      if (result.success) {
+        alert(`Đã gỡ cấm cho ${user.fullName}. Họ có thể đặt hàng trở lại.`);
+      }
+    }
+  };
+
+  const submitBanUser = async () => {
+    let banUntil = null;
+    
+    if (banDuration === 'permanent') {
+      banUntil = 'permanent';
+    } else if (banDuration === 'custom') {
+      if (!customBanDate) {
+        alert("Vui lòng chọn ngày hết hạn cấm.");
+        return;
+      }
+      banUntil = new Date(customBanDate).getTime();
+    } else {
+      // Tính toán số ngày từ thời điểm hiện tại
+      const days = parseInt(banDuration);
+      banUntil = new Date().getTime() + (days * 24 * 60 * 60 * 1000);
+    }
+
+    const result = await updateUserBanStatus(banUserTarget.id, { 
+      isBanned: true, 
+      banUntil: banUntil 
+    });
+
+    if (result.success) {
+      setShowBanModal(false);
+      setBanUserTarget(null);
+      alert(`Đã CẤM tài khoản ${banUserTarget.fullName} thành công.`);
+    } else {
+      alert("Lỗi khi áp dụng lệnh cấm: " + result.error);
+    }
+  };
+
+  const formatBanTime = (banUntil) => {
+    if (!banUntil) return '';
+    if (banUntil === 'permanent') return 'Cấm Vĩnh Viễn';
+    
+    const date = new Date(banUntil);
+    const now = new Date().getTime();
+    
+    if (banUntil < now) return 'Đã hết hạn cấm (Đang gỡ...)';
+    
+    return `Đến: ${date.toLocaleDateString('vi-VN')} ${date.toLocaleTimeString('vi-VN')}`;
   };
 
   // --- HÀM QUẢN LÝ VOUCHER RIÊNG CHO KHÁCH ---
@@ -61,8 +147,8 @@ const ManageUsers = () => {
     if (!newVoucher.code) return;
     const vData = {
       ...newVoucher,
-      assignedPhone: voucherModalUser.username, // Gán trực tiếp cho SĐT khách
-      expiry: null // Có thể thêm date picker nếu cần
+      assignedPhone: voucherModalUser.username, 
+      expiry: null 
     };
     const res = await createVoucher(vData);
     if (res.success) {
@@ -88,7 +174,7 @@ const ManageUsers = () => {
       <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between gap-4">
         <div>
           <h2 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Cơ sở dữ liệu khách hàng</h2>
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Quản lý tài khoản & Voucher ưu đãi</p>
+          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Quản lý tài khoản & Quyền truy cập</p>
         </div>
         <input 
           type="text" placeholder="Tìm tên hoặc SĐT..." value={searchQuery}
@@ -105,13 +191,14 @@ const ManageUsers = () => {
               <tr className="bg-gray-50/50 text-gray-400 text-[10px] font-black uppercase tracking-widest border-b">
                 <th className="px-8 py-5">Khách hàng</th>
                 <th className="px-8 py-5">SĐT & Địa chỉ</th>
+                <th className="px-8 py-5 text-center">Trạng thái</th>
                 <th className="px-8 py-5 text-center">Voucher</th>
                 <th className="px-8 py-5 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filteredUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-blue-50/20 transition-all group">
+                <tr key={user.id} className={`transition-all group ${user.isBanned ? 'bg-red-50/30' : 'hover:bg-blue-50/20'}`}>
                   <td className="px-8 py-5">
                     <p className="font-black text-gray-800 text-sm uppercase">{user.fullName}</p>
                     <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-md font-bold text-gray-400 mt-1 inline-block">ID: {user.username}</span>
@@ -120,6 +207,19 @@ const ManageUsers = () => {
                     <p className="text-xs font-black text-blue-600">{user.deliveryPhone || user.username}</p>
                     <p className="text-[10px] text-gray-500 font-medium line-clamp-1 mt-1">{user.address}</p>
                   </td>
+                  
+                  {/* CỘT TRẠNG THÁI */}
+                  <td className="px-8 py-5 text-center">
+                    {user.isBanned ? (
+                      <div className="flex flex-col items-center">
+                        <span className="bg-red-100 text-red-600 px-3 py-1 rounded-xl text-[9px] font-black uppercase shadow-sm">Đang bị cấm</span>
+                        <span className="text-[9px] text-red-400 font-bold mt-1 italic">{formatBanTime(user.banUntil)}</span>
+                      </div>
+                    ) : (
+                      <span className="bg-green-100 text-green-600 px-3 py-1 rounded-xl text-[9px] font-black uppercase shadow-sm">Bình thường</span>
+                    )}
+                  </td>
+
                   <td className="px-8 py-5 text-center">
                     <button 
                       onClick={() => setVoucherModalUser(user)}
@@ -128,15 +228,28 @@ const ManageUsers = () => {
                       🎁 {allVouchers.filter(v => v.assignedPhone === user.username).length} Mã
                     </button>
                   </td>
-                  <td className="px-8 py-5 text-right space-x-2">
-                    <button 
-                      onClick={() => setEditingUser(user)}
-                      className="p-3 bg-gray-50 text-gray-400 hover:text-blue-600 rounded-xl transition-all"
-                    >
+                  
+                  {/* CỘT THAO TÁC */}
+                  <td className="px-8 py-5 text-right space-x-2 whitespace-nowrap">
+                    {/* Sửa thông tin */}
+                    <button onClick={() => setEditingUser(user)} title="Sửa thông tin" className="p-3 bg-gray-50 text-gray-400 hover:text-blue-600 rounded-xl transition-all inline-flex">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     </button>
-                    <button className={`p-3 rounded-xl transition-all ${user.status === 'ACTIVE' ? 'text-red-300 hover:text-red-600' : 'text-green-500'}`}>
-                       {/* Nút block giữ như cũ */}
+                    
+                    {/* Cấm / Gỡ Cấm */}
+                    {user.isBanned ? (
+                       <button onClick={() => handleUnbanUser(user)} title="Gỡ cấm" className="p-3 bg-red-100 text-red-500 hover:bg-green-100 hover:text-green-600 rounded-xl transition-all inline-flex">
+                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
+                       </button>
+                    ) : (
+                       <button onClick={() => openBanModal(user)} title="Cấm người dùng" className="p-3 bg-gray-50 text-gray-400 hover:bg-orange-100 hover:text-orange-600 rounded-xl transition-all inline-flex">
+                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                       </button>
+                    )}
+
+                    {/* Xóa User */}
+                    <button onClick={() => handleDeleteUser(user)} title="Xóa khách hàng" className="p-3 bg-gray-50 text-gray-400 hover:bg-red-100 hover:text-red-600 rounded-xl transition-all inline-flex">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
                   </td>
                 </tr>
@@ -145,6 +258,52 @@ const ManageUsers = () => {
           </table>
         </div>
       </div>
+
+      {/* --- MODAL CẤM (BAN) USER --- */}
+      {showBanModal && banUserTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in">
+            <h3 className="text-xl font-black text-red-600 uppercase tracking-tighter mb-2">Đình chỉ tài khoản</h3>
+            <p className="text-xs font-bold text-gray-500 mb-6">Khách hàng <span className="text-gray-800">[{banUserTarget.fullName}]</span> sẽ không thể đặt đơn mới.</p>
+            
+            <div className="space-y-4 mb-8 bg-gray-50 p-5 rounded-3xl border border-gray-100">
+              <label className="flex items-center gap-3 p-2 cursor-pointer">
+                <input type="radio" name="banDuration" value="1" checked={banDuration === '1'} onChange={(e) => setBanDuration(e.target.value)} className="w-4 h-4 text-red-600" />
+                <span className="text-sm font-black text-gray-700">Khóa 1 ngày (Cảnh cáo)</span>
+              </label>
+              <label className="flex items-center gap-3 p-2 cursor-pointer">
+                <input type="radio" name="banDuration" value="3" checked={banDuration === '3'} onChange={(e) => setBanDuration(e.target.value)} className="w-4 h-4 text-red-600" />
+                <span className="text-sm font-black text-gray-700">Khóa 3 ngày</span>
+              </label>
+              <label className="flex items-center gap-3 p-2 cursor-pointer border-t border-gray-200 pt-4">
+                <input type="radio" name="banDuration" value="7" checked={banDuration === '7'} onChange={(e) => setBanDuration(e.target.value)} className="w-4 h-4 text-red-600" />
+                <span className="text-sm font-black text-gray-700">Khóa 7 ngày</span>
+              </label>
+              <label className="flex items-center gap-3 p-2 cursor-pointer">
+                <input type="radio" name="banDuration" value="custom" checked={banDuration === 'custom'} onChange={(e) => setBanDuration(e.target.value)} className="w-4 h-4 text-red-600" />
+                <span className="text-sm font-black text-gray-700">Tùy chọn ngày mở lại:</span>
+              </label>
+              {banDuration === 'custom' && (
+                <input 
+                  type="datetime-local" 
+                  value={customBanDate} 
+                  onChange={(e) => setCustomBanDate(e.target.value)}
+                  className="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm ml-7 w-[calc(100%-28px)] font-bold outline-none"
+                />
+              )}
+              <label className="flex items-center gap-3 p-2 cursor-pointer bg-red-100/50 rounded-xl mt-2">
+                <input type="radio" name="banDuration" value="permanent" checked={banDuration === 'permanent'} onChange={(e) => setBanDuration(e.target.value)} className="w-4 h-4 text-red-600" />
+                <span className="text-sm font-black text-red-600">Khóa Vĩnh Viễn</span>
+              </label>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setShowBanModal(false)} className="flex-1 py-4 text-xs font-black text-gray-400 uppercase tracking-widest bg-gray-50 rounded-2xl">Hủy</button>
+              <button onClick={submitBanUser} className="flex-[2] bg-red-600 text-white py-4 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-red-200 active:scale-95 transition-all">Thiết lập cấm</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- MODAL CHỈNH SỬA THÔNG TIN --- */}
       {editingUser && (
@@ -166,7 +325,7 @@ const ManageUsers = () => {
               </div>
               <div className="flex gap-3 pt-4">
                 <button onClick={() => setEditingUser(null)} className="flex-1 py-4 text-xs font-black text-gray-400 uppercase tracking-widest">Hủy</button>
-                <button onClick={handleSaveUserInfo} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-blue-100">Cập nhật ngay</button>
+                <button onClick={handleSaveUserInfo} className="flex-[2] bg-blue-600 text-white py-4 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-blue-100 active:scale-95 transition-all">Cập nhật ngay</button>
               </div>
             </div>
           </div>
@@ -196,7 +355,7 @@ const ManageUsers = () => {
                {newVoucher.type === 'CASH' && (
                  <input type="number" placeholder="Số tiền giảm (đ)" value={newVoucher.value} onChange={e => setNewVoucher({...newVoucher, value: parseInt(e.target.value)})} className="w-full bg-white border-none rounded-xl px-4 py-3 text-sm font-bold" />
                )}
-               <button onClick={handleAddVoucherToUser} className="bg-blue-600 text-white font-black text-[10px] uppercase rounded-xl shadow-lg shadow-blue-100">Thêm Mã</button>
+               <button onClick={handleAddVoucherToUser} className="bg-blue-600 text-white font-black text-[10px] uppercase rounded-xl shadow-lg shadow-blue-100 active:scale-95 transition-all">Thêm Mã</button>
             </div>
 
             {/* Danh sách voucher hiện có của khách này */}

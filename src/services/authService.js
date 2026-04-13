@@ -12,6 +12,7 @@ import {
   where, 
   updateDoc, 
   doc, 
+  deleteDoc, // Bổ sung import deleteDoc
   serverTimestamp, 
   orderBy,
   onSnapshot 
@@ -40,7 +41,9 @@ export const registerUser = async (userData) => {
       role: 'user',   
       status: 'ACTIVE', 
       totalOrders: 0,
-      createdAt: serverTimestamp()
+      createdAt: serverTimestamp(),
+      isBanned: false, // Bổ sung trường mặc định
+      banUntil: null
     };
 
     const docRef = await addDoc(usersRef, newUser);
@@ -92,7 +95,7 @@ export const subscribeToAuth = (callback) => {
 };
 
 /**
- * 5. Lấy thông tin khách bằng SĐT
+ * 5. Lấy thông tin khách bằng SĐT (Có kiểm tra trạng thái cấm)
  */
 export const getUserByPhone = async (phone) => {
   try {
@@ -103,15 +106,34 @@ export const getUserByPhone = async (phone) => {
     
     if (snapshot.empty) return null;
     const userDoc = snapshot.docs[0];
-    return { id: userDoc.id, ...userDoc.data() };
+    const userData = { id: userDoc.id, ...userDoc.data() };
+
+    // KIỂM TRA LỆNH CẤM TRƯỚC KHI TRẢ VỀ DỮ LIỆU
+    if (userData.isBanned) {
+      if (userData.banUntil === 'permanent') {
+         throw new Error("Tài khoản của bạn đã bị cấm vĩnh viễn. Vui lòng liên hệ quản trị viên.");
+      }
+      
+      const now = new Date().getTime();
+      if (now < userData.banUntil) {
+         const dateStr = new Date(userData.banUntil).toLocaleString('vi-VN');
+         throw new Error(`Tài khoản của bạn đang bị tạm khóa đến ${dateStr}.`);
+      } else {
+         // Đã qua thời hạn cấm -> Tự động gỡ cấm
+         await updateUserBanStatus(userData.id, { isBanned: false, banUntil: null });
+         userData.isBanned = false; 
+      }
+    }
+
+    return userData;
   } catch (error) {
-    return null;
+    console.error("Lỗi khi tìm user:", error);
+    throw error; // Ném lỗi để UI (ví dụ: màn hình Order) bắt và hiển thị Alert
   }
 };
 
 /**
  * 6. LẤY TOÀN BỘ KHÁCH HÀNG (Dạng tĩnh)
- * FIX LỖI: Cung cấp export cho ManageUsers.jsx
  */
 export const getAllUsers = async () => {
   try {
@@ -151,7 +173,6 @@ export const subscribeToAllUsers = (callback) => {
 
 /**
  * 8. Cập nhật thông tin khách hàng
- * FIX LỖI: Cung cấp export cho ManageUsers.jsx
  */
 export const updateUserProfile = async (userId, updateData) => {
   try {
@@ -163,6 +184,37 @@ export const updateUserProfile = async (userId, updateData) => {
     return { success: true };
   } catch (error) {
     console.error("Lỗi updateUserProfile:", error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * 9. Xóa người dùng vĩnh viễn khỏi Firebase
+ */
+export const deleteUser = async (userId) => {
+  try {
+    const userRef = doc(db, COLLECTION_NAME, userId);
+    await deleteDoc(userRef);
+    return { success: true };
+  } catch (error) {
+    console.error("Lỗi khi xóa người dùng:", error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * 10. Cập nhật trạng thái Cấm / Gỡ cấm người dùng
+ */
+export const updateUserBanStatus = async (userId, banData) => {
+  try {
+    const userRef = doc(db, COLLECTION_NAME, userId);
+    await updateDoc(userRef, {
+      ...banData,
+      updatedAt: serverTimestamp()
+    });
+    return { success: true };
+  } catch (error) {
+    console.error("Lỗi khi cập nhật trạng thái cấm:", error);
     return { success: false, error: error.message };
   }
 };

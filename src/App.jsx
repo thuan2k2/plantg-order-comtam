@@ -12,6 +12,9 @@ import Register from './pages/Register';
 import Order from './pages/Order';
 import CheckOrder from './pages/CheckOrder';
 
+// Import Widget Chat dành cho Khách hàng
+import CustomerChat from './components/CustomerChat';
+
 // Admin Pages
 import AdminLayout from './pages/Admin/AdminLayout';
 import Dashboard from './pages/Admin/Dashboard';
@@ -19,6 +22,7 @@ import ManageOrders from './pages/Admin/ManageOrders';
 import ManageUsers from './pages/Admin/ManageUsers';
 import ManageMenu from './pages/Admin/ManageMenu';
 import ManageVouchers from './pages/Admin/ManageVouchers';
+import ManageChat from './pages/Admin/ManageChat'; // Trang quản lý chat Admin
 import AdminLogin from './pages/Admin/AdminLogin';
 import Statistics from './pages/Admin/Statistics'; 
 
@@ -61,10 +65,8 @@ const ProtectedAdminRoute = ({ children }) => {
 
 function App() {
   return (
-    // BỌC Provider ở ngoài cùng để mọi Route đều dùng được hook useSettings()
     <SettingsProvider>
       <Router>
-        {/* Lớp vỏ dark mode tổng: Tự động chuyển màu nền theo theme */}
         <div className="app-container dark:bg-gray-900 transition-colors duration-300 min-h-screen">
           <Routes>
             {/* --- Cấu trúc các trang dành cho Khách hàng --- */}
@@ -91,6 +93,7 @@ function App() {
               <Route path="users" element={<ManageUsers />} />
               <Route path="menu" element={<ManageMenu />} />
               <Route path="vouchers" element={<ManageVouchers />} />
+              <Route path="chat" element={<ManageChat />} /> {/* Thêm Route Chat cho Admin */}
             </Route>
 
             {/* --- Route xử lý lỗi 404 --- */}
@@ -98,8 +101,8 @@ function App() {
               <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-10 text-center font-sans">
                 <div className="max-w-md w-full bg-white dark:bg-gray-800 p-12 rounded-[3rem] shadow-2xl shadow-gray-200/50 dark:shadow-black/50 border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in duration-500">
                   <h1 className="text-8xl font-black text-blue-50 dark:text-blue-900/30 mb-2 tracking-tighter relative">
-                     404
-                     <span className="absolute inset-0 flex items-center justify-center text-4xl text-gray-800 dark:text-gray-100">Oops!</span>
+                      404
+                      <span className="absolute inset-0 flex items-center justify-center text-4xl text-gray-800 dark:text-gray-100">Oops!</span>
                   </h1>
                   <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.4em] mb-10">Trang này không tồn tại hoặc đã bị gỡ bỏ</p>
                   <button 
@@ -112,6 +115,9 @@ function App() {
               </div>
             } />
           </Routes>
+
+          {/* CHÈN WIDGET CHAT TẠI ĐÂY: Sẽ nổi lên trên mọi trang khách hàng */}
+          <CustomerChat />
         </div>
       </Router>
     </SettingsProvider>

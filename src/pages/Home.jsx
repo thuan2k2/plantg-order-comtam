@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import UsernamePopup from '../components/UsernamePopup';
 import { useSettings } from '../contexts/SettingsContext'; 
-import { getUserByPhone } from '../services/authService'; // Bổ sung để đồng bộ Firebase
+import { getUserByPhone } from '../services/authService';
 
 const Home = () => {
   const navigate = useNavigate();
@@ -26,20 +26,30 @@ const Home = () => {
         setSavedPhone(phone);
         setHasOrderedBefore(true);
 
-        // LOGIC ĐỒNG BỘ: Nếu chưa có tên trong máy khách, tìm trên Firebase
-        if (!userProfile.fullName) {
-          const cloudData = await getUserByPhone(phone);
-          if (cloudData) {
-            setCustomerName(cloudData.fullName);
-            // Cập nhật lại bộ nhớ máy khách
-            localStorage.setItem('userProfile', JSON.stringify({
-              fullName: cloudData.fullName,
-              username: cloudData.username,
-              address: cloudData.address
-            }));
+        try {
+          // LOGIC ĐỒNG BỘ: Nếu chưa có tên trong máy khách, tìm trên Firebase
+          if (!userProfile.fullName) {
+            const cloudData = await getUserByPhone(phone);
+            if (cloudData) {
+              setCustomerName(cloudData.fullName);
+              // Cập nhật lại bộ nhớ máy khách
+              localStorage.setItem('userProfile', JSON.stringify({
+                fullName: cloudData.fullName,
+                username: cloudData.username,
+                address: cloudData.address
+              }));
+            }
+          } else {
+            setCustomerName(userProfile.fullName);
           }
-        } else {
-          setCustomerName(userProfile.fullName);
+        } catch (error) {
+          // BẮT LỖI KHI KHÁCH HÀNG BỊ ADMIN CẤM (BANNED)
+          alert(error.message);
+          localStorage.removeItem('recentPhones');
+          localStorage.removeItem('userProfile');
+          setHasOrderedBefore(false);
+          setSavedPhone('');
+          setCustomerName('');
         }
       }
     };
@@ -48,7 +58,7 @@ const Home = () => {
   }, []);
 
   const handleLogoutCustomer = () => {
-    if (window.confirm("Bạn muốn đặt hàng bằng số điện thoại khác?")) {
+    if (window.confirm(t('logoutConfirm') || "Bạn muốn đặt hàng bằng số điện thoại khác?")) {
       localStorage.removeItem('recentPhones');
       localStorage.removeItem('userProfile');
       setHasOrderedBefore(false);
@@ -146,7 +156,7 @@ const Home = () => {
           <div className="bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-orange-100 dark:border-gray-700 text-center relative overflow-hidden transition-colors">
             <div className="absolute top-0 right-0 w-12 h-12 bg-orange-50 dark:bg-gray-700 rounded-bl-full opacity-50"></div>
             
-            <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.2em] mb-1">Thành viên thân thiết</p>
+            <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.2em] mb-1">{t('loyalMember') || 'Thành viên thân thiết'}</p>
             <h2 className="text-lg font-black text-gray-800 dark:text-white truncate transition-colors">
                {t('welcome')} {customerName || 'Bạn'}!
             </h2>
@@ -156,13 +166,13 @@ const Home = () => {
               onClick={handleLogoutCustomer}
               className="text-[10px] font-black text-red-500 border border-red-100 dark:border-red-900/50 px-4 py-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors uppercase tracking-widest"
             >
-              Đổi số khác
+              {t('changePhone') || 'Đổi số khác'}
             </button>
           </div>
         ) : (
           <div className="text-center">
             <p className="text-sm text-gray-400 dark:text-gray-400 font-medium italic transition-colors">
-              "Cơm dẻo, sườn thơm, đậm đà vị nhà"
+              "{t('slogan') || 'Cơm dẻo, sườn thơm, đậm đà vị nhà'}"
             </p>
           </div>
         )}
@@ -191,7 +201,7 @@ const Home = () => {
             onClick={() => navigate('/dangky')}
             className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-5 rounded-2xl shadow-lg shadow-orange-200 dark:shadow-none transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-xs tracking-widest"
           >
-            Đăng ký thành viên
+            {t('register') || 'Đăng ký thành viên'}
           </button>
         )}
       </div>
