@@ -131,7 +131,7 @@ const Home = () => {
         
         <div className="mt-6">
           <h1 className="text-4xl font-black text-gray-800 dark:text-gray-100 tracking-tighter leading-none transition-colors">
-            PLANT G <br/>
+            CƠM TẤM VINHOMES <br/>
             <span className="text-orange-600 text-2xl uppercase italic">Kitchen House</span>
           </h1>
           <div className="flex justify-center gap-1 mt-3">
