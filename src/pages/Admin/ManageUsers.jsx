@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getAllUsers, updateUserProfile } from '../../services/authService';
 import { createVoucher, deleteVoucher, getAllVouchers } from '../../services/orderService';
-import { doc, updateDoc, serverTimestamp } from 'firebase/timestamp';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 
 const ManageUsers = () => {
