@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getAuth } from 'firebase/auth'; 
-import { doc, updateDoc } from 'firebase/firestore'; // Thêm để cập nhật Firestore nội bộ
-import { db } from '../../firebase/config'; // Import database config
+import { doc, updateDoc } from 'firebase/firestore'; 
+import { db } from '../../firebase/config'; 
 import { 
   subscribeToOrdersByDate, 
   updateOrderStatus, 
   confirmPaymentStatus,
   deleteOrderSoft,
   completeOrderWithBonus,
-  awardLateVoucher // Thêm hàm tặng Voucher từ Service
+  awardLateVoucher 
 } from '../../services/orderService';
 import StatusBadge from '../../components/StatusBadge';
-import CountdownBorder from '../../components/CountdownBorder'; // Import Component đếm ngược
+import CountdownBorder from '../../components/CountdownBorder'; 
 
 const ORDER_STATUSES = {
   PENDING: { label: 'Chờ xác nhận', color: 'bg-gray-100 text-gray-700 border-gray-200' },
@@ -25,9 +25,13 @@ const ORDER_STATUSES = {
 const ManageOrders = () => {
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [now, setNow] = useState(new Date().getTime()); // State lưu thời gian thực để check trễ
+  const [now, setNow] = useState(new Date().getTime()); 
   const auth = getAuth(); 
   
+  // Ref để theo dõi số lượng đơn PENDING cũ (dùng cho âm thanh)
+  const prevPendingCount = useRef(0);
+  const isInitialLoad = useRef(true);
+
   // TABS
   const [activeTab, setActiveTab] = useState('ALL');
   const tabs = [
@@ -47,12 +51,32 @@ const ManageOrders = () => {
   useEffect(() => {
     setIsLoading(true);
     const todayStr = new Date().toLocaleDateString('vi-VN');
+    
     const unsubscribe = subscribeToOrdersByDate(todayStr, (data) => {
+      // 1. TÍNH TOÁN SỐ LƯỢNG ĐƠN ĐANG CHỜ
+      const currentPendingCount = data.filter(o => o.status === 'PENDING').length;
+
+      // 2. LOGIC PHÁT ÂM THANH
+      // Chỉ kêu khi: Không phải lần load đầu tiên VÀ có thêm đơn PENDING mới
+      if (!isInitialLoad.current && currentPendingCount > prevPendingCount.current) {
+        try {
+          // Play âm thanh từ thư mục public
+          const audio = new Audio('/new-order.mp3');
+          audio.play().catch(e => console.warn("Trình duyệt chặn autoplay âm thanh:", e));
+        } catch (error) {
+          console.error("Lỗi phát âm thanh:", error);
+        }
+      }
+
+      // Cập nhật ref và state
+      prevPendingCount.current = currentPendingCount;
+      if (isInitialLoad.current) isInitialLoad.current = false;
+      
       setOrders(data);
       setIsLoading(false);
     });
 
-    const timer = setInterval(() => setNow(new Date().getTime()), 60000); // Update mỗi 60s
+    const timer = setInterval(() => setNow(new Date().getTime()), 60000); 
     return () => {
       unsubscribe();
       clearInterval(timer);

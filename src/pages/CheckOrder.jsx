@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import StatusBadge from '../components/StatusBadge'; 
-import CountdownBorder from '../components/CountdownBorder'; // Import Component đếm ngược
+import CountdownBorder from '../components/CountdownBorder'; 
 import { 
   subscribeToOrdersByPhone, 
   updateOrderStatus, 
@@ -217,6 +217,10 @@ const CheckOrder = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [visibleCount, setVisibleCount] = useState(5);
 
+  // Refs để quản lý logic phát âm thanh
+  const prevStatuses = useRef({});
+  const isInitialLoad = useRef(true);
+
   useEffect(() => {
     if (userPhoneParam) setPhoneInput(userPhoneParam);
   }, [userPhoneParam]);
@@ -226,6 +230,34 @@ const CheckOrder = () => {
     if (userPhoneParam && userPhoneParam.length >= 10) {
       setIsSearching(true);
       unsubscribe = subscribeToOrdersByPhone(userPhoneParam, (updatedOrders) => {
+        
+        let hasStatusChanged = false;
+
+        // Quét qua các đơn hàng để tìm sự thay đổi trạng thái
+        updatedOrders.forEach(order => {
+          const oldStatus = prevStatuses.current[order.id];
+          
+          if (oldStatus && oldStatus !== order.status) {
+            hasStatusChanged = true;
+          }
+          
+          // Cập nhật trạng thái mới nhất vào bộ nhớ tạm
+          prevStatuses.current[order.id] = order.status;
+        });
+
+        // Chỉ phát âm thanh nếu không phải lần load đầu và có sự thay đổi
+        if (!isInitialLoad.current && hasStatusChanged) {
+          try {
+            const audio = new Audio('/status-update.mp3');
+            audio.play().catch(e => console.warn("Trình duyệt chặn autoplay âm thanh:", e));
+          } catch (error) {
+            console.error("Lỗi phát âm thanh:", error);
+          }
+        }
+
+        // Đánh dấu đã qua lần tải dữ liệu đầu tiên
+        if (isInitialLoad.current) isInitialLoad.current = false;
+
         setOrders(updatedOrders);
         setIsSearching(false);
       });

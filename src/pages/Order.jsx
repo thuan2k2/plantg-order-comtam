@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore'; // Import để đọc cấu hình Admin
+import { doc, onSnapshot } from 'firebase/firestore'; // Thay getDoc bằng onSnapshot
 import { db } from '../firebase/config';
 import { createOrder, validateVoucher, getMyVouchers } from '../services/orderService';
 import { getUserByPhone } from '../services/authService'; 
@@ -31,32 +31,47 @@ const Order = () => {
 
   // STATE lưu trữ cấu hình hệ thống từ Admin
   const [sysConfig, setSysConfig] = useState({ isOpen: true, minOrder: 0 });
+  const [showClosingPopup, setShowClosingPopup] = useState(false); // State quản lý Popup đóng cửa
 
   useEffect(() => {
-    // Tải cấu hình hệ thống
-    const fetchSystemConfig = async () => {
-      try {
-        const snap = await getDoc(doc(db, 'system', 'config'));
-        if (snap.exists()) setSysConfig(snap.data());
-      } catch (error) {
-        console.error("Lỗi lấy cấu hình:", error);
-      }
-    };
-    fetchSystemConfig();
+    // 1. Lắng nghe trạng thái Hệ thống liên tục
+    const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setSysConfig(data);
 
-    const unsubscribe = subscribeToMenu((data) => {
+        // NẾU ADMIN ĐÓNG CỬA ĐỘT XUẤT KHI KHÁCH ĐANG Ở TRANG NÀY
+        if (data.isOpen === false) {
+          setShowClosingPopup(true);
+          // Ẩn Confirm Modal nếu nó đang mở để tránh lỗi thao tác
+          setShowConfirm(false); 
+          // Đếm ngược 3s rồi đẩy về Home
+          setTimeout(() => {
+            navigate('/');
+          }, 3000);
+        }
+      }
+    });
+
+    // 2. Lắng nghe Menu
+    const unsubscribeMenu = subscribeToMenu((data) => {
       setMenu(data);
       setIsLoading(false);
     });
     
+    // 3. Xử lý số điện thoại
     const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
     setRecentPhones(savedPhones);
     if (!userPhoneParam && savedPhones.length > 0) {
       setUsername(savedPhones[0]);
     }
     
-    return () => unsubscribe();
-  }, [userPhoneParam]);
+    // Hủy lắng nghe khi rời trang
+    return () => {
+      unsubConfig();
+      unsubscribeMenu();
+    };
+  }, [userPhoneParam, navigate]);
 
   useEffect(() => {
     const syncData = async () => {
@@ -215,22 +230,8 @@ const Order = () => {
     </div>
   );
 
-  // MÀN HÌNH CHẶN NẾU QUÁN ĐÓNG CỬA
-  if (!sysConfig.isOpen) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 p-6 text-center">
-      <div className="w-24 h-24 bg-gray-200 dark:bg-gray-800 rounded-full flex items-center justify-center text-4xl mb-6">😴</div>
-      <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase tracking-tighter mb-2">Quán đang đóng cửa</h2>
-      <p className="text-sm font-bold text-gray-400 dark:text-gray-500 max-w-xs leading-relaxed mb-8">
-        Chúng tôi hiện đang nghỉ ngơi hoặc đã hết giờ phục vụ. Bạn vui lòng quay lại vào ngày mai nhé!
-      </p>
-      <button onClick={() => navigate('/')} className="bg-blue-600 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl">
-        Quay về trang chủ
-      </button>
-    </div>
-  );
-
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-44 font-sans transition-colors duration-300">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-44 font-sans transition-colors duration-300 relative">
       
       {/* HEADER TABS */}
       <div className="bg-white dark:bg-gray-800 sticky top-0 z-30 shadow-sm border-b dark:border-gray-700 transition-colors">
@@ -256,7 +257,7 @@ const Order = () => {
       <div className="px-6 pt-4">
         {sysConfig.minOrder > 0 && (
           <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest text-center mb-2">
-            * Đơn hàng tối thiểu: {sysConfig.minOrder.toLocaleString()}đ
+            * Xin lưu ý: Đơn hàng cần đạt tối tối thiểu: {sysConfig.minOrder.toLocaleString()}đ để được phục vụ. Cảm ơn bạn! *
           </p>
         )}
       </div>
@@ -438,6 +439,26 @@ const Order = () => {
           </div>
         </div>
       )}
+
+      {/* POPUP THÔNG BÁO ĐÓNG CỬA ĐỘT XUẤT */}
+      {showClosingPopup && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+          <div className="bg-white dark:bg-gray-800 w-full max-w-xs rounded-[2.5rem] p-8 text-center shadow-2xl animate-in zoom-in-95">
+            <div className="text-5xl mb-4">🙏</div>
+            <h2 className="text-lg font-black uppercase text-gray-800 dark:text-white leading-tight mb-2">
+              Thành thật xin lỗi!
+            </h2>
+            <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 leading-relaxed uppercase tracking-tighter">
+              Bếp vừa mới đóng cửa để nghỉ ngơi. <br/>
+              Hệ thống sẽ đưa bạn về trang chủ sau 3 giây...
+            </p>
+            <div className="mt-6 flex justify-center">
+               <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore'; // Import để lấy Cấu hình hệ thống
+import { doc, onSnapshot } from 'firebase/firestore'; // Dùng onSnapshot thay vì getDoc
 import { db } from '../firebase/config';
 import UsernamePopup from '../components/UsernamePopup';
 import { useSettings } from '../contexts/SettingsContext'; 
@@ -16,7 +16,6 @@ const Home = () => {
   const [customerName, setCustomerName] = useState('');
   const [showThemeMenu, setShowThemeMenu] = useState(false);
 
-  // Thêm State để lưu cấu hình Admin
   const [sysConfig, setSysConfig] = useState({
     isOpen: true,
     openTime: '11:00 - 21:00',
@@ -24,18 +23,16 @@ const Home = () => {
   });
 
   useEffect(() => {
-    // Tải cấu hình hệ thống từ Firebase
-    const fetchSystemConfig = async () => {
-      try {
-        const snap = await getDoc(doc(db, 'system', 'config'));
-        if (snap.exists()) setSysConfig(snap.data());
-      } catch (error) {
-        console.error("Lỗi lấy cấu hình hệ thống:", error);
+    // 1. Lắng nghe thay đổi Cấu hình hệ thống (Real-time)
+    const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (doc) => {
+      if (doc.exists()) {
+        setSysConfig(doc.data());
       }
-    };
-    fetchSystemConfig();
+    }, (error) => {
+      console.error("Lỗi lắng nghe cấu hình:", error);
+    });
 
-    // Logic đồng bộ thông tin khách hàng
+    // 2. Logic đồng bộ thông tin khách hàng (Chỉ chạy 1 lần khi load)
     const syncWithFirebase = async () => {
       const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
       const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
@@ -54,7 +51,7 @@ const Home = () => {
                 fullName: cloudData.fullName,
                 username: cloudData.username,
                 address: cloudData.address,
-                avatarUrl: cloudData.avatarUrl || '' // Lưu thêm Avatar
+                avatarUrl: cloudData.avatarUrl || ''
               }));
             }
           } else {
@@ -62,12 +59,15 @@ const Home = () => {
           }
         } catch (error) {
           alert(error.message);
-          handleLogoutCustomer(false); // Buộc đăng xuất không cần hỏi nếu bị Ban
+          handleLogoutCustomer(false); 
         }
       }
     };
 
     syncWithFirebase();
+
+    // Cleanup function để hủy lắng nghe khi thoát Component
+    return () => unsubConfig();
   }, []);
 
   const handleLogoutCustomer = (confirm = true) => {
@@ -152,7 +152,7 @@ const Home = () => {
               HOT!
             </div>
           ) : (
-             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] bg-gray-900 text-white text-xs font-black px-3 py-2 rounded-lg -rotate-12 shadow-md border-2 border-white uppercase tracking-widest whitespace-nowrap">
+             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] bg-gray-900 text-white text-xs font-black px-3 py-2 rounded-lg -rotate-12 shadow-md border-2 border-white uppercase tracking-widest whitespace-nowrap animate-pulse">
               ĐÃ ĐÓNG CỬA
             </div>
           )}
