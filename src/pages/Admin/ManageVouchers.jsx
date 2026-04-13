@@ -6,13 +6,14 @@ const ManageVouchers = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   
-  // State khởi tạo cho Voucher mới
+  // BỔ SUNG TRƯỜNG expiryDate
   const [newV, setNewV] = useState({
     code: '', 
     value: 5000, 
-    type: 'CASH', // CASH hoặc FREESHIP
-    assignedPhone: '', // Để trống = Mọi người đều dùng được
-    usageLimit: 1, // Số lượt khách có thể sử dụng (VD: add 50 lượt cho khách A)
+    type: 'CASH',
+    assignedPhone: '',
+    usageLimit: 1,
+    expiryDate: '' 
   });
 
   useEffect(() => {
@@ -30,20 +31,23 @@ const ManageVouchers = () => {
     e.preventDefault();
     if (!newV.code) return;
 
-    // Chuẩn hóa dữ liệu: Code viết hoa, phí ship mặc định giảm 5000đ nếu là FREESHIP
+    // Xử lý Ngày hết hạn (Chốt ở cuối ngày 23:59:59)
     const voucherData = {
       ...newV,
       code: newV.code.toUpperCase().trim(),
       value: newV.type === 'FREESHIP' ? 5000 : newV.value,
-      usageLimit: parseInt(newV.usageLimit) || 1
+      usageLimit: parseInt(newV.usageLimit) || 1,
+      expiry: newV.expiryDate ? new Date(newV.expiryDate + 'T23:59:59') : null
     };
+    
+    // Xóa thuộc tính tạm thời trước khi đẩy lên Firebase
+    delete voucherData.expiryDate;
 
     const res = await createVoucher(voucherData);
     if (res.success) {
       setShowAdd(false);
       loadVouchers();
-      // Reset form
-      setNewV({ code: '', value: 5000, type: 'CASH', assignedPhone: '', usageLimit: 1 });
+      setNewV({ code: '', value: 5000, type: 'CASH', assignedPhone: '', usageLimit: 1, expiryDate: '' });
       alert("Đã tạo và lưu kho Voucher thành công!");
     } else {
       alert("Lỗi: " + res.error);
@@ -120,7 +124,7 @@ const ManageVouchers = () => {
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block ml-1">Số lượng lượt dùng (VD: 50)</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block ml-1">Số lượng lượt dùng</label>
                 <input 
                   type="number" 
                   required
@@ -131,14 +135,25 @@ const ManageVouchers = () => {
                 />
               </div>
 
-              <div className="lg:col-span-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block ml-1">Gán cho SĐT (Để trống nếu dùng chung)</label>
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block ml-1">Gán cho SĐT (Trống = Công khai)</label>
                 <input 
                   type="tel" 
                   placeholder="0386 xxx xxx"
                   value={newV.assignedPhone} 
                   onChange={e => setNewV({...newV, assignedPhone: e.target.value})} 
                   className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-blue-600 outline-none" 
+                />
+              </div>
+
+              {/* BỔ SUNG Ô CHỌN NGÀY HẾT HẠN */}
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block ml-1">Ngày hết hạn (Không bắt buộc)</label>
+                <input 
+                  type="date" 
+                  value={newV.expiryDate} 
+                  onChange={e => setNewV({...newV, expiryDate: e.target.value})} 
+                  className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-blue-600 outline-none text-gray-700" 
                 />
               </div>
             </div>
@@ -153,41 +168,52 @@ const ManageVouchers = () => {
 
       {/* Danh sách Voucher hiển thị dạng Grid mượt mà */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {vouchers.map(v => (
-          <div key={v.id} className="bg-white p-7 rounded-[2.5rem] shadow-sm border border-gray-100 flex justify-between items-center relative overflow-hidden group hover:shadow-md transition-all">
-            {/* Thanh màu chỉ thị loại voucher */}
-            <div className={`absolute left-0 top-0 bottom-0 w-2 ${v.type === 'FREESHIP' ? 'bg-blue-500' : 'bg-green-500'}`}></div>
-            
-            <div className="space-y-1">
-              <div className="flex items-center gap-3">
-                <h3 className="text-base font-black text-gray-800 tracking-tight">{v.code}</h3>
-                <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${v.type === 'FREESHIP' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
-                  {v.type === 'FREESHIP' ? 'Freeship' : `-${v.value.toLocaleString()}đ`}
-                </span>
-              </div>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">
-                {v.assignedPhone ? (
-                  <span className="text-blue-500">📍 Riêng: {v.assignedPhone}</span>
-                ) : (
-                  <span className="text-gray-400">🌍 Voucher công khai</span>
-                )}
-              </p>
-              <div className="flex items-center gap-2 mt-2">
-                 <div className="bg-gray-100 h-1.5 w-20 rounded-full overflow-hidden">
-                    <div className="bg-gray-300 h-full w-full"></div>
-                 </div>
-                 <p className="text-[9px] font-black text-gray-500 uppercase">Còn {v.usageLimit} lượt</p>
-              </div>
-            </div>
+        {vouchers.map(v => {
+          // Tính toán trạng thái hết hạn
+          const isExpired = v.expiry && v.expiry.toDate() < new Date();
 
-            <button 
-              onClick={() => handleDelete(v.id)} 
-              className="p-3 text-gray-300 hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-            </button>
-          </div>
-        ))}
+          return (
+            <div key={v.id} className={`bg-white p-7 rounded-[2.5rem] shadow-sm border ${isExpired ? 'border-red-200 bg-red-50/20 opacity-70' : 'border-gray-100'} flex justify-between items-center relative overflow-hidden group hover:shadow-md transition-all`}>
+              <div className={`absolute left-0 top-0 bottom-0 w-2 ${v.type === 'FREESHIP' ? 'bg-blue-500' : 'bg-green-500'}`}></div>
+              
+              <div className="space-y-1 w-full pr-4">
+                <div className="flex items-center gap-3">
+                  <h3 className={`text-base font-black tracking-tight ${isExpired ? 'text-red-500 line-through' : 'text-gray-800'}`}>{v.code}</h3>
+                  <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${v.type === 'FREESHIP' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
+                    {v.type === 'FREESHIP' ? 'Freeship' : `-${v.value.toLocaleString()}đ`}
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">
+                  {v.assignedPhone ? (
+                    <span className="text-blue-500">📍 Riêng: {v.assignedPhone}</span>
+                  ) : (
+                    <span className="text-gray-400">🌍 Công khai</span>
+                  )}
+                </p>
+                <div className="flex items-center gap-3 mt-2">
+                   <div className="bg-gray-100 h-1.5 w-16 rounded-full overflow-hidden">
+                      <div className={`h-full w-full ${v.usageLimit <= 0 ? 'bg-red-400' : 'bg-green-400'}`}></div>
+                   </div>
+                   <p className="text-[9px] font-black text-gray-500 uppercase">Còn {v.usageLimit} lượt</p>
+                   
+                   {/* Hiển thị hạn sử dụng */}
+                   {v.expiry && (
+                     <p className={`text-[9px] font-black uppercase ${isExpired ? 'text-red-500' : 'text-orange-500'}`}>
+                        • HSD: {v.expiry.toDate().toLocaleDateString('vi-VN')}
+                     </p>
+                   )}
+                </div>
+              </div>
+
+              <button 
+                onClick={() => handleDelete(v.id)} 
+                className="p-3 text-gray-300 hover:bg-red-50 hover:text-red-500 rounded-2xl transition-all"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              </button>
+            </div>
+          );
+        })}
 
         {vouchers.length === 0 && (
           <div className="col-span-full py-20 text-center bg-white rounded-[2.5rem] border border-dashed border-gray-200">

@@ -130,8 +130,11 @@ const Order = () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     
-    const activeVoucherId = appliedVoucher ? appliedVoucher.id : (appliedFreeship ? appliedFreeship.id : null);
-    const activeUsageLimit = appliedVoucher ? appliedVoucher.usageLimit : (appliedFreeship ? appliedFreeship.usageLimit : 0);
+    // Thu thập toàn bộ voucher đang được áp dụng
+    const usedVouchers = [];
+    if (appliedVoucher) usedVouchers.push({ id: appliedVoucher.id, type: appliedVoucher.type });
+    if (appliedFreeship) usedVouchers.push({ id: appliedFreeship.id, type: appliedFreeship.type });
+    
     const cleanPhone = username.trim();
 
     const orderData = {
@@ -144,8 +147,7 @@ const Order = () => {
       discount: appliedVoucher?.value || 0,
       total: getFinalTotal().toLocaleString('vi-VN') + 'đ',
       note: note.trim(),
-      appliedVoucherId: activeVoucherId,
-      currentUsageLimit: activeUsageLimit
+      usedVouchers // Gửi mảng usedVouchers lên Firestore để trừ số lượng
     };
 
     try {
@@ -284,32 +286,39 @@ const Order = () => {
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-sm font-black uppercase text-gray-800 tracking-widest">Ưu đãi của bạn</h3>
-                <p className="text-[9px] text-gray-400 font-bold mt-1 uppercase">Gồm mã cá nhân & công khai</p>
+                <p className="text-[9px] text-gray-400 uppercase font-bold mt-1">Gồm mã cá nhân & công khai</p>
               </div>
               <button onClick={() => setShowVoucherList(false)} className="w-10 h-10 flex items-center justify-center bg-gray-50 rounded-full text-gray-400">&times;</button>
             </div>
             <div className="space-y-3 max-h-80 overflow-y-auto pr-2 no-scrollbar">
-              {myVouchers.map(v => (
-                <button 
-                  key={v.id}
-                  onClick={() => handleApplyVoucher(v.code)}
-                  className="w-full flex justify-between items-center p-5 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-left"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                       <p className="font-black text-gray-800 text-sm tracking-widest uppercase">{v.code}</p>
-                       {(!v.assignedPhone || v.assignedPhone.trim() === "") && (
-                         <span className="bg-orange-100 text-orange-600 px-2 py-0.5 rounded text-[8px] font-black tracking-widest uppercase">Công khai</span>
-                       )}
+              {myVouchers.map(v => {
+                // NÂNG CẤP: Kiểm tra xem mã này có đang được áp dụng hay không
+                const isApplied = appliedVoucher?.id === v.id || appliedFreeship?.id === v.id;
+
+                return (
+                  <button 
+                    key={v.id}
+                    onClick={() => !isApplied && handleApplyVoucher(v.code)}
+                    className={`w-full flex justify-between items-center p-5 rounded-2xl border-2 transition-all text-left ${isApplied ? 'bg-blue-50 border-blue-400' : 'bg-gray-50 border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50'}`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                         <p className="font-black text-gray-800 text-sm tracking-widest uppercase">{v.code}</p>
+                         {(!v.assignedPhone || v.assignedPhone.trim() === "") && (
+                           <span className="bg-orange-100 text-orange-600 px-2 py-0.5 rounded text-[8px] font-black tracking-widest uppercase">Công khai</span>
+                         )}
+                      </div>
+                      <p className="text-[10px] text-blue-600 font-bold uppercase mt-1">
+                        {v.type === 'FREESHIP' ? 'Miễn phí vận chuyển' : `Giảm giá -${v.value.toLocaleString()}đ`}
+                      </p>
+                      <p className="text-[9px] text-gray-400 mt-1 font-medium italic">Bạn còn {v.usageLimit} lần dùng</p>
                     </div>
-                    <p className="text-[10px] text-blue-600 font-bold uppercase mt-1">
-                      {v.type === 'FREESHIP' ? 'Miễn phí vận chuyển' : `Giảm giá -${v.value.toLocaleString()}đ`}
-                    </p>
-                    <p className="text-[9px] text-gray-400 mt-1 font-medium italic">Bạn còn {v.usageLimit} lần dùng</p>
-                  </div>
-                  <div className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase shadow-lg shadow-blue-100">DÙNG</div>
-                </button>
-              ))}
+                    <div className={`${isApplied ? 'bg-green-500' : 'bg-blue-600'} text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md ${isApplied ? 'shadow-green-100' : 'shadow-blue-100'}`}>
+                      {isApplied ? 'ĐANG DÙNG' : 'DÙNG'}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

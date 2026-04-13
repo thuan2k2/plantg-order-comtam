@@ -4,12 +4,14 @@ import {
   updateDoc, 
   deleteDoc,
   getDocs,
+  getDoc,
   doc, 
   query, 
   where, 
   orderBy, 
   serverTimestamp, 
-  onSnapshot 
+  onSnapshot,
+  increment 
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -19,7 +21,7 @@ const VOUCHER_COL = 'vouchers';
 let isSubmittingOrder = false;
 
 /**
- * 1. Tạo đơn hàng mới (Chống Spam & Trừ lượt dùng Voucher)
+ * 1. Tạo đơn hàng mới (Chống Spam & Trừ lượt dùng Voucher an toàn)
  */
 export const createOrder = async (orderData) => {
   if (isSubmittingOrder) {
@@ -35,13 +37,15 @@ export const createOrder = async (orderData) => {
     };
     const docRef = await addDoc(collection(db, COLLECTION_NAME), newOrder);
     
-    // Nếu có sử dụng voucher, thực hiện trừ lượt sử dụng ngay lập tức
-    if (orderData.appliedVoucherId) {
-      const vRef = doc(db, VOUCHER_COL, orderData.appliedVoucherId);
-      await updateDoc(vRef, {
-        usageLimit: (orderData.currentUsageLimit || 1) - 1
-      });
+    // NÂNG CẤP: Duyệt qua danh sách TẤT CẢ voucher đã dùng và trừ đi 1 lượt (Dùng increment)
+    if (orderData.usedVouchers && orderData.usedVouchers.length > 0) {
+      for (const v of orderData.usedVouchers) {
+        await updateDoc(doc(db, VOUCHER_COL, v.id), {
+          usageLimit: increment(-1)
+        });
+      }
     }
+
     isSubmittingOrder = false;
     return { success: true, id: docRef.id };
   } catch (error) {
@@ -76,19 +80,21 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
 };
 
 /**
- * 3. QUẢN LÝ VOUCHER (Đã tối ưu bằng Composite Index)
+ * 3. QUẢN LÝ VOUCHER 
  */
+
+// Lấy kho Voucher GỒM: Mã Công Khai + Mã của riêng SĐT đó
 export const getMyVouchers = async (phone) => {
   try {
     const vouchersRef = collection(db, VOUCHER_COL);
     const now = new Date();
 
-    // 1. Tối ưu: Lấy trực tiếp từ Firebase những mã Công khai CÒN LƯỢT (Yêu cầu Index)
+    // 1. Lấy toàn bộ Voucher Công Khai 
     const qPublic = query(vouchersRef, where("assignedPhone", "==", ""), where("usageLimit", ">", 0));
     const snapPublic = await getDocs(qPublic);
     const publicVouchers = snapPublic.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // 2. Tối ưu: Lấy trực tiếp những mã Cá nhân CÒN LƯỢT (Yêu cầu Index)
+    // 2. Lấy Voucher Cá Nhân (Nếu SĐT hợp lệ)
     let personalVouchers = [];
     if (phone && phone.trim().length >= 10) {
       const cleanPhone = phone.trim();
@@ -97,7 +103,7 @@ export const getMyVouchers = async (phone) => {
       personalVouchers = snapPersonal.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
 
-    // 3. Gộp lại và chỉ lọc hạn sử dụng
+    // 3. Gộp lại và loại bỏ mã đã HẾT HẠN SỬ DỤNG
     const allVouchers = [...publicVouchers, ...personalVouchers].filter(v => {
       if (!v.expiry) return true;
       return v.expiry.toDate() > now;
@@ -133,10 +139,12 @@ export const completeOrderWithBonus = async (order) => {
       updatedAt: serverTimestamp()
     });
 
+    // Tính toán thời gian: (Thời điểm hiện tại - Thời điểm bắt đầu làm món)
     if (order.confirmedAt) {
       const confirmTime = order.confirmedAt.toDate();
       const diffInMinutes = Math.floor((now - confirmTime) / (1000 * 60));
 
+      // Nếu làm và giao mất hơn 30 phút -> Tặng mã xin lỗi
       if (diffInMinutes >= 30) {
         const bonusVoucher = {
           code: `SORRY${Math.floor(1000 + Math.random() * 9000)}`,
@@ -173,7 +181,9 @@ export const validateVoucher = async (code, phone) => {
     }
     
     if (v.usageLimit <= 0) return { valid: false, msg: "Mã đã hết lượt dùng!" };
-    if (v.expiry && v.expiry.toDate() < now) return { valid: false, msg: "Mã đã hết hạn!" };
+
+    // NÂNG CẤP: Chặn mã hết hạn
+    if (v.expiry && v.expiry.toDate() < now) return { valid: false, msg: "Mã giảm giá đã hết hạn sử dụng!" };
 
     return { valid: true, voucher: { id: vId, ...v } };
   } catch (error) {
@@ -223,16 +233,34 @@ export const confirmPaymentStatus = async (orderId, isPaid) => {
 /**
  * 5. SUBSCRIPTIONS & STATUS
  */
+
+// NÂNG CẤP: Xử lý Admin hủy đơn
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
+    const orderSnap = await getDoc(orderRef);
+    if (!orderSnap.exists()) return { success: false };
+    
+    const order = orderSnap.data();
     const updateData = { status: newStatus, updatedAt: serverTimestamp() };
     
+    // MỐC QUAN TRỌNG: Ghi lại thời gian Admin bấm "Nhận đơn" để bắt đầu tính 30p
     if (newStatus === 'PREPARING') {
       updateData.confirmedAt = serverTimestamp();
     }
     
     await updateDoc(orderRef, updateData);
+
+    // CƠ CHẾ HOÀN MÃ: Nếu Admin hủy đơn khi đang PENDING, hoàn lại Voucher Tiền Mặt
+    if (newStatus === 'CANCELLED' && order.status === 'PENDING' && order.usedVouchers) {
+      for (const v of order.usedVouchers) {
+        // Chỉ hoàn lại nếu voucher không phải là FREESHIP
+        if (v.type !== 'FREESHIP') {
+          await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(1) });
+        }
+      }
+    }
+
     return { success: true };
   } catch (error) { return { success: false, error: error.message }; }
 };
@@ -270,15 +298,32 @@ export const deleteOrderSoft = async (orderId) => {
   } catch (error) { return { success: false, error: error.message }; }
 };
 
+// NÂNG CẤP: Xử lý Khách hàng tự hủy đơn
 export const requestCancelOrder = async (orderId, status, reason = "") => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
+    const orderSnap = await getDoc(orderRef);
+    if (!orderSnap.exists()) return { success: false, error: "Đơn không tồn tại" };
+
+    const order = orderSnap.data();
     const isDirectCancel = status === 'PENDING'; 
+    
     await updateDoc(orderRef, {
       status: isDirectCancel ? 'CANCELLED' : 'CANCEL_REQUESTED',
       cancelReason: reason || "Khách tự hủy",
       updatedAt: serverTimestamp()
     });
+
+    // CƠ CHẾ HOÀN MÃ: Nếu Khách hủy thành công lúc PENDING -> Hoàn Voucher Tiền mặt
+    if (isDirectCancel && order.usedVouchers) {
+      for (const v of order.usedVouchers) {
+        // Chỉ hoàn lại nếu voucher không phải là FREESHIP
+        if (v.type !== 'FREESHIP') {
+          await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(1) });
+        }
+      }
+    }
+
     return { success: true };
   } catch (error) { return { success: false, error: error.message }; }
 };
