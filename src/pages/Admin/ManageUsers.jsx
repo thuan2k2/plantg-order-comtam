@@ -4,7 +4,8 @@ import {
   updateUserProfile, 
   deleteUser, 
   updateUserBanStatus,
-  resetPasscodeByAdmin // Thêm hàm cấp lại Passcode từ authService
+  resetPasscodeByAdmin, 
+  topUpUserWallet // Bổ sung hàm Nạp tiền từ authService
 } from '../../services/authService';
 import { createVoucher, deleteVoucher, getAllVouchers } from '../../services/orderService';
 
@@ -68,6 +69,32 @@ const ManageUsers = () => {
       }
     } catch (error) {
       alert("Lỗi: " + error.message);
+    }
+  };
+
+  // --- HÀM NẠP TIỀN VÀO VÍ KHÁCH HÀNG ---
+  const handleTopUpWallet = async (user) => {
+    const currentBalance = user.walletBalance || 0;
+    const amountStr = prompt(
+      `NẠP TIỀN VÀO VÍ KHÁCH HÀNG:\n\nTên: ${user.fullName}\nSĐT: ${user.username}\nSố dư hiện tại: ${currentBalance.toLocaleString()}đ\n\nNhập số tiền muốn NẠP THÊM (VNĐ):`,
+      "50000"
+    );
+
+    if (amountStr !== null) {
+      const amount = parseInt(amountStr.replace(/\D/g, '')); // Lọc bỏ ký tự thừa, chỉ lấy số
+      
+      if (isNaN(amount) || amount <= 0) {
+        return alert("Số tiền không hợp lệ! Vui lòng nhập một số lớn hơn 0.");
+      }
+
+      if (window.confirm(`Bạn có chắc chắn muốn nạp ${amount.toLocaleString()}đ vào ví của ${user.fullName}?`)) {
+        const result = await topUpUserWallet(user.id, amount);
+        if (result.success) {
+          alert(`✅ Nạp tiền thành công!\nSố dư mới: ${result.newBalance.toLocaleString()}đ`);
+        } else {
+          alert("Lỗi khi nạp tiền: " + result.error);
+        }
+      }
     }
   };
 
@@ -211,7 +238,7 @@ const ManageUsers = () => {
             <thead>
               <tr className="bg-gray-50/50 text-gray-400 text-[10px] font-black uppercase tracking-widest border-b">
                 <th className="px-8 py-5">Khách hàng</th>
-                <th className="px-8 py-5">SĐT & Địa chỉ</th>
+                <th className="px-8 py-5">Ví Plant G</th>
                 <th className="px-8 py-5 text-center">Trạng thái</th>
                 <th className="px-8 py-5 text-center">Voucher</th>
                 <th className="px-8 py-5 text-right">Thao tác</th>
@@ -220,13 +247,19 @@ const ManageUsers = () => {
             <tbody className="divide-y divide-gray-50">
               {filteredUsers.map((user) => (
                 <tr key={user.id} className={`transition-all group ${user.isBanned ? 'bg-red-50/30' : 'hover:bg-blue-50/20'}`}>
+                  
+                  {/* CỘT KHÁCH HÀNG */}
                   <td className="px-8 py-5">
                     <p className="font-black text-gray-800 text-sm uppercase">{user.fullName}</p>
-                    <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded-md font-bold text-gray-400 mt-1 inline-block">ID: {user.username}</span>
+                    <p className="text-xs font-black text-blue-600 mt-1">{user.deliveryPhone || user.username}</p>
                   </td>
+
+                  {/* CỘT VÍ TIỀN */}
                   <td className="px-8 py-5">
-                    <p className="text-xs font-black text-blue-600">{user.deliveryPhone || user.username}</p>
-                    <p className="text-[10px] text-gray-500 font-medium line-clamp-1 mt-1">{user.address}</p>
+                    <p className="text-sm font-black text-green-600 tracking-tighter">
+                      {(user.walletBalance || 0).toLocaleString()}đ
+                    </p>
+                    <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Số dư</p>
                   </td>
                   
                   {/* CỘT TRẠNG THÁI */}
@@ -253,10 +286,22 @@ const ManageUsers = () => {
                   
                   {/* CỘT THAO TÁC */}
                   <td className="px-8 py-5 text-right space-x-2 whitespace-nowrap">
-                    {/* Cấp lại Passcode (Chìa khóa) */}
+                    
+                    {/* Nạp tiền ví */}
+                    <button 
+                      onClick={() => handleTopUpWallet(user)} 
+                      title="Nạp tiền vào ví" 
+                      className="p-3 bg-green-50 text-green-600 hover:bg-green-100 hover:scale-110 rounded-xl transition-all inline-flex shadow-sm"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                      </svg>
+                    </button>
+
+                    {/* Cấp lại Passcode */}
                     <button 
                       onClick={() => handleResetPasscode(user)} 
-                      title="Cấp lại Passcode (Chìa khóa)" 
+                      title="Cấp lại Passcode" 
                       className="p-3 bg-yellow-50 text-yellow-600 hover:bg-yellow-100 hover:scale-110 rounded-xl transition-all inline-flex shadow-sm"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -292,6 +337,8 @@ const ManageUsers = () => {
         </div>
       </div>
 
+      {/* CÁC MODAL KHÁC (GIỮ NGUYÊN) */}
+      
       {/* --- MODAL CẤM (BAN) USER --- */}
       {showBanModal && banUserTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">

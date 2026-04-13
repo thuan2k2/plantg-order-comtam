@@ -2,7 +2,8 @@ import {
   getAuth, 
   signInWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  updateProfile // Import thêm updateProfile
 } from 'firebase/auth';
 import { 
   collection, 
@@ -30,9 +31,6 @@ const COLLECTION_NAME = 'users';
  * ==========================================
  */
 
-/**
- * 1. Đăng ký tài khoản khách hàng mới (Đã thêm Passcode & Ví)
- */
 export const registerUser = async (userData) => {
   try {
     const usersRef = collection(db, COLLECTION_NAME);
@@ -59,7 +57,6 @@ export const registerUser = async (userData) => {
       avatarUrl: ""       // Ảnh đại diện
     };
 
-    // Sử dụng addDoc để tạo ID tự động, hoặc setDoc để dùng SĐT làm ID (Khuyên dùng SĐT làm ID để query nhanh hơn)
     const docRef = await addDoc(usersRef, newUser);
     return { success: true, id: docRef.id };
   } catch (error) {
@@ -68,9 +65,6 @@ export const registerUser = async (userData) => {
   }
 };
 
-/**
- * 2. Lấy thông tin khách bằng SĐT (Có kiểm tra trạng thái cấm)
- */
 export const getUserByPhone = async (phone) => {
   try {
     if (!phone) return null;
@@ -102,7 +96,7 @@ export const getUserByPhone = async (phone) => {
     return userData;
   } catch (error) {
     console.error("Lỗi khi tìm user:", error);
-    throw error; // Ném lỗi để UI bắt và hiển thị Alert
+    throw error;
   }
 };
 
@@ -113,9 +107,6 @@ export const getUserByPhone = async (phone) => {
  * ==========================================
  */
 
-/**
- * Xác thực Passcode (Dùng khi thanh toán ví hoặc đổi thông tin cá nhân)
- */
 export const verifyPasscode = async (phone, inputPasscode) => {
   try {
     const q = query(collection(db, COLLECTION_NAME), where("username", "==", phone.trim()));
@@ -124,16 +115,12 @@ export const verifyPasscode = async (phone, inputPasscode) => {
     if (snapshot.empty) return false;
     const user = snapshot.docs[0].data();
     
-    // Kiểm tra Passcode
     return user.passcode === inputPasscode;
   } catch (e) {
     return false;
   }
 };
 
-/**
- * Cập nhật hồ sơ có yêu cầu Passcode (Chặn đổi ID/SĐT)
- */
 export const updateCustomerSecure = async (phone, newData, inputPasscode) => {
   const isValid = await verifyPasscode(phone, inputPasscode);
   if (!isValid) return { success: false, error: "Mã Passcode không chính xác!" };
@@ -159,9 +146,6 @@ export const updateCustomerSecure = async (phone, newData, inputPasscode) => {
   }
 };
 
-/**
- * Đổi mật khẩu/Passcode mới
- */
 export const changeCustomerPasscode = async (phone, oldPasscode, newPasscode) => {
   const isValid = await verifyPasscode(phone, oldPasscode);
   if (!isValid) return { success: false, error: "Mã Passcode hiện tại không chính xác!" };
@@ -187,9 +171,6 @@ export const changeCustomerPasscode = async (phone, oldPasscode, newPasscode) =>
  * ==========================================
  */
 
-/**
- * ĐĂNG NHẬP ADMIN (Firebase Auth)
- */
 export const loginAdmin = async (email, password) => {
   try {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -206,9 +187,6 @@ export const loginAdmin = async (email, password) => {
   }
 };
 
-/**
- * ĐĂNG XUẤT ADMIN
- */
 export const logoutAdmin = async () => {
   try {
     await signOut(auth);
@@ -220,16 +198,10 @@ export const logoutAdmin = async () => {
   }
 };
 
-/**
- * THEO DÕI TRẠNG THÁI ĐĂNG NHẬP ADMIN
- */
 export const subscribeToAuth = (callback) => {
   return onAuthStateChanged(auth, callback);
 };
 
-/**
- * Admin cấp lại Passcode cho khách (Khi khách quên mật khẩu)
- */
 export const resetPasscodeByAdmin = async (userId, newPasscode) => {
   try {
     const userRef = doc(db, COLLECTION_NAME, userId);
@@ -243,6 +215,55 @@ export const resetPasscodeByAdmin = async (userId, newPasscode) => {
   }
 };
 
+/**
+ * MỚI: Admin nạp tiền vào ví của khách
+ */
+export const topUpUserWallet = async (userId, amount, note = "Admin nạp tiền") => {
+  try {
+    const userRef = doc(db, COLLECTION_NAME, userId);
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) return { success: false, error: "Người dùng không tồn tại" };
+
+    const currentBalance = snap.data().walletBalance || 0;
+    const newBalance = currentBalance + amount;
+
+    await updateDoc(userRef, {
+      walletBalance: newBalance,
+      lastWalletUpdate: serverTimestamp(),
+      walletNote: note
+    });
+
+    return { success: true, newBalance };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * MỚI: Cập nhật hồ sơ Admin (Ảnh đại diện)
+ */
+export const updateAdminProfile = async (photoURL) => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return { success: false, error: "Chưa đăng nhập Admin" };
+
+    // Cập nhật Profile của Firebase Auth
+    await updateProfile(currentUser, { photoURL });
+    
+    // Đồng thời lưu vào Firestore để các thiết bị khác đồng bộ dễ dàng hơn
+    const adminRef = doc(db, 'system', 'admin_profile');
+    await setDoc(adminRef, { 
+      photoURL, 
+      email: currentUser.email,
+      updatedAt: serverTimestamp() 
+    }, { merge: true });
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+};
+
 
 /**
  * ==========================================
@@ -250,9 +271,6 @@ export const resetPasscodeByAdmin = async (userId, newPasscode) => {
  * ==========================================
  */
 
-/**
- * LẤY TOÀN BỘ KHÁCH HÀNG (Dạng tĩnh)
- */
 export const getAllUsers = async () => {
   try {
     const usersRef = collection(db, COLLECTION_NAME);
@@ -270,9 +288,6 @@ export const getAllUsers = async () => {
   }
 };
 
-/**
- * LẮNG NGHE KHÁCH HÀNG (Real-time)
- */
 export const subscribeToAllUsers = (callback) => {
   const usersRef = collection(db, COLLECTION_NAME);
   const q = query(usersRef, orderBy("createdAt", "desc"));
@@ -289,9 +304,6 @@ export const subscribeToAllUsers = (callback) => {
   });
 };
 
-/**
- * Cập nhật thông tin khách hàng (Từ Admin)
- */
 export const updateUserProfile = async (userId, updateData) => {
   try {
     const userRef = doc(db, COLLECTION_NAME, userId);
@@ -306,9 +318,6 @@ export const updateUserProfile = async (userId, updateData) => {
   }
 };
 
-/**
- * Xóa người dùng vĩnh viễn khỏi Firebase
- */
 export const deleteUser = async (userId) => {
   try {
     const userRef = doc(db, COLLECTION_NAME, userId);
@@ -320,9 +329,6 @@ export const deleteUser = async (userId) => {
   }
 };
 
-/**
- * Cập nhật trạng thái Cấm / Gỡ cấm người dùng
- */
 export const updateUserBanStatus = async (userId, banData) => {
   try {
     const userRef = doc(db, COLLECTION_NAME, userId);
