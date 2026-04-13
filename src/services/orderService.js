@@ -41,19 +41,13 @@ export const createOrderSecure = async (orderData) => {
 
     // 1. Dùng Transaction để đảm bảo tính nhất quán dữ liệu
     const result = await runTransaction(db, async (transaction) => {
-      let userRef = null;
-
-      // Tìm user document ID để trừ tiền
-      const q = query(collection(db, 'users'), where("username", "==", cleanPhone));
-      const userSnap = await getDocs(q);
-      
-      if (!userSnap.empty) {
-        userRef = doc(db, 'users', userSnap.docs[0].id);
-      }
+      // Vì User ID bây giờ chính là SĐT, ta gọi thẳng doc() thay vì query getDocs
+      const userRef = doc(db, 'users', cleanPhone);
 
       if (isWallet) {
-        if (!userRef) throw new Error("Không tìm thấy thông tin ví!");
         const userDoc = await transaction.get(userRef);
+        if (!userDoc.exists()) throw new Error("Không tìm thấy thông tin ví!");
+        
         const currentBalance = userDoc.data().walletBalance || 0;
 
         if (currentBalance < totalAmount) {
@@ -131,12 +125,8 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
 // Hàm trừ tiền ví khi đặt hàng (Đã được chuyển vào trong hàm createOrderSecure)
 export const processWalletPayment = async (phone, amount) => {
   try {
-    const q = query(collection(db, 'users'), where("username", "==", phone.trim()));
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) return { success: false, error: "Người dùng không tồn tại!" };
-    
-    const userDocId = snapshot.docs[0].id;
-    const userRef = doc(db, 'users', userDocId);
+    const cleanPhone = phone.trim();
+    const userRef = doc(db, 'users', cleanPhone); // ID là SĐT
 
     await runTransaction(db, async (transaction) => {
       const userSnap = await transaction.get(userRef);
@@ -157,7 +147,7 @@ export const processWalletPayment = async (phone, amount) => {
   }
 };
 
-// FIX LỖI: Hoàn thành đơn hàng & Tích Xu (1,000đ = 10 Xu)
+// FIX LỖI ĐỒNG BỘ: Hoàn thành đơn hàng & Tích Xu (1,000đ = 10 Xu)
 export const completeOrderWithBonus = async (order) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, order.id);
@@ -174,13 +164,14 @@ export const completeOrderWithBonus = async (order) => {
     const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
     const earnedXu = Math.floor(totalAmount / 1000) * 10;
 
-    // 3. Tìm và cập nhật Xu vào User (Sử dụng username làm key)
+    // 3. Tìm và cập nhật Xu vào User (Sử dụng trực tiếp ID Document là SĐT)
     if (earnedXu > 0) {
-      const q = query(collection(db, 'users'), where("username", "==", order.phone.trim()));
-      const userSnap = await getDocs(q);
+      const cleanPhone = order.phone.trim();
+      const userDocRef = doc(db, 'users', cleanPhone);
       
-      if (!userSnap.empty) {
-        const userDocRef = doc(db, 'users', userSnap.docs[0].id);
+      const userSnap = await getDoc(userDocRef);
+      
+      if (userSnap.exists()) {
         await updateDoc(userDocRef, {
           totalXu: increment(earnedXu),
           totalSpend: increment(totalAmount), // Ghi nhận tổng chi tiêu để tính Rank
@@ -340,7 +331,7 @@ export const confirmPaymentStatus = async (orderId, isPaid) => {
   } catch (error) { return { success: false, error: error.message }; }
 };
 
-// CƠ CHẾ HOÀN TIỀN VÍ
+// CƠ CHẾ HOÀN TIỀN VÍ (ĐỒNG BỘ THEO ID SĐT)
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
@@ -371,10 +362,12 @@ export const updateOrderStatus = async (orderId, newStatus) => {
       if (order.paymentMethod === 'WALLET' && order.paymentStatus === 'PAID') {
         const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
         if (totalAmount > 0) {
-          const q = query(collection(db, 'users'), where("username", "==", order.phone.trim()));
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            await updateDoc(doc(db, 'users', snap.docs[0].id), {
+          const cleanPhone = order.phone.trim();
+          const userDocRef = doc(db, 'users', cleanPhone);
+          
+          const userSnap = await getDoc(userDocRef);
+          if (userSnap.exists()) {
+            await updateDoc(userDocRef, {
                walletBalance: increment(totalAmount),
                updatedAt: serverTimestamp()
             });
@@ -468,10 +461,12 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
       if (order.paymentMethod === 'WALLET' && order.paymentStatus === 'PAID') {
         const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
         if (totalAmount > 0) {
-          const q = query(collection(db, 'users'), where("username", "==", order.phone.trim()));
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            await updateDoc(doc(db, 'users', snap.docs[0].id), {
+          const cleanPhone = order.phone.trim();
+          const userDocRef = doc(db, 'users', cleanPhone);
+          
+          const userSnap = await getDoc(userDocRef);
+          if (userSnap.exists()) {
+            await updateDoc(userDocRef, {
                walletBalance: increment(totalAmount),
                updatedAt: serverTimestamp()
             });

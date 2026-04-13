@@ -7,19 +7,18 @@ import {
 } from 'firebase/auth';
 import { 
   collection, 
-  addDoc, 
   getDocs, 
   query, 
   where, 
   updateDoc, 
   doc, 
   getDoc,
-  setDoc,
+  setDoc, // SỬ DỤNG setDoc THAY VÌ addDoc
   deleteDoc, 
   serverTimestamp, 
   orderBy,
   onSnapshot,
-  increment // Import thêm increment
+  increment 
 } from 'firebase/firestore';
 import { db, app } from '../firebase/config'; 
 
@@ -32,19 +31,21 @@ const COLLECTION_NAME = 'users';
  * ==========================================
  */
 
+// FIX ĐỒNG BỘ: Sử dụng Số điện thoại làm ID Document để dễ dàng map dữ liệu
 export const registerUser = async (userData) => {
   try {
-    const usersRef = collection(db, COLLECTION_NAME);
-    const q = query(usersRef, where("username", "==", userData.username.trim()));
-    const snapshot = await getDocs(q);
+    const cleanPhone = userData.username.trim();
+    const userRef = doc(db, COLLECTION_NAME, cleanPhone); // Gán trực tiếp ID
     
-    if (!snapshot.empty) {
+    // Kiểm tra xem SĐT này đã đăng ký chưa
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
       return { success: false, error: 'Số điện thoại này đã được đăng ký!' };
     }
 
     const newUser = {
       ...userData,
-      username: userData.username.trim(),
+      username: cleanPhone,
       role: 'user',   
       status: 'ACTIVE', 
       totalOrders: 0,
@@ -53,17 +54,17 @@ export const registerUser = async (userData) => {
       banUntil: null,
       
       // BỔ SUNG BẢO MẬT, VÍ & ĐỊA CHỈ
-      // Lưu ý: passcode giờ đây do khách hàng tự nhập qua formData.passcode
       passcode: userData.passcode || "123456", 
-      walletBalance: 0,    // Số dư ví (VNĐ)
-      totalXu: 0,          // MỚI: Tích điểm Xu
-      totalSpend: 0,       // MỚI: Tổng chi tiêu
+      walletBalance: 0,    
+      totalXu: 0,          
+      totalSpend: 0,       
       avatarUrl: "",      
       addresses: userData.address ? [{ id: Date.now(), detail: userData.address, isDefault: true }] : []
     };
 
-    const docRef = await addDoc(usersRef, newUser);
-    return { success: true, id: docRef.id };
+    // Dùng setDoc để ghi đè dữ liệu vào đúng ID là SĐT
+    await setDoc(userRef, newUser);
+    return { success: true, id: cleanPhone };
   } catch (error) {
     console.error("Lỗi registerUser:", error);
     return { success: false, error: error.message };
@@ -73,36 +74,46 @@ export const registerUser = async (userData) => {
 export const getUserByPhone = async (phone) => {
   try {
     if (!phone) return null;
-    const usersRef = collection(db, COLLECTION_NAME);
-    const q = query(usersRef, where("username", "==", phone.trim()));
-    const snapshot = await getDocs(q);
+    const cleanPhone = phone.trim();
+    const userRef = doc(db, COLLECTION_NAME, cleanPhone);
+    const snap = await getDoc(userRef);
     
-    if (snapshot.empty) return null;
-    const userDoc = snapshot.docs[0];
-    const userData = { id: userDoc.id, ...userDoc.data() };
-
-    // KIỂM TRA LỆNH CẤM TRƯỚC KHI TRẢ VỀ DỮ LIỆU
-    if (userData.isBanned) {
-      if (userData.banUntil === 'permanent') {
-         throw new Error("Tài khoản của bạn đã bị cấm vĩnh viễn. Vui lòng liên hệ quản trị viên.");
-      }
-      
-      const now = new Date().getTime();
-      if (now < userData.banUntil) {
-         const dateStr = new Date(userData.banUntil).toLocaleString('vi-VN');
-         throw new Error(`Tài khoản của bạn đang bị tạm khóa đến ${dateStr}.`);
-      } else {
-         // Đã qua thời hạn cấm -> Tự động gỡ cấm
-         await updateUserBanStatus(userData.id, { isBanned: false, banUntil: null });
-         userData.isBanned = false; 
-      }
+    // Fallback: Tìm bằng query (đề phòng có dữ liệu cũ chưa update cấu trúc ID=SĐT)
+    if (!snap.exists()) {
+       const q = query(collection(db, COLLECTION_NAME), where("username", "==", cleanPhone));
+       const qs = await getDocs(q);
+       if (qs.empty) return null;
+       const fallbackData = { id: qs.docs[0].id, ...qs.docs[0].data() };
+       return checkBanStatus(fallbackData);
     }
+    
+    const userData = { id: snap.id, ...snap.data() };
+    return checkBanStatus(userData);
 
-    return userData;
   } catch (error) {
     console.error("Lỗi khi tìm user:", error);
     throw error;
   }
+};
+
+// Tách logic kiểm tra ban ra một hàm riêng cho gọn
+const checkBanStatus = async (userData) => {
+  if (userData.isBanned) {
+    if (userData.banUntil === 'permanent') {
+       throw new Error("Tài khoản của bạn đã bị cấm vĩnh viễn. Vui lòng liên hệ quản trị viên.");
+    }
+    
+    const now = new Date().getTime();
+    if (now < userData.banUntil) {
+       const dateStr = new Date(userData.banUntil).toLocaleString('vi-VN');
+       throw new Error(`Tài khoản của bạn đang bị tạm khóa đến ${dateStr}.`);
+    } else {
+       // Đã qua thời hạn cấm -> Tự động gỡ cấm
+       await updateUserBanStatus(userData.id, { isBanned: false, banUntil: null });
+       userData.isBanned = false; 
+    }
+  }
+  return userData;
 };
 
 
@@ -247,7 +258,7 @@ export const resetPasscodeByAdmin = async (userId, newPasscode) => {
   }
 };
 
-// CẬP NHẬT: Hàm đa năng để Admin Nạp/Trừ Tiền hoặc Xu
+// Hàm đa năng để Admin Nạp/Trừ Tiền hoặc Xu
 export const adminUpdateBalance = async (userId, type, amount, note = "") => {
   try {
     const userRef = doc(db, COLLECTION_NAME, userId);

@@ -46,17 +46,32 @@ const Home = () => {
         setHasOrderedBefore(true);
 
         // LẮNG NGHE XU THEO THỜI GIAN THỰC
-        const unsubUser = onSnapshot(doc(db, 'users', phone), (snap) => {
+        // Sử dụng phone (đã được dọn dẹp) làm ID document để query trực tiếp
+        const cleanPhone = phone.trim();
+        const userRef = doc(db, 'users', cleanPhone);
+
+        const unsubUser = onSnapshot(userRef, (snap) => {
           if (snap.exists()) {
-            setTotalXu(snap.data().totalXu || 0);
+            const data = snap.data();
+            setTotalXu(data.totalXu || 0); // Cập nhật Xu ngay lập tức
+            
             // Cập nhật lại tên nếu có thay đổi từ Admin
-            if (snap.data().fullName) setCustomerName(snap.data().fullName);
+            if (data.fullName && data.fullName !== customerName) {
+              setCustomerName(data.fullName);
+              
+              // Cập nhật lại local cache để đồng bộ với cloud
+              const updatedProfile = { ...userProfile, fullName: data.fullName };
+              localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
+            }
           }
+        }, (err) => {
+          console.error("Lỗi đồng bộ dữ liệu User:", err);
         });
 
+        // Fetch lần đầu để lấy thông tin cơ bản nếu chưa có trong LocalStorage
         try {
           if (!userProfile.fullName) {
-            const cloudData = await getUserByPhone(phone);
+            const cloudData = await getUserByPhone(cleanPhone);
             if (cloudData) {
               setCustomerName(cloudData.fullName);
               localStorage.setItem('userProfile', JSON.stringify({
@@ -85,7 +100,7 @@ const Home = () => {
       unsubConfig();
       if (typeof cleanupUser === 'function') cleanupUser();
     };
-  }, []);
+  }, []); // Cẩn thận dependency array để tránh lặp vô hạn
 
   const handleLogoutCustomer = (confirm = true) => {
     if (!confirm || window.confirm("Bạn muốn đặt hàng bằng số điện thoại khác?")) {
