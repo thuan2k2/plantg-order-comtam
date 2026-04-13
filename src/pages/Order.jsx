@@ -27,14 +27,12 @@ const Order = () => {
   const [myVouchers, setMyVouchers] = useState([]); 
   const [showVoucherList, setShowVoucherList] = useState(false); 
 
-  // 1. Lắng nghe Thực đơn Real-time & Phục hồi SĐT
   useEffect(() => {
     const unsubscribe = subscribeToMenu((data) => {
       setMenu(data);
       setIsLoading(false);
     });
     
-    // Nạp lại SĐT gần nhất từ localStorage
     const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
     setRecentPhones(savedPhones);
     if (!userPhoneParam && savedPhones.length > 0) {
@@ -44,22 +42,18 @@ const Order = () => {
     return () => unsubscribe();
   }, [userPhoneParam]);
 
-  // 2. Fetch User & Vouchers (Đã xử lý Index Firebase)
   useEffect(() => {
     const syncData = async () => {
       const cleanPhone = username.trim();
       
-      // Luôn gọi lấy Voucher (Hàm này giờ sẽ gom cả mã công khai)
       const vouchers = await getMyVouchers(cleanPhone);
       setMyVouchers(vouchers);
       
-      // Chỉ tìm info khách và tự động áp mã FREESHIP khi SĐT đủ 10 số
       if (cleanPhone.length >= 10) {
         const userData = await getUserByPhone(cleanPhone);
         setCustomerInfo(userData ? { name: userData.fullName, phone: userData.username, address: userData.address } : null);
 
         const autoFs = vouchers.find(v => v.code.trim().toUpperCase() === 'FREESHIP5K');
-        
         if (autoFs) {
           setAppliedFreeship(autoFs);
           setShippingFee(0);
@@ -78,7 +72,6 @@ const Order = () => {
     return () => clearTimeout(timer);
   }, [username]);
 
-  // Logic giỏ hàng
   const updateQuantity = (item, delta) => {
     setCart(prev => {
       const currentItem = prev[item.id];
@@ -123,6 +116,23 @@ const Order = () => {
       setShowVoucherList(false);
     } else {
       alert(res.msg);
+    }
+  };
+
+  // NÂNG CẤP: Bật/Tắt (Toggle) Voucher trong Modal
+  const toggleVoucher = (v, isApplied) => {
+    if (isApplied) {
+      // Nếu đang dùng mà khách bấm vào -> Xóa (Hủy dùng)
+      if (appliedVoucher?.id === v.id) {
+        setAppliedVoucher(null);
+      }
+      if (appliedFreeship?.id === v.id) {
+        setAppliedFreeship(null);
+        setShippingFee(5000); // Trả lại phí ship mặc định
+      }
+    } else {
+      // Nếu chưa dùng -> Áp dụng
+      handleApplyVoucher(v.code);
     }
   };
 
@@ -183,7 +193,6 @@ const Order = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-44 font-sans">
-      {/* Header Tabs */}
       <div className="bg-white sticky top-0 z-30 shadow-sm border-b">
         <div className="px-6 py-5 flex items-center justify-between">
           <button onClick={() => navigate(-1)} className="p-2 bg-gray-50 rounded-2xl active:scale-90 transition-all"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M15 19l-7-7 7-7" /></svg></button>
@@ -199,7 +208,6 @@ const Order = () => {
         </div>
       </div>
 
-      {/* User Info */}
       <div className="bg-white p-6 mb-4 rounded-b-[2.5rem] shadow-sm">
         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 block">SĐT đặt hàng *</label>
         <input type="tel" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="0333 xxx xxx" className="w-full bg-gray-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-blue-600 outline-none transition-all" />
@@ -211,7 +219,6 @@ const Order = () => {
         )}
       </div>
 
-      {/* Voucher Input & Selection */}
       <div className="px-4 mb-6">
         <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100">
            <div className="flex justify-between items-center mb-3 ml-1">
@@ -242,14 +249,13 @@ const Order = () => {
            
            {(appliedVoucher || appliedFreeship) && (
               <div className="mt-3 flex flex-wrap gap-2 animate-in zoom-in duration-300">
-                 {appliedFreeship && <span className="bg-green-500 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ FREE SHIP TỰ ĐỘNG</span>}
+                 {appliedFreeship && <span className="bg-green-500 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ FREE SHIP</span>}
                  {appliedVoucher && <span className="bg-blue-600 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ GIẢM {appliedVoucher.value.toLocaleString()}đ</span>}
               </div>
            )}
         </div>
       </div>
 
-      {/* Menu List */}
       <div className="px-4 space-y-4">
         {filteredMenu.map(item => (
           <div key={item.id} className="bg-white p-4 rounded-[2rem] flex items-center gap-4 shadow-sm border border-gray-50">
@@ -269,7 +275,6 @@ const Order = () => {
         ))}
       </div>
 
-      {/* Floating Cart Button */}
       {Object.values(cart).length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/90 backdrop-blur-xl border-t z-40 shadow-2xl rounded-t-[2.5rem]">
           <button onClick={() => setShowConfirm(true)} disabled={isSubmitting} className={`w-full ${isSubmitting ? 'bg-gray-400' : 'bg-blue-600'} text-white font-black py-5 rounded-[2rem] flex items-center justify-between px-8 shadow-xl shadow-blue-200 active:scale-95 transition-all`}>
@@ -292,13 +297,12 @@ const Order = () => {
             </div>
             <div className="space-y-3 max-h-80 overflow-y-auto pr-2 no-scrollbar">
               {myVouchers.map(v => {
-                // NÂNG CẤP: Kiểm tra xem mã này có đang được áp dụng hay không
                 const isApplied = appliedVoucher?.id === v.id || appliedFreeship?.id === v.id;
 
                 return (
                   <button 
                     key={v.id}
-                    onClick={() => !isApplied && handleApplyVoucher(v.code)}
+                    onClick={() => toggleVoucher(v, isApplied)}
                     className={`w-full flex justify-between items-center p-5 rounded-2xl border-2 transition-all text-left ${isApplied ? 'bg-blue-50 border-blue-400' : 'bg-gray-50 border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50'}`}
                   >
                     <div>
@@ -313,8 +317,8 @@ const Order = () => {
                       </p>
                       <p className="text-[9px] text-gray-400 mt-1 font-medium italic">Bạn còn {v.usageLimit} lần dùng</p>
                     </div>
-                    <div className={`${isApplied ? 'bg-green-500' : 'bg-blue-600'} text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md ${isApplied ? 'shadow-green-100' : 'shadow-blue-100'}`}>
-                      {isApplied ? 'ĐANG DÙNG' : 'DÙNG'}
+                    <div className={`${isApplied ? 'bg-red-500' : 'bg-blue-600'} text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md ${isApplied ? 'shadow-red-100' : 'shadow-blue-100'}`}>
+                      {isApplied ? 'HỦY DÙNG' : 'DÙNG'}
                     </div>
                   </button>
                 );

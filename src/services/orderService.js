@@ -82,19 +82,15 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
 /**
  * 3. QUẢN LÝ VOUCHER 
  */
-
-// Lấy kho Voucher GỒM: Mã Công Khai + Mã của riêng SĐT đó
 export const getMyVouchers = async (phone) => {
   try {
     const vouchersRef = collection(db, VOUCHER_COL);
     const now = new Date();
 
-    // 1. Lấy toàn bộ Voucher Công Khai 
     const qPublic = query(vouchersRef, where("assignedPhone", "==", ""), where("usageLimit", ">", 0));
     const snapPublic = await getDocs(qPublic);
     const publicVouchers = snapPublic.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // 2. Lấy Voucher Cá Nhân (Nếu SĐT hợp lệ)
     let personalVouchers = [];
     if (phone && phone.trim().length >= 10) {
       const cleanPhone = phone.trim();
@@ -103,7 +99,6 @@ export const getMyVouchers = async (phone) => {
       personalVouchers = snapPersonal.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
 
-    // 3. Gộp lại và loại bỏ mã đã HẾT HẠN SỬ DỤNG
     const allVouchers = [...publicVouchers, ...personalVouchers].filter(v => {
       if (!v.expiry) return true;
       return v.expiry.toDate() > now;
@@ -127,7 +122,6 @@ export const getAllVouchers = async () => {
   }
 };
 
-// Hàm hoàn thành đơn hàng và TỰ ĐỘNG TẶNG VOUCHER NẾU TRỄ > 30 PHÚT
 export const completeOrderWithBonus = async (order) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, order.id);
@@ -139,19 +133,17 @@ export const completeOrderWithBonus = async (order) => {
       updatedAt: serverTimestamp()
     });
 
-    // Tính toán thời gian: (Thời điểm hiện tại - Thời điểm bắt đầu làm món)
     if (order.confirmedAt) {
       const confirmTime = order.confirmedAt.toDate();
       const diffInMinutes = Math.floor((now - confirmTime) / (1000 * 60));
 
-      // Nếu làm và giao mất hơn 30 phút -> Tặng mã xin lỗi
       if (diffInMinutes >= 30) {
         const bonusVoucher = {
           code: `SORRY${Math.floor(1000 + Math.random() * 9000)}`,
           value: 5000,
           type: 'CASH',
           assignedPhone: order.phone,
-          usageLimit: 1, // Chỉ được dùng 1 lần
+          usageLimit: 1,
           description: "Quà bồi thường giao trễ > 30p",
           createdAt: serverTimestamp()
         };
@@ -175,14 +167,11 @@ export const validateVoucher = async (code, phone) => {
     const vId = snapshot.docs[0].id;
     const now = new Date();
 
-    // KIỂM TRA ĐIỀU KIỆN ÁP DỤNG:
     if (v.assignedPhone && v.assignedPhone.trim() !== "" && v.assignedPhone !== phone.trim()) {
       return { valid: false, msg: "Mã này không dành cho số điện thoại của bạn!" };
     }
     
     if (v.usageLimit <= 0) return { valid: false, msg: "Mã đã hết lượt dùng!" };
-
-    // NÂNG CẤP: Chặn mã hết hạn
     if (v.expiry && v.expiry.toDate() < now) return { valid: false, msg: "Mã giảm giá đã hết hạn sử dụng!" };
 
     return { valid: true, voucher: { id: vId, ...v } };
@@ -234,7 +223,7 @@ export const confirmPaymentStatus = async (orderId, isPaid) => {
  * 5. SUBSCRIPTIONS & STATUS
  */
 
-// NÂNG CẤP: Xử lý Admin hủy đơn
+// Xử lý Admin hủy đơn
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
@@ -244,7 +233,6 @@ export const updateOrderStatus = async (orderId, newStatus) => {
     const order = orderSnap.data();
     const updateData = { status: newStatus, updatedAt: serverTimestamp() };
     
-    // MỐC QUAN TRỌNG: Ghi lại thời gian Admin bấm "Nhận đơn" để bắt đầu tính 30p
     if (newStatus === 'PREPARING') {
       updateData.confirmedAt = serverTimestamp();
     }
@@ -254,7 +242,6 @@ export const updateOrderStatus = async (orderId, newStatus) => {
     // CƠ CHẾ HOÀN MÃ: Nếu Admin hủy đơn khi đang PENDING, hoàn lại Voucher Tiền Mặt
     if (newStatus === 'CANCELLED' && order.status === 'PENDING' && order.usedVouchers) {
       for (const v of order.usedVouchers) {
-        // Chỉ hoàn lại nếu voucher không phải là FREESHIP
         if (v.type !== 'FREESHIP') {
           await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(1) });
         }
@@ -269,7 +256,11 @@ export const subscribeToOrdersByPhone = (phone, callback) => {
   if (!phone) return () => {};
   const q = query(collection(db, COLLECTION_NAME), where("phone", "==", phone.trim()), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
-    callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'Mới' })));
+    // NÂNG CẤP: Lọc bỏ các đơn hàng DELETED để khách hàng không còn nhìn thấy nữa
+    const validOrders = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data(), time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'Mới' }))
+      .filter(o => o.status !== 'DELETED');
+    callback(validOrders);
   });
 };
 
@@ -290,15 +281,34 @@ export const subscribeToAllOrders = (callback) => {
   });
 };
 
-export const deleteOrderSoft = async (orderId) => {
+// NÂNG CẤP: Lưu Tên người xóa, Lý do xóa và Hoàn lại MỌI voucher
+export const deleteOrderSoft = async (orderId, reason = "Xóa thủ công", deleterName = "Admin") => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
-    await updateDoc(orderRef, { status: 'DELETED', updatedAt: serverTimestamp() });
+    const orderSnap = await getDoc(orderRef);
+    if (!orderSnap.exists()) return { success: false };
+    
+    const order = orderSnap.data();
+
+    await updateDoc(orderRef, { 
+      status: 'DELETED', 
+      deleteReason: reason,
+      deletedBy: deleterName,
+      updatedAt: serverTimestamp() 
+    });
+
+    // Nếu Admin xóa đơn hoàn toàn, tự động hoàn trả MỌI voucher đã dùng của đơn đó
+    if (order.usedVouchers) {
+      for (const v of order.usedVouchers) {
+        await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(1) });
+      }
+    }
+
     return { success: true };
   } catch (error) { return { success: false, error: error.message }; }
 };
 
-// NÂNG CẤP: Xử lý Khách hàng tự hủy đơn
+// Xử lý Khách hàng tự hủy đơn
 export const requestCancelOrder = async (orderId, status, reason = "") => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
@@ -314,10 +324,9 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
       updatedAt: serverTimestamp()
     });
 
-    // CƠ CHẾ HOÀN MÃ: Nếu Khách hủy thành công lúc PENDING -> Hoàn Voucher Tiền mặt
+    // CƠ CHẾ HOÀN MÃ: Khách hủy đơn lúc PENDING -> Hoàn Voucher Tiền mặt
     if (isDirectCancel && order.usedVouchers) {
       for (const v of order.usedVouchers) {
-        // Chỉ hoàn lại nếu voucher không phải là FREESHIP
         if (v.type !== 'FREESHIP') {
           await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(1) });
         }
