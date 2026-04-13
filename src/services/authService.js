@@ -3,7 +3,7 @@ import {
   signInWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
-  updateProfile // Import thêm updateProfile
+  updateProfile
 } from 'firebase/auth';
 import { 
   collection, 
@@ -18,7 +18,8 @@ import {
   deleteDoc, 
   serverTimestamp, 
   orderBy,
-  onSnapshot 
+  onSnapshot,
+  increment // Import thêm increment
 } from 'firebase/firestore';
 import { db, app } from '../firebase/config'; 
 
@@ -52,10 +53,13 @@ export const registerUser = async (userData) => {
       banUntil: null,
       
       // BỔ SUNG BẢO MẬT, VÍ & ĐỊA CHỈ
-      passcode: "123456", // Passcode mặc định để giao dịch
+      // Lưu ý: passcode giờ đây do khách hàng tự nhập qua formData.passcode
+      passcode: userData.passcode || "123456", 
       walletBalance: 0,    // Số dư ví (VNĐ)
-      avatarUrl: "",      // Ảnh đại diện
-      addresses: userData.address ? [{ id: Date.now(), detail: userData.address, isDefault: true }] : [] // Khởi tạo mảng địa chỉ
+      totalXu: 0,          // MỚI: Tích điểm Xu
+      totalSpend: 0,       // MỚI: Tổng chi tiêu
+      avatarUrl: "",      
+      addresses: userData.address ? [{ id: Date.now(), detail: userData.address, isDefault: true }] : []
     };
 
     const docRef = await addDoc(usersRef, newUser);
@@ -147,9 +151,6 @@ export const updateCustomerSecure = async (phone, newData, inputPasscode) => {
   }
 };
 
-/**
- * MỚI: Cập nhật danh sách sổ địa chỉ (Tối đa 3)
- */
 export const updateCustomerAddresses = async (phone, addressList, inputPasscode) => {
   const isValid = await verifyPasscode(phone, inputPasscode);
   if (!isValid) return { success: false, error: "Mã Passcode không chính xác!" };
@@ -167,7 +168,7 @@ export const updateCustomerAddresses = async (phone, addressList, inputPasscode)
     const userRef = doc(db, COLLECTION_NAME, userId);
     
     await updateDoc(userRef, { 
-      addresses: addressList, // Lưu mảng địa chỉ mới
+      addresses: addressList, 
       updatedAt: serverTimestamp() 
     });
     
@@ -246,24 +247,26 @@ export const resetPasscodeByAdmin = async (userId, newPasscode) => {
   }
 };
 
-export const topUpUserWallet = async (userId, amount, note = "Admin nạp tiền") => {
+// CẬP NHẬT: Hàm đa năng để Admin Nạp/Trừ Tiền hoặc Xu
+export const adminUpdateBalance = async (userId, type, amount, note = "") => {
   try {
     const userRef = doc(db, COLLECTION_NAME, userId);
-    const snap = await getDoc(userRef);
-    if (!snap.exists()) return { success: false, error: "Người dùng không tồn tại" };
-
-    const currentBalance = snap.data().walletBalance || 0;
-    const newBalance = currentBalance + amount;
-
+    const field = type === 'wallet' ? 'walletBalance' : 'totalXu';
+    
     await updateDoc(userRef, {
-      walletBalance: newBalance,
-      lastWalletUpdate: serverTimestamp(),
-      walletNote: note
+      [field]: increment(amount),
+      lastAdminAction: {
+        type: amount > 0 ? 'TOPUP' : 'DEDUCT',
+        asset: type,
+        value: amount,
+        note,
+        at: new Date()
+      },
+      updatedAt: serverTimestamp()
     });
-
-    return { success: true, newBalance };
-  } catch (error) {
-    return { success: false, error: error.message };
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 };
 

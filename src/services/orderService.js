@@ -68,7 +68,6 @@ export const createOrderSecure = async (orderData) => {
       }
 
       // 2. Tạo đơn hàng (Vẫn nằm trong vòng transaction)
-      // Lưu ý: Thêm adminNote và isPaid nếu dùng Ví
       const orderRef = doc(collection(db, COLLECTION_NAME));
       const newOrder = {
         ...orderData,
@@ -125,12 +124,11 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
 
 /**
  * ==========================================
- * 2. HỆ THỐNG THANH TOÁN VÍ & TÍCH ĐIỂM (MỚI)
+ * 2. HỆ THỐNG THANH TOÁN VÍ & TÍCH ĐIỂM (CẬP NHẬT)
  * ==========================================
  */
 
 // Hàm trừ tiền ví khi đặt hàng (Đã được chuyển vào trong hàm createOrderSecure)
-// Giữ lại nếu bạn có nhu cầu gọi riêng lẻ sau này
 export const processWalletPayment = async (phone, amount) => {
   try {
     const q = query(collection(db, 'users'), where("username", "==", phone.trim()));
@@ -159,34 +157,39 @@ export const processWalletPayment = async (phone, amount) => {
   }
 };
 
-// Hoàn thành đơn hàng & Tích Xu (1,000đ = 10 Xu)
+// FIX LỖI: Hoàn thành đơn hàng & Tích Xu (1,000đ = 10 Xu)
 export const completeOrderWithBonus = async (order) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, order.id);
     const now = new Date();
     
+    // 1. Cập nhật trạng thái đơn hàng
     await updateDoc(orderRef, {
       status: 'COMPLETED',
       completedAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
 
+    // 2. Tính toán Xu (1,000đ = 10 Xu)
     const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
     const earnedXu = Math.floor(totalAmount / 1000) * 10;
 
+    // 3. Tìm và cập nhật Xu vào User (Sử dụng username làm key)
     if (earnedXu > 0) {
       const q = query(collection(db, 'users'), where("username", "==", order.phone.trim()));
-      const snap = await getDocs(q);
+      const userSnap = await getDocs(q);
       
-      if (!snap.empty) {
-        const userRef = doc(db, 'users', snap.docs[0].id);
-        await updateDoc(userRef, {
+      if (!userSnap.empty) {
+        const userDocRef = doc(db, 'users', userSnap.docs[0].id);
+        await updateDoc(userDocRef, {
           totalXu: increment(earnedXu),
-          totalSpend: increment(totalAmount) 
+          totalSpend: increment(totalAmount), // Ghi nhận tổng chi tiêu để tính Rank
+          updatedAt: serverTimestamp()
         });
       }
     }
 
+    // Logic kiểm tra đơn trễ (Cho tính năng Voucher trễ)
     if (order.confirmedAt) {
       const confirmTime = order.confirmedAt.toDate();
       const diffInMinutes = Math.floor((now - confirmTime) / (1000 * 60));
@@ -198,6 +201,7 @@ export const completeOrderWithBonus = async (order) => {
     
     return { success: true, late: false, earnedXu };
   } catch (error) {
+    console.error("Lỗi hoàn thành đơn:", error);
     return { success: false, error: error.message };
   }
 };
@@ -336,7 +340,7 @@ export const confirmPaymentStatus = async (orderId, isPaid) => {
   } catch (error) { return { success: false, error: error.message }; }
 };
 
-// FIX LỖI HOÀN TIỀN VÍ
+// CƠ CHẾ HOÀN TIỀN VÍ
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
@@ -371,7 +375,8 @@ export const updateOrderStatus = async (orderId, newStatus) => {
           const snap = await getDocs(q);
           if (!snap.empty) {
             await updateDoc(doc(db, 'users', snap.docs[0].id), {
-               walletBalance: increment(totalAmount)
+               walletBalance: increment(totalAmount),
+               updatedAt: serverTimestamp()
             });
           }
         }
@@ -467,7 +472,8 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
           const snap = await getDocs(q);
           if (!snap.empty) {
             await updateDoc(doc(db, 'users', snap.docs[0].id), {
-               walletBalance: increment(totalAmount)
+               walletBalance: increment(totalAmount),
+               updatedAt: serverTimestamp()
             });
           }
         }

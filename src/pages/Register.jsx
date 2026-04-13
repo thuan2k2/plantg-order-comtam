@@ -10,7 +10,8 @@ const Register = () => {
     username: '',
     fullName: '',
     deliveryPhone: '',
-    address: ''
+    address: '',
+    passcode: '' // Thêm trường passcode
   });
 
   const handleChange = (e) => {
@@ -24,8 +25,14 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.username || !formData.fullName || !formData.deliveryPhone || !formData.address) {
+    // Kiểm tra dữ liệu đầu vào
+    if (!formData.username || !formData.fullName || !formData.deliveryPhone || !formData.address || !formData.passcode) {
       alert('Vui lòng điền đầy đủ tất cả các thông tin!');
+      return;
+    }
+
+    if (formData.passcode.length !== 6) {
+      alert('Passcode phải bao gồm đúng 6 chữ số!');
       return;
     }
 
@@ -62,7 +69,7 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col p-4 md:items-center md:justify-center transition-colors duration-300 font-sans">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col p-4 md:items-center md:justify-center transition-colors duration-300 font-sans pb-20">
       
       {/* Nút quay lại */}
       <div className="w-full max-w-md mb-4">
@@ -154,12 +161,31 @@ const Register = () => {
             ></textarea>
           </div>
 
+          {/* PASSCODE BẢO MẬT (THÊM MỚI) */}
+          <div className="pt-2 border-t border-dashed border-gray-200 dark:border-gray-700">
+            <label className="block text-[10px] font-black text-green-500 dark:text-green-400 uppercase tracking-widest mb-2 ml-1 mt-4">
+              Thiết lập Passcode ví (6 số) <span className="text-red-500">*</span>
+            </label>
+            <input 
+              type="password"
+              name="passcode"
+              maxLength="6"
+              placeholder="••••••"
+              value={formData.passcode}
+              onChange={e => setFormData({...formData, passcode: e.target.value.replace(/\D/g,'')})} // Chỉ cho phép nhập số
+              className="w-full p-4 bg-green-50 dark:bg-gray-700 dark:text-white rounded-2xl border-none outline-none font-black tracking-[0.5em] text-center text-xl focus:ring-2 focus:ring-green-500 transition-colors"
+            />
+            <p className="text-[9px] font-bold text-gray-400 dark:text-gray-500 mt-2 ml-1 italic leading-relaxed">
+              * Lớp bảo mật cấp 2. Dùng để xác nhận khi thanh toán hóa đơn bằng tiền trong Ví Plant G. Hãy ghi nhớ mã này!
+            </p>
+          </div>
+
           {/* Nút Đăng ký */}
           <button
             type="submit"
             disabled={isLoading}
-            className={`w-full text-white font-black py-5 px-4 rounded-[2rem] transition-all duration-200 shadow-xl mt-4 uppercase text-xs tracking-[0.2em]
-              ${isLoading ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' : 'bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 shadow-green-100 dark:shadow-none active:scale-95'}`}
+            className={`w-full text-white font-black py-5 px-4 rounded-[2rem] transition-all duration-200 shadow-xl mt-6 uppercase text-xs tracking-[0.2em]
+              ${isLoading ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100 dark:shadow-none active:scale-95'}`}
           >
             {isLoading ? (
               <span className="flex items-center justify-center gap-2">

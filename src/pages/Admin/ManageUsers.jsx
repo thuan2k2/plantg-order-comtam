@@ -5,7 +5,7 @@ import {
   deleteUser, 
   updateUserBanStatus,
   resetPasscodeByAdmin, 
-  topUpUserWallet // Bổ sung hàm Nạp tiền từ authService
+  adminUpdateBalance // Sử dụng hàm mới đa năng (Nạp/Trừ Tiền và Xu)
 } from '../../services/authService';
 import { createVoucher, deleteVoucher, getAllVouchers } from '../../services/orderService';
 
@@ -72,27 +72,37 @@ const ManageUsers = () => {
     }
   };
 
-  // --- HÀM NẠP TIỀN VÀO VÍ KHÁCH HÀNG ---
-  const handleTopUpWallet = async (user) => {
-    const currentBalance = user.walletBalance || 0;
-    const amountStr = prompt(
-      `NẠP TIỀN VÀO VÍ KHÁCH HÀNG:\n\nTên: ${user.fullName}\nSĐT: ${user.username}\nSố dư hiện tại: ${currentBalance.toLocaleString()}đ\n\nNhập số tiền muốn NẠP THÊM (VNĐ):`,
-      "50000"
-    );
+  // --- HÀM NẠP/TRỪ TIỀN VÀ XU ĐA NĂNG ---
+  const handleBalanceAction = async (user, assetType) => {
+    const isWallet = assetType === 'wallet';
+    const label = isWallet ? 'Tiền Ví (đ)' : 'Điểm Xu';
+    const current = isWallet ? (user.walletBalance || 0) : (user.totalXu || 0);
 
-    if (amountStr !== null) {
-      const amount = parseInt(amountStr.replace(/\D/g, '')); // Lọc bỏ ký tự thừa, chỉ lấy số
-      
-      if (isNaN(amount) || amount <= 0) {
-        return alert("Số tiền không hợp lệ! Vui lòng nhập một số lớn hơn 0.");
+    const action = prompt(`ĐIỀU CHỈNH ${label.toUpperCase()} CỦA ${user.fullName.toUpperCase()}\n\nHiện tại: ${current.toLocaleString()}\n\n- Nhập số dương để CỘNG (VD: 50000)\n- Nhập số âm có dấu trừ ở trước để TRỪ (VD: -20000)\n\nNhập số lượng:`);
+
+    if (action) {
+      const value = parseInt(action); // Lấy cả dấu âm/dương
+      if (isNaN(value) || value === 0) {
+        return alert("Số lượng không hợp lệ! Vui lòng nhập số khác 0.");
       }
 
-      if (window.confirm(`Bạn có chắc chắn muốn nạp ${amount.toLocaleString()}đ vào ví của ${user.fullName}?`)) {
-        const result = await topUpUserWallet(user.id, amount);
-        if (result.success) {
-          alert(`✅ Nạp tiền thành công!\nSố dư mới: ${result.newBalance.toLocaleString()}đ`);
+      // Kiểm tra xem số tiền trừ có lớn hơn số dư hiện tại không
+      if (value < 0 && Math.abs(value) > current) {
+         return alert(`Lỗi: Không thể trừ nhiều hơn số dư hiện tại (${current.toLocaleString()}).`);
+      }
+
+      const confirmMsg = value > 0 
+        ? `Xác nhận CỘNG THÊM ${value.toLocaleString()} ${label} cho ${user.fullName}?`
+        : `Xác nhận TRỪ ${Math.abs(value).toLocaleString()} ${label} của ${user.fullName}?`;
+
+      if (window.confirm(confirmMsg)) {
+        const note = prompt("Nhập ghi chú cho giao dịch này (tùy chọn):", value > 0 ? "Admin nạp thêm" : "Admin khấu trừ");
+        const res = await adminUpdateBalance(user.id, assetType, value, note || "Không có ghi chú");
+        
+        if (res.success) {
+          alert("✅ Thao tác thành công!");
         } else {
-          alert("Lỗi khi nạp tiền: " + result.error);
+          alert("❌ Lỗi thao tác: " + res.error);
         }
       }
     }
@@ -101,13 +111,13 @@ const ManageUsers = () => {
   // --- HÀM RESET PASSCODE CHO KHÁCH HÀNG ---
   const handleResetPasscode = async (user) => {
     const newPasscode = prompt(
-      `ĐẶT LẠI PASSCODE CHO KHÁCH:\n\nSĐT: ${user.username}\nTên: ${user.fullName}\n\nNhập Passcode mới (Mặc định: 123456):`, 
+      `ĐẶT LẠI PASSCODE CHO KHÁCH:\n\nSĐT: ${user.username}\nTên: ${user.fullName}\n\nNhập Passcode mới (Yêu cầu 6 số):`, 
       "123456"
     );
 
     if (newPasscode) {
-      if (newPasscode.length < 6) {
-        return alert("Passcode phải có ít nhất 6 ký tự!");
+      if (newPasscode.length !== 6 || !/^\d+$/.test(newPasscode)) {
+        return alert("Lỗi: Passcode phải bao gồm đúng 6 chữ số!");
       }
       
       if (window.confirm(`Xác nhận đặt lại Passcode của khách này thành "${newPasscode}"?`)) {
@@ -238,10 +248,10 @@ const ManageUsers = () => {
             <thead>
               <tr className="bg-gray-50/50 text-gray-400 text-[10px] font-black uppercase tracking-widest border-b">
                 <th className="px-8 py-5">Khách hàng</th>
-                <th className="px-8 py-5">Ví Plant G</th>
+                <th className="px-8 py-5">Ví Plant G / Xu</th>
                 <th className="px-8 py-5 text-center">Trạng thái</th>
                 <th className="px-8 py-5 text-center">Voucher</th>
-                <th className="px-8 py-5 text-right">Thao tác</th>
+                <th className="px-8 py-5 text-right min-w-[250px]">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -254,12 +264,14 @@ const ManageUsers = () => {
                     <p className="text-xs font-black text-blue-600 mt-1">{user.deliveryPhone || user.username}</p>
                   </td>
 
-                  {/* CỘT VÍ TIỀN */}
+                  {/* CỘT VÍ TIỀN & XU */}
                   <td className="px-8 py-5">
-                    <p className="text-sm font-black text-green-600 tracking-tighter">
-                      {(user.walletBalance || 0).toLocaleString()}đ
+                    <p className="text-sm font-black text-green-600 tracking-tighter" title="Số dư Ví Tiền">
+                      💵 {(user.walletBalance || 0).toLocaleString()}đ
                     </p>
-                    <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Số dư</p>
+                    <p className="text-xs font-bold text-orange-500 mt-1" title="Số dư Xu">
+                      🪙 {(user.totalXu || 0).toLocaleString()} Xu
+                    </p>
                   </td>
                   
                   {/* CỘT TRẠNG THÁI */}
@@ -287,15 +299,22 @@ const ManageUsers = () => {
                   {/* CỘT THAO TÁC */}
                   <td className="px-8 py-5 text-right space-x-2 whitespace-nowrap">
                     
-                    {/* Nạp tiền ví */}
+                    {/* Nạp/Trừ Tiền Ví */}
                     <button 
-                      onClick={() => handleTopUpWallet(user)} 
-                      title="Nạp tiền vào ví" 
+                      onClick={() => handleBalanceAction(user, 'wallet')} 
+                      title="Nạp/Trừ Tiền Ví" 
                       className="p-3 bg-green-50 text-green-600 hover:bg-green-100 hover:scale-110 rounded-xl transition-all inline-flex shadow-sm"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                      </svg>
+                      <span className="text-base leading-none">💵</span>
+                    </button>
+
+                    {/* Nạp/Trừ Điểm Xu */}
+                    <button 
+                      onClick={() => handleBalanceAction(user, 'xu')} 
+                      title="Cộng/Trừ Điểm Xu" 
+                      className="p-3 bg-orange-50 text-orange-600 hover:bg-orange-100 hover:scale-110 rounded-xl transition-all inline-flex shadow-sm"
+                    >
+                      <span className="text-base leading-none">🪙</span>
                     </button>
 
                     {/* Cấp lại Passcode */}
@@ -337,8 +356,6 @@ const ManageUsers = () => {
         </div>
       </div>
 
-      {/* CÁC MODAL KHÁC (GIỮ NGUYÊN) */}
-      
       {/* --- MODAL CẤM (BAN) USER --- */}
       {showBanModal && banUserTarget && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
