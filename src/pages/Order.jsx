@@ -35,17 +35,18 @@ const Order = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. Fetch User & Auto-Apply Freeship (with Debounce)
+  // 2. Fetch User & Vouchers (Sửa lỗi ẩn mã công khai)
   useEffect(() => {
     const syncData = async () => {
       const cleanPhone = username.trim();
       
+      // LUÔN TẢI VOUCHER (Bao gồm mã công khai + cá nhân nếu có SĐT)
+      const vouchers = await getMyVouchers(cleanPhone);
+      setMyVouchers(vouchers);
+      
       if (cleanPhone.length >= 10) {
         const userData = await getUserByPhone(cleanPhone);
         setCustomerInfo(userData ? { name: userData.fullName, phone: userData.username, address: userData.address } : null);
-
-        const vouchers = await getMyVouchers(cleanPhone);
-        setMyVouchers(vouchers);
 
         // Auto-apply FREESHIP5K if available and has uses left
         const autoFs = vouchers.find(v => v.code.trim().toUpperCase() === 'FREESHIP5K' && v.usageLimit > 0);
@@ -59,13 +60,12 @@ const Order = () => {
         }
       } else {
         setCustomerInfo(null);
-        setMyVouchers([]);
         setAppliedFreeship(null);
         setShippingFee(5000);
       }
     };
 
-    const timer = setTimeout(syncData, 600);
+    const timer = setTimeout(syncData, 500); // Rút ngắn delay để nút kho mã hiện nhanh hơn
     return () => clearTimeout(timer);
   }, [username]);
 
@@ -122,8 +122,7 @@ const Order = () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     
-    // Determine which voucher ID to deduct from (prioritizes cash discount if both exist, 
-    // but you may want to adapt your backend to accept an array of IDs if they use both simultaneously)
+    // Determine which voucher ID to deduct from
     const activeVoucherId = appliedVoucher ? appliedVoucher.id : (appliedFreeship ? appliedFreeship.id : null);
     const activeUsageLimit = appliedVoucher ? appliedVoucher.usageLimit : (appliedFreeship ? appliedFreeship.usageLimit : 0);
 
@@ -194,31 +193,43 @@ const Order = () => {
         )}
       </div>
 
-      {/* Voucher Input & Selection */}
+      {/* VOUCHER UI ĐÃ CẬP NHẬT */}
       <div className="px-4 mb-6">
         <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100">
            <div className="flex justify-between items-center mb-3 ml-1">
               <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Ưu đãi giảm giá</p>
-              {myVouchers.length > 0 && (
-                <button onClick={() => setShowVoucherList(true)} className="text-[10px] font-black text-blue-600 uppercase underline decoration-2 underline-offset-4 active:scale-95 transition-all">
-                  Kho mã của tôi ({myVouchers.length})
-                </button>
-              )}
            </div>
-           <div className="flex gap-2">
+           
+           <div className="flex gap-2 items-center">
               <input 
                 type="text" value={voucherCode} 
                 onChange={e => setVoucherCode(e.target.value.toUpperCase())} 
                 placeholder="Nhập mã ưu đãi..." 
-                className="flex-1 bg-gray-50 border-none rounded-xl px-4 py-3 text-xs font-bold outline-none" 
+                className="flex-1 bg-gray-50 border-none rounded-xl px-4 py-3 text-xs font-bold outline-none min-w-0" 
               />
-              <button onClick={() => handleApplyVoucher()} className="bg-gray-800 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all">Áp dụng</button>
+              
+              {/* NÚT KHO MÃ: NẰM GIỮA Ô NHẬP MÃ VÀ NÚT ÁP DỤNG */}
+              {myVouchers.length > 0 && (
+                <button 
+                  onClick={() => setShowVoucherList(true)} 
+                  className="bg-blue-50 text-blue-600 px-3 py-3 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border border-blue-100 active:scale-95 transition-all shadow-sm"
+                >
+                  🎁 Kho mã ({myVouchers.length})
+                </button>
+              )}
+
+              <button 
+                onClick={() => handleApplyVoucher()} 
+                className="bg-gray-800 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase whitespace-nowrap active:scale-95 transition-all shadow-sm"
+              >
+                Áp dụng
+              </button>
            </div>
            
            {(appliedVoucher || appliedFreeship) && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                 {appliedFreeship && <span className="bg-green-500 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ FREE SHIP TỰ ĐỘNG</span>}
-                 {appliedVoucher && <span className="bg-blue-600 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ ĐÃ GIẢM {appliedVoucher.value.toLocaleString()}đ</span>}
+              <div className="mt-3 flex flex-wrap gap-2 animate-in zoom-in duration-300">
+                 {appliedFreeship && <span className="bg-green-500 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ FREE SHIP</span>}
+                 {appliedVoucher && <span className="bg-blue-600 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ GIẢM {appliedVoucher.value.toLocaleString()}đ</span>}
               </div>
            )}
         </div>
@@ -259,7 +270,10 @@ const Order = () => {
         <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-sm font-black uppercase text-gray-800 tracking-widest">Ưu đãi của bạn</h3>
+              <div>
+                <h3 className="text-sm font-black uppercase text-gray-800 tracking-widest">Ưu đãi của bạn</h3>
+                <p className="text-[9px] text-gray-400 font-bold mt-1 uppercase">Gồm mã cá nhân & công khai</p>
+              </div>
               <button onClick={() => setShowVoucherList(false)} className="w-10 h-10 flex items-center justify-center bg-gray-50 rounded-full text-gray-400">&times;</button>
             </div>
             <div className="space-y-3 max-h-80 overflow-y-auto pr-2 no-scrollbar">
@@ -270,7 +284,12 @@ const Order = () => {
                   className="w-full flex justify-between items-center p-5 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-left"
                 >
                   <div>
-                    <p className="font-black text-gray-800 text-sm tracking-widest uppercase">{v.code}</p>
+                    <div className="flex items-center gap-2">
+                       <p className="font-black text-gray-800 text-sm tracking-widest uppercase">{v.code}</p>
+                       {(!v.assignedPhone || v.assignedPhone.trim() === "") && (
+                         <span className="bg-orange-100 text-orange-600 px-2 py-0.5 rounded text-[8px] font-black tracking-widest uppercase">Công khai</span>
+                       )}
+                    </div>
                     <p className="text-[10px] text-blue-600 font-bold uppercase mt-1">
                       {v.type === 'FREESHIP' ? 'Miễn phí vận chuyển' : `Giảm giá -${v.value.toLocaleString()}đ`}
                     </p>

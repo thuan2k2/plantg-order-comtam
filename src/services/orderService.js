@@ -79,18 +79,33 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
  * 3. QUẢN LÝ VOUCHER & LOGIC ĐỀN BÙ GIAO TRỄ
  */
 
-// Lấy kho Voucher của riêng 1 Số điện thoại (Dùng cho trang Order)
+// Lấy kho Voucher GỒM: Mã Công Khai + Mã của riêng SĐT đó
 export const getMyVouchers = async (phone) => {
-  if (!phone) return [];
   try {
-    // Tìm các voucher được gán đúng SĐT và còn lượt dùng
-    const q = query(
-      collection(db, VOUCHER_COL), 
-      where("assignedPhone", "==", phone.trim()),
-      where("usageLimit", ">", 0)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const vouchersRef = collection(db, VOUCHER_COL);
+    const now = new Date();
+
+    // 1. Lấy toàn bộ Voucher Công Khai (assignedPhone == "")
+    const qPublic = query(vouchersRef, where("assignedPhone", "==", ""), where("usageLimit", ">", 0));
+    const snapPublic = await getDocs(qPublic);
+    const publicVouchers = snapPublic.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // 2. Lấy Voucher Cá Nhân (Nếu SĐT hợp lệ)
+    let personalVouchers = [];
+    if (phone && phone.trim().length >= 10) {
+      const cleanPhone = phone.trim();
+      const qPersonal = query(vouchersRef, where("assignedPhone", "==", cleanPhone), where("usageLimit", ">", 0));
+      const snapPersonal = await getDocs(qPersonal);
+      personalVouchers = snapPersonal.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    }
+
+    // 3. Gộp lại và loại bỏ mã đã hết hạn (nếu có trường expiry)
+    const allVouchers = [...publicVouchers, ...personalVouchers].filter(v => {
+      if (!v.expiry) return true;
+      return v.expiry.toDate() > now;
+    });
+
+    return allVouchers;
   } catch (error) {
     console.error("Lỗi getMyVouchers:", error);
     return [];
@@ -156,9 +171,13 @@ export const validateVoucher = async (code, phone) => {
     const vId = snapshot.docs[0].id;
     const now = new Date();
 
-    if (v.assignedPhone && v.assignedPhone !== phone) {
-      return { valid: false, msg: "Mã này không dành cho bạn!" };
+    // KIỂM TRA ĐIỀU KIỆN ÁP DỤNG:
+    // Nếu voucher có SĐT gán, và SĐT đó KHÁC với SĐT người dùng -> Cấm
+    // (Nếu assignedPhone rỗng -> Mọi người đều được dùng)
+    if (v.assignedPhone && v.assignedPhone.trim() !== "" && v.assignedPhone !== phone.trim()) {
+      return { valid: false, msg: "Mã này không dành cho số điện thoại của bạn!" };
     }
+    
     if (v.usageLimit <= 0) return { valid: false, msg: "Mã đã hết lượt dùng!" };
     if (v.expiry && v.expiry.toDate() < now) return { valid: false, msg: "Mã đã hết hạn!" };
 
@@ -225,7 +244,6 @@ export const updateOrderStatus = async (orderId, newStatus) => {
   } catch (error) { return { success: false, error: error.message }; }
 };
 
-// ... Các hàm subscribe giữ nguyên như cũ ...
 export const subscribeToOrdersByPhone = (phone, callback) => {
   if (!phone) return () => {};
   const q = query(collection(db, COLLECTION_NAME), where("phone", "==", phone.trim()), orderBy("createdAt", "desc"));
