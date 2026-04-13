@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore'; // Import để đọc cấu hình Admin
+import { db } from '../firebase/config';
 import { createOrder, validateVoucher, getMyVouchers } from '../services/orderService';
 import { getUserByPhone } from '../services/authService'; 
 import { subscribeToMenu } from '../services/menuService';
@@ -27,7 +29,21 @@ const Order = () => {
   const [myVouchers, setMyVouchers] = useState([]); 
   const [showVoucherList, setShowVoucherList] = useState(false); 
 
+  // STATE lưu trữ cấu hình hệ thống từ Admin
+  const [sysConfig, setSysConfig] = useState({ isOpen: true, minOrder: 0 });
+
   useEffect(() => {
+    // Tải cấu hình hệ thống
+    const fetchSystemConfig = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'system', 'config'));
+        if (snap.exists()) setSysConfig(snap.data());
+      } catch (error) {
+        console.error("Lỗi lấy cấu hình:", error);
+      }
+    };
+    fetchSystemConfig();
+
     const unsubscribe = subscribeToMenu((data) => {
       setMenu(data);
       setIsLoading(false);
@@ -63,10 +79,9 @@ const Order = () => {
             setShippingFee(5000);
           }
         } catch (error) {
-          // Bắt lỗi nếu user bị cấm (banned) từ authService
           alert(error.message);
           setCustomerInfo(null);
-          setUsername(''); // Reset số điện thoại nếu bị cấm
+          setUsername(''); 
         }
       } else {
         setCustomerInfo(null);
@@ -140,6 +155,16 @@ const Order = () => {
     }
   };
 
+  const handleOpenConfirm = () => {
+    if (!sysConfig.isOpen) {
+      return alert("Quán hiện đang đóng cửa, bạn vui lòng quay lại sau nhé!");
+    }
+    if (getSubTotal() < sysConfig.minOrder) {
+      return alert(`Đơn hàng tối thiểu phải từ ${sysConfig.minOrder.toLocaleString()}đ trở lên. Vui lòng chọn thêm món!`);
+    }
+    setShowConfirm(true);
+  };
+
   const handleOrderSubmit = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
@@ -190,6 +215,20 @@ const Order = () => {
     </div>
   );
 
+  // MÀN HÌNH CHẶN NẾU QUÁN ĐÓNG CỬA
+  if (!sysConfig.isOpen) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 p-6 text-center">
+      <div className="w-24 h-24 bg-gray-200 dark:bg-gray-800 rounded-full flex items-center justify-center text-4xl mb-6">😴</div>
+      <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase tracking-tighter mb-2">Quán đang đóng cửa</h2>
+      <p className="text-sm font-bold text-gray-400 dark:text-gray-500 max-w-xs leading-relaxed mb-8">
+        Chúng tôi hiện đang nghỉ ngơi hoặc đã hết giờ phục vụ. Bạn vui lòng quay lại vào ngày mai nhé!
+      </p>
+      <button onClick={() => navigate('/')} className="bg-blue-600 text-white px-8 py-4 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl">
+        Quay về trang chủ
+      </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-44 font-sans transition-colors duration-300">
       
@@ -211,6 +250,15 @@ const Order = () => {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* THÔNG BÁO TỪ ADMIN & ĐƠN TỐI THIỂU */}
+      <div className="px-6 pt-4">
+        {sysConfig.minOrder > 0 && (
+          <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest text-center mb-2">
+            * Đơn hàng tối thiểu: {sysConfig.minOrder.toLocaleString()}đ
+          </p>
+        )}
       </div>
 
       {/* USER INFO */}
@@ -301,7 +349,11 @@ const Order = () => {
       {/* FLOATING CART BUTTON */}
       {Object.values(cart).length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl border-t dark:border-gray-800 z-40 shadow-2xl rounded-t-[2.5rem] transition-colors">
-          <button onClick={() => setShowConfirm(true)} disabled={isSubmitting} className={`w-full ${isSubmitting ? 'bg-gray-400 dark:bg-gray-600' : 'bg-blue-600'} text-white font-black py-5 rounded-[2rem] flex items-center justify-between px-8 shadow-xl shadow-blue-200 dark:shadow-none active:scale-95 transition-all`}>
+          <button 
+            onClick={handleOpenConfirm} 
+            disabled={isSubmitting} 
+            className={`w-full ${isSubmitting ? 'bg-gray-400 dark:bg-gray-600' : 'bg-blue-600'} text-white font-black py-5 rounded-[2rem] flex items-center justify-between px-8 shadow-xl shadow-blue-200 dark:shadow-none active:scale-95 transition-all`}
+          >
             <span className="text-[10px] uppercase tracking-widest">{Object.values(cart).reduce((s,i)=>s+i.qty,0)} món • {getFinalTotal().toLocaleString()}đ</span>
             <span className="text-xs font-black uppercase tracking-widest">{isSubmitting ? 'ĐANG LÀM...' : 'XÁC NHẬN →'}</span>
           </button>

@@ -1,21 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore'; // Import để lấy Cấu hình hệ thống
+import { db } from '../firebase/config';
 import UsernamePopup from '../components/UsernamePopup';
 import { useSettings } from '../contexts/SettingsContext'; 
 import { getUserByPhone } from '../services/authService'; 
 
 const Home = () => {
   const navigate = useNavigate();
-  const { theme, setTheme } = useSettings(); // Chỉ lấy theme, bỏ language và hàm t()
+  const { theme, setTheme } = useSettings(); 
   
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [hasOrderedBefore, setHasOrderedBefore] = useState(false);
   const [savedPhone, setSavedPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
-
   const [showThemeMenu, setShowThemeMenu] = useState(false);
 
+  // Thêm State để lưu cấu hình Admin
+  const [sysConfig, setSysConfig] = useState({
+    isOpen: true,
+    openTime: '11:00 - 21:00',
+    sysNotice: ''
+  });
+
   useEffect(() => {
+    // Tải cấu hình hệ thống từ Firebase
+    const fetchSystemConfig = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'system', 'config'));
+        if (snap.exists()) setSysConfig(snap.data());
+      } catch (error) {
+        console.error("Lỗi lấy cấu hình hệ thống:", error);
+      }
+    };
+    fetchSystemConfig();
+
+    // Logic đồng bộ thông tin khách hàng
     const syncWithFirebase = async () => {
       const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
       const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
@@ -26,29 +46,23 @@ const Home = () => {
         setHasOrderedBefore(true);
 
         try {
-          // LOGIC ĐỒNG BỘ: Nếu chưa có tên trong máy khách, tìm trên Firebase
           if (!userProfile.fullName) {
             const cloudData = await getUserByPhone(phone);
             if (cloudData) {
               setCustomerName(cloudData.fullName);
-              // Cập nhật lại bộ nhớ máy khách
               localStorage.setItem('userProfile', JSON.stringify({
                 fullName: cloudData.fullName,
                 username: cloudData.username,
-                address: cloudData.address
+                address: cloudData.address,
+                avatarUrl: cloudData.avatarUrl || '' // Lưu thêm Avatar
               }));
             }
           } else {
             setCustomerName(userProfile.fullName);
           }
         } catch (error) {
-          // BẮT LỖI KHI KHÁCH HÀNG BỊ ADMIN CẤM (BANNED)
           alert(error.message);
-          localStorage.removeItem('recentPhones');
-          localStorage.removeItem('userProfile');
-          setHasOrderedBefore(false);
-          setSavedPhone('');
-          setCustomerName('');
+          handleLogoutCustomer(false); // Buộc đăng xuất không cần hỏi nếu bị Ban
         }
       }
     };
@@ -56,8 +70,8 @@ const Home = () => {
     syncWithFirebase();
   }, []);
 
-  const handleLogoutCustomer = () => {
-    if (window.confirm("Bạn muốn đặt hàng bằng số điện thoại khác?")) {
+  const handleLogoutCustomer = (confirm = true) => {
+    if (!confirm || window.confirm("Bạn muốn đặt hàng bằng số điện thoại khác?")) {
       localStorage.removeItem('recentPhones');
       localStorage.removeItem('userProfile');
       setHasOrderedBefore(false);
@@ -67,11 +81,38 @@ const Home = () => {
     }
   };
 
+  const handleOrderClick = () => {
+    if (!sysConfig.isOpen) {
+      alert("Quán hiện đang đóng cửa, bạn vui lòng quay lại sau nhé!");
+      return;
+    }
+    hasOrderedBefore ? navigate(`/order?user=${savedPhone}`) : setIsPopupOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-orange-50/30 dark:bg-gray-900 flex flex-col items-center p-6 font-sans transition-colors duration-300">
       
-      {/* SETTINGS BAR (Chỉ còn Theme) */}
+      {/* THÔNG BÁO TỪ ADMIN */}
+      {sysConfig.sysNotice && (
+        <div className="w-full max-w-md bg-yellow-100 text-yellow-800 text-[10px] font-bold p-3 rounded-2xl mb-4 text-center shadow-sm animate-in fade-in slide-in-from-top-4">
+          <span className="mr-2">📢</span>{sysConfig.sysNotice}
+        </div>
+      )}
+
+      {/* TOP BAR: THIẾT LẬP */}
       <div className="absolute top-6 right-6 flex gap-3 z-50">
+        
+        {/* Nút Cài đặt Cá nhân (Chỉ hiện khi đã đăng nhập) */}
+        {hasOrderedBefore && (
+          <button 
+            onClick={() => navigate('/settings')}
+            className="w-10 h-10 flex items-center justify-center bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-full shadow-md border border-gray-100 dark:border-gray-700 hover:scale-105 transition-transform"
+            title="Cài đặt tài khoản"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+          </button>
+        )}
+
         <div className="relative">
           <button 
             onClick={() => setShowThemeMenu(!showThemeMenu)}
@@ -101,20 +142,26 @@ const Home = () => {
       </div>
 
       {/* HEADER LOGO */}
-      <div className="w-full max-w-md mt-24 mb-8 text-center">
+      <div className={`w-full max-w-md mt-24 mb-8 text-center transition-all duration-500 ${sysConfig.isOpen ? '' : 'grayscale opacity-70'}`}>
         <div className="relative inline-block">
-          <div className="w-28 h-28 bg-orange-500 rounded-full flex items-center justify-center shadow-2xl shadow-orange-200 dark:shadow-none border-4 border-white dark:border-gray-800 transition-colors">
+          <div className={`w-28 h-28 ${sysConfig.isOpen ? 'bg-orange-500' : 'bg-gray-500'} rounded-full flex items-center justify-center shadow-2xl shadow-orange-200 dark:shadow-none border-4 border-white dark:border-gray-800 transition-colors`}>
             <span className="text-5xl">🍱</span>
           </div>
-          <div className="absolute -top-2 -right-4 bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-lg rotate-12 shadow-md">
-            HOT!
-          </div>
+          {sysConfig.isOpen ? (
+            <div className="absolute -top-2 -right-4 bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-lg rotate-12 shadow-md">
+              HOT!
+            </div>
+          ) : (
+             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] bg-gray-900 text-white text-xs font-black px-3 py-2 rounded-lg -rotate-12 shadow-md border-2 border-white uppercase tracking-widest whitespace-nowrap">
+              ĐÃ ĐÓNG CỬA
+            </div>
+          )}
         </div>
         
         <div className="mt-6">
           <h1 className="text-4xl font-black text-gray-800 dark:text-gray-100 tracking-tighter leading-none transition-colors">
             CƠM TẤM VINHOMES <br/>
-            <span className="text-orange-600 text-2xl uppercase italic">Kitchen House</span>
+            <span className={`${sysConfig.isOpen ? 'text-orange-600' : 'text-gray-500'} text-2xl uppercase italic`}>Kitchen House</span>
           </h1>
           <div className="flex justify-center gap-1 mt-3">
             {[1,2,3,4,5].map(i => <span key={i} className="text-yellow-500 text-sm">⭐</span>)}
@@ -125,12 +172,12 @@ const Home = () => {
       {/* CUSTOMER GREETING */}
       <div className="w-full max-w-xs mb-10">
         {hasOrderedBefore ? (
-          <div className="bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-orange-100 dark:border-gray-700 text-center relative overflow-hidden transition-colors">
-            <div className="absolute top-0 right-0 w-12 h-12 bg-orange-50 dark:bg-gray-700 rounded-bl-full opacity-50"></div>
+          <div className="bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-orange-100 dark:border-gray-700 text-center relative overflow-hidden transition-colors group">
+            <div className="absolute top-0 right-0 w-12 h-12 bg-orange-50 dark:bg-gray-700 rounded-bl-full opacity-50 transition-all group-hover:scale-150"></div>
             
             <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.2em] mb-1">Thành viên thân thiết</p>
             <h2 className="text-lg font-black text-gray-800 dark:text-white truncate transition-colors">
-               Chào mừng {customerName || 'Bạn'}!
+                Chào mừng {customerName || 'Bạn'}!
             </h2>
             <p className="text-xs text-gray-400 font-bold mb-4">{savedPhone}</p>
             
@@ -153,11 +200,11 @@ const Home = () => {
       {/* ACTION BUTTONS */}
       <div className="w-full max-w-xs space-y-4">
         <button
-          onClick={() => hasOrderedBefore ? navigate(`/order?user=${savedPhone}`) : setIsPopupOpen(true)}
-          className="w-full bg-gray-800 dark:bg-orange-600 hover:bg-black dark:hover:bg-orange-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-gray-200 dark:shadow-none transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest"
+          onClick={handleOrderClick}
+          className={`w-full ${sysConfig.isOpen ? 'bg-gray-800 dark:bg-orange-600 hover:bg-black dark:hover:bg-orange-700 shadow-xl shadow-gray-200 dark:shadow-none' : 'bg-gray-400 cursor-not-allowed'} text-white font-black py-5 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest`}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
-          ĐẶT CƠM NGAY
+          {sysConfig.isOpen ? 'ĐẶT CƠM NGAY' : 'TẠM ĐÓNG CỬA'}
         </button>
 
         <button
@@ -181,7 +228,7 @@ const Home = () => {
       {/* FOOTER */}
       <div className="mt-auto pt-10 pb-6 text-center">
         <p className="text-[10px] font-black text-orange-200 dark:text-gray-600 uppercase tracking-[0.3em] transition-colors">
-          Open: 11:00 - 21:00
+          Open: {sysConfig.openTime || '11:00 - 21:00'}
         </p>
         <div className="mt-2 text-gray-200 dark:text-gray-700 transition-colors">••••••••••••</div>
       </div>
