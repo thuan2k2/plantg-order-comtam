@@ -3,14 +3,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createOrder, validateVoucher, getMyVouchers } from '../services/orderService';
 import { getUserByPhone } from '../services/authService'; 
 import { subscribeToMenu } from '../services/menuService';
-import { useSettings } from '../contexts/SettingsContext';        
 
 const Order = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const userPhoneParam = searchParams.get('user') || '';
-
-  const { t } = useSettings(); // Hook dịch thuật
 
   const [username, setUsername] = useState(userPhoneParam);
   const [customerInfo, setCustomerInfo] = useState(null);
@@ -89,7 +86,7 @@ const Order = () => {
       const maxAllowed = item.maxQty || 10;
       
       if (delta > 0 && currentQty >= maxAllowed) {
-        alert(`${t('maxQtyAlert') || 'Món này chỉ được mua tối đa'} ${maxAllowed} ${t('portions') || 'phần'}!`);
+        alert(`Món này chỉ được mua tối đa ${maxAllowed} phần!`);
         return prev;
       }
       
@@ -121,7 +118,7 @@ const Order = () => {
       } else {
         setAppliedVoucher(res.voucher);
       }
-      if (!codeOverride) alert(`${t('voucherApplied') || 'Đã áp dụng mã:'} ${res.voucher.code}`);
+      if (!codeOverride) alert(`Đã áp dụng mã: ${res.voucher.code}`);
       setVoucherCode('');
       setShowVoucherList(false);
     } else {
@@ -155,8 +152,8 @@ const Order = () => {
 
     const orderData = {
       phone: cleanPhone,
-      customer: customerInfo?.name || t('guest') || "Khách vãng lai", 
-      address: customerInfo?.address || t('pickupAtStore') || "Nhận tại quán", 
+      customer: customerInfo?.name || "Khách vãng lai", 
+      address: customerInfo?.address || "Nhận tại quán", 
       items: Object.values(cart).map(item => `${item.qty}x ${item.name}`).join(', '),
       subTotal: getSubTotal(),
       shippingFee,
@@ -176,10 +173,10 @@ const Order = () => {
         localStorage.removeItem('reorder_items');
         navigate(`/checkorder?user=${cleanPhone}`);
       } else {
-         alert(`${t('error') || 'Lỗi:'} ${result.error}`);
+         alert(`Lỗi: ${result.error}`);
       }
     } catch (error) {
-      alert(t('networkError') || 'Lỗi kết nối Firebase!');
+      alert('Lỗi kết nối Firebase!');
     } finally {
       setIsSubmitting(false);
     }
@@ -203,14 +200,14 @@ const Order = () => {
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M15 19l-7-7 7-7" /></svg>
           </button>
           <h1 className="text-lg font-black text-gray-800 dark:text-gray-100 uppercase tracking-tighter transition-colors">
-            {t('orderTitle') || 'Đặt cơm Plant G'}
+            Đặt cơm Plant G
           </h1>
           <div className="w-9"></div>
         </div>
         <div className="flex px-4 gap-2 pb-3">
           {['MAIN', 'SIDE', 'EXTRA'].map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-2xl transition-all ${activeTab === tab ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-400 bg-gray-50 dark:bg-gray-700 dark:text-gray-400'}`}>
-              {tab === 'MAIN' ? t('tabMain') || 'Món chính' : tab === 'SIDE' ? t('tabSide') || 'Món phụ' : t('tabExtra') || 'Ăn kèm'}
+              {tab === 'MAIN' ? 'Món chính' : tab === 'SIDE' ? 'Món phụ' : 'Ăn kèm'}
             </button>
           ))}
         </div>
@@ -219,7 +216,7 @@ const Order = () => {
       {/* USER INFO */}
       <div className="bg-white dark:bg-gray-800 p-6 mb-4 rounded-b-[2.5rem] shadow-sm transition-colors">
         <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 block">
-          {t('orderPhoneLabel') || 'SĐT đặt hàng'} *
+          SĐT đặt hàng *
         </label>
         <input 
           type="tel" 
@@ -231,7 +228,7 @@ const Order = () => {
         {customerInfo && (
           <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-2xl border border-blue-100 dark:border-blue-900/50 animate-in fade-in transition-colors">
             <div className="text-xs font-black text-blue-700 dark:text-blue-400 uppercase">
-              {t('greeting') || 'Chào'} {customerInfo.name}!
+              Chào {customerInfo.name}!
             </div>
             <div className="text-[9px] text-blue-500 dark:text-blue-300 font-bold mt-1 opacity-70 italic tracking-tighter">
               📍 {customerInfo.address}
@@ -245,7 +242,7 @@ const Order = () => {
         <div className="bg-white dark:bg-gray-800 p-5 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
            <div className="flex justify-between items-center mb-3 ml-1">
               <p className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">
-                {t('discountOffer') || 'Ưu đãi giảm giá'}
+                Ưu đãi giảm giá
               </p>
            </div>
            <div className="flex gap-2 items-center">
@@ -253,7 +250,7 @@ const Order = () => {
                 type="text" 
                 value={voucherCode} 
                 onChange={e => setVoucherCode(e.target.value.toUpperCase())} 
-                placeholder={t('enterCode') || 'Nhập mã...'} 
+                placeholder="Nhập mã..." 
                 className="flex-1 bg-gray-50 dark:bg-gray-700 dark:text-white border-none rounded-xl px-4 py-3.5 text-xs font-bold outline-none min-w-0 transition-colors placeholder:text-gray-300 dark:placeholder:text-gray-500" 
               />
               {myVouchers.length > 0 && (
@@ -261,21 +258,21 @@ const Order = () => {
                   onClick={() => setShowVoucherList(true)} 
                   className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-3.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border border-blue-100 dark:border-blue-900/50 active:scale-95 transition-all shadow-sm"
                 >
-                  🎁 {t('myVouchers') || 'Kho mã'} ({myVouchers.length})
+                  🎁 Kho mã ({myVouchers.length})
                 </button>
               )}
               <button 
                 onClick={() => handleApplyVoucher()} 
                 className="bg-gray-800 dark:bg-gray-600 text-white px-4 py-3.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap active:scale-95 transition-all shadow-sm"
               >
-                {t('apply') || 'Áp dụng'}
+                Áp dụng
               </button>
            </div>
            
            {(appliedVoucher || appliedFreeship) && (
               <div className="mt-3 flex flex-wrap gap-2 animate-in zoom-in duration-300">
-                 {appliedFreeship && <span className="bg-green-500 dark:bg-green-600 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ {t('freeshipAuto') || 'FREE SHIP TỰ ĐỘNG'}</span>}
-                 {appliedVoucher && <span className="bg-blue-600 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ {t('discount') || 'GIẢM'} {appliedVoucher.value.toLocaleString()}đ</span>}
+                 {appliedFreeship && <span className="bg-green-500 dark:bg-green-600 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ FREE SHIP TỰ ĐỘNG</span>}
+                 {appliedVoucher && <span className="bg-blue-600 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ GIẢM {appliedVoucher.value.toLocaleString()}đ</span>}
               </div>
            )}
         </div>
@@ -289,7 +286,7 @@ const Order = () => {
             <div className="flex-1">
               <h3 className="text-sm font-black text-gray-800 dark:text-gray-100 uppercase tracking-tight leading-tight">{item.name}</h3>
               <p className="text-[9px] text-gray-400 dark:text-gray-400 font-bold mt-1 line-clamp-1 italic">{item.description}</p>
-              {item.maxQty && <span className="text-[8px] bg-orange-50 dark:bg-orange-900/30 text-orange-500 dark:text-orange-400 px-2 py-0.5 rounded-full font-black uppercase mt-1 inline-block border border-orange-100 dark:border-orange-900/50">{t('max') || 'Tối đa'} {item.maxQty}</span>}
+              {item.maxQty && <span className="text-[8px] bg-orange-50 dark:bg-orange-900/30 text-orange-500 dark:text-orange-400 px-2 py-0.5 rounded-full font-black uppercase mt-1 inline-block border border-orange-100 dark:border-orange-900/50">Tối đa {item.maxQty}</span>}
               <p className="text-base font-black text-red-500 dark:text-red-400 mt-2">{item.price}</p>
             </div>
             <div className="flex flex-col items-center gap-1 bg-gray-50 dark:bg-gray-700 p-1.5 rounded-2xl transition-colors">
@@ -305,8 +302,8 @@ const Order = () => {
       {Object.values(cart).length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl border-t dark:border-gray-800 z-40 shadow-2xl rounded-t-[2.5rem] transition-colors">
           <button onClick={() => setShowConfirm(true)} disabled={isSubmitting} className={`w-full ${isSubmitting ? 'bg-gray-400 dark:bg-gray-600' : 'bg-blue-600'} text-white font-black py-5 rounded-[2rem] flex items-center justify-between px-8 shadow-xl shadow-blue-200 dark:shadow-none active:scale-95 transition-all`}>
-            <span className="text-[10px] uppercase tracking-widest">{Object.values(cart).reduce((s,i)=>s+i.qty,0)} {t('items') || 'món'} • {getFinalTotal().toLocaleString()}đ</span>
-            <span className="text-xs font-black uppercase tracking-widest">{isSubmitting ? t('processing') || 'ĐANG LÀM...' : t('confirm') || 'XÁC NHẬN →'}</span>
+            <span className="text-[10px] uppercase tracking-widest">{Object.values(cart).reduce((s,i)=>s+i.qty,0)} món • {getFinalTotal().toLocaleString()}đ</span>
+            <span className="text-xs font-black uppercase tracking-widest">{isSubmitting ? 'ĐANG LÀM...' : 'XÁC NHẬN →'}</span>
           </button>
         </div>
       )}
@@ -317,8 +314,8 @@ const Order = () => {
           <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10 transition-colors">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h3 className="text-sm font-black uppercase text-gray-800 dark:text-white tracking-widest">{t('yourOffers') || 'Ưu đãi của bạn'}</h3>
-                <p className="text-[9px] text-gray-400 dark:text-gray-500 uppercase font-bold mt-1">{t('publicAndPersonalCodes') || 'Gồm mã cá nhân & công khai'}</p>
+                <h3 className="text-sm font-black uppercase text-gray-800 dark:text-white tracking-widest">Ưu đãi của bạn</h3>
+                <p className="text-[9px] text-gray-400 dark:text-gray-500 uppercase font-bold mt-1">Gồm mã cá nhân & công khai</p>
               </div>
               <button onClick={() => setShowVoucherList(false)} className="w-10 h-10 flex items-center justify-center bg-gray-50 dark:bg-gray-700 rounded-full text-gray-400 dark:text-gray-300 transition-colors">&times;</button>
             </div>
@@ -336,16 +333,16 @@ const Order = () => {
                       <div className="flex items-center gap-2">
                          <p className="font-black text-gray-800 dark:text-gray-100 text-sm tracking-widest uppercase">{v.code}</p>
                          {(!v.assignedPhone || v.assignedPhone.trim() === "") && (
-                           <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded text-[8px] font-black tracking-widest uppercase">{t('publicCode') || 'Công khai'}</span>
+                           <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded text-[8px] font-black tracking-widest uppercase">Công khai</span>
                          )}
                       </div>
                       <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase mt-1">
-                        {v.type === 'FREESHIP' ? t('freeShipping') || 'Miễn phí vận chuyển' : `${t('discount') || 'Giảm giá'} -${v.value.toLocaleString()}đ`}
+                        {v.type === 'FREESHIP' ? 'Miễn phí vận chuyển' : `Giảm giá -${v.value.toLocaleString()}đ`}
                       </p>
-                      <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-1 font-medium italic">{t('youHave') || 'Bạn còn'} {v.usageLimit} {t('usesLeft') || 'lần dùng'}</p>
+                      <p className="text-[9px] text-gray-400 dark:text-gray-500 mt-1 font-medium italic">Bạn còn {v.usageLimit} lần dùng</p>
                     </div>
                     <div className={`${isApplied ? 'bg-red-500' : 'bg-blue-600'} text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md ${isApplied ? 'shadow-red-100 dark:shadow-none' : 'shadow-blue-100 dark:shadow-none'}`}>
-                      {isApplied ? t('cancelUse') || 'HỦY DÙNG' : t('use') || 'DÙNG'}
+                      {isApplied ? 'HỦY DÙNG' : 'DÙNG'}
                     </div>
                   </button>
                 );
@@ -359,31 +356,31 @@ const Order = () => {
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10 transition-colors">
-            <h2 className="text-xl font-black text-gray-800 dark:text-white uppercase tracking-tighter mb-4">{t('paymentDetails') || 'Chi tiết thanh toán'}</h2>
+            <h2 className="text-xl font-black text-gray-800 dark:text-white uppercase tracking-tighter mb-4">Chi tiết thanh toán</h2>
             <div className="space-y-2 mb-6 border-b border-dashed dark:border-gray-700 pb-5">
-              <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest"><span>{t('foodCost') || 'Tiền cơm'}:</span><span>{getSubTotal().toLocaleString()}đ</span></div>
+              <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest"><span>Tiền cơm:</span><span>{getSubTotal().toLocaleString()}đ</span></div>
               <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest">
-                <span>{t('shippingFee') || 'Phí vận chuyển'}:</span>
-                <span className={shippingFee === 0 ? "text-green-500 dark:text-green-400 font-black" : ""}>{shippingFee === 0 ? t('free') || "MIỄN PHÍ" : "5,000đ"}</span>
+                <span>Phí vận chuyển:</span>
+                <span className={shippingFee === 0 ? "text-green-500 dark:text-green-400 font-black" : ""}>{shippingFee === 0 ? "MIỄN PHÍ" : "5,000đ"}</span>
               </div>
               {appliedVoucher && (
-                <div className="flex justify-between text-[11px] font-black text-green-600 dark:text-green-400 uppercase tracking-widest"><span>{t('discountAmount') || 'Giảm giá'}:</span><span>-{appliedVoucher.value.toLocaleString()}đ</span></div>
+                <div className="flex justify-between text-[11px] font-black text-green-600 dark:text-green-400 uppercase tracking-widest"><span>Giảm giá:</span><span>-{appliedVoucher.value.toLocaleString()}đ</span></div>
               )}
               <div className="flex justify-between items-center pt-3 border-t border-gray-100 dark:border-gray-700 mt-2">
-                <span className="text-xs font-black text-gray-800 dark:text-gray-100 uppercase tracking-widest">{t('total') || 'Thành tiền'}:</span>
+                <span className="text-xs font-black text-gray-800 dark:text-gray-100 uppercase tracking-widest">Thành tiền:</span>
                 <span className="text-3xl font-black text-red-500 dark:text-red-400 tracking-tighter">{getFinalTotal().toLocaleString()}đ</span>
               </div>
             </div>
             <textarea 
               value={note} 
               onChange={e => setNote(e.target.value)} 
-              placeholder={t('notePlaceholder') || "Ghi chú (VD: Không hành, nhiều ớt...)"} 
+              placeholder="Ghi chú (VD: Không hành, nhiều ớt...)" 
               className="w-full p-4 bg-gray-50 dark:bg-gray-700 dark:text-white border-none rounded-2xl text-xs mb-6 outline-none font-bold h-20 transition-colors placeholder:text-gray-300 dark:placeholder:text-gray-500" 
             />
             <div className="flex gap-4">
-              <button onClick={() => setShowConfirm(false)} className="flex-1 py-5 text-[10px] font-black text-gray-400 dark:text-gray-300 uppercase tracking-widest bg-gray-50 dark:bg-gray-700 rounded-2xl active:scale-95 transition-all">{t('back') || 'Quay lại'}</button>
+              <button onClick={() => setShowConfirm(false)} className="flex-1 py-5 text-[10px] font-black text-gray-400 dark:text-gray-300 uppercase tracking-widest bg-gray-50 dark:bg-gray-700 rounded-2xl active:scale-95 transition-all">Quay lại</button>
               <button onClick={handleOrderSubmit} disabled={isSubmitting} className="flex-[2] bg-blue-600 text-white text-[10px] font-black rounded-2xl shadow-xl shadow-blue-100 dark:shadow-none uppercase tracking-[0.2em] active:scale-95 transition-all">
-                {isSubmitting ? t('processing') || 'ĐANG XỬ LÝ...' : t('orderNowConfirm') || 'ĐẶT CƠM NGAY'}
+                {isSubmitting ? 'ĐANG XỬ LÝ...' : 'ĐẶT CƠM NGAY'}
               </button>
             </div>
           </div>

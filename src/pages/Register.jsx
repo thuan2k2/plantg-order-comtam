@@ -1,12 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { registerUser } from '../services/authService'; 
-// Import Hook Cài đặt
-import { useSettings } from '../contexts/SettingsContext';
 
 const Register = () => {
   const navigate = useNavigate();
-  const { t } = useSettings(); // Hook dịch thuật (Bạn có thể thêm từ khóa vào SettingsContext)
   
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -40,6 +37,18 @@ const Register = () => {
       if (result.success) {
         setIsLoading(false);
         alert('Đăng ký tài khoản thành công! Mời bạn tiếp tục đặt hàng.');
+        
+        // Lưu lại SĐT và thông tin cơ bản vào bộ nhớ tạm của trình duyệt
+        const currentPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
+        if (!currentPhones.includes(formData.username)) {
+          localStorage.setItem('recentPhones', JSON.stringify([formData.username, ...currentPhones].slice(0, 3)));
+        }
+        localStorage.setItem('userProfile', JSON.stringify({
+          fullName: formData.fullName,
+          username: formData.username,
+          address: formData.address
+        }));
+
         navigate(`/order?user=${formData.username}`);
       } else {
         setIsLoading(false);

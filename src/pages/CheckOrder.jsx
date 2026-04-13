@@ -7,8 +7,6 @@ import {
   updatePaymentMethod,
   requestCancelOrder 
 } from '../services/orderService'; 
-// Import Hook Cài đặt
-import { useSettings } from '../contexts/SettingsContext';
 
 // --- CẤU HÌNH HỆ THỐNG XẾP HẠNG ---
 const RANK_TIERS = [
@@ -44,7 +42,6 @@ const getRankInfo = (totalSpend) => {
 // --- COMPONENT CARD ĐƠN HÀNG ---
 const OrderCard = ({ order }) => {
   const navigate = useNavigate();
-  const { t } = useSettings(); // Hook dịch thuật
   const [timeLeft, setTimeLeft] = useState(0);
   const [showCancelReason, setShowCancelReason] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -191,9 +188,6 @@ const CheckOrder = () => {
   const [searchParams] = useSearchParams();
   const userPhoneParam = searchParams.get('user') || '';
   
-  // Hook Cài đặt
-  const { t } = useSettings();
-
   const [phoneInput, setPhoneInput] = useState(userPhoneParam);
   const [orders, setOrders] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -247,7 +241,7 @@ const CheckOrder = () => {
             </svg>
           </button>
           <h1 className="text-lg font-black text-gray-800 dark:text-white uppercase tracking-tighter transition-colors">
-            {t('checkOrder')}
+            LỊCH SỬ ĐƠN HÀNG
           </h1>
         </div>
 
