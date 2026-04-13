@@ -8,7 +8,9 @@ import {
   requestCancelOrder 
 } from '../services/orderService'; 
 
+// Component Card đơn hàng lẻ
 const OrderCard = ({ order }) => {
+  const navigate = useNavigate();
   const [timeLeft, setTimeLeft] = useState(0);
   const [showCancelReason, setShowCancelReason] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -36,13 +38,11 @@ const OrderCard = ({ order }) => {
   }, [order]);
 
   const handleCancelClick = async () => {
-    // Nếu đơn đang chờ và còn trong 10 phút thì cho phép hủy trực tiếp
     if (order.status === 'PENDING' && timeLeft > 0) {
       if (window.confirm('Bạn muốn hủy đơn hàng này?')) {
         await updateOrderStatus(order.id, 'CANCELLED');
       }
     } else {
-      // Nếu đã quá 10 phút hoặc bếp đã nhận đơn, yêu cầu nhập lý do
       setShowCancelReason(true);
     }
   };
@@ -61,11 +61,21 @@ const OrderCard = ({ order }) => {
 
   const handlePaymentSelect = async (method) => {
     await updatePaymentMethod(order.id, method);
-    if (method === 'CASH') setShowPaymentSelection(false);
+    setShowPaymentSelection(false);
+  };
+
+  // CƠ CHẾ MỚI: Đặt lại đơn cũ
+  const handleReOrder = () => {
+    if (window.confirm("Thêm các món từ đơn này vào giỏ hàng mới?")) {
+      // Lưu chuỗi items vào localStorage để trang Order đọc và parse
+      localStorage.setItem('reorder_items', order.items);
+      navigate('/order');
+    }
   };
 
   return (
     <div className="bg-white rounded-[2.5rem] shadow-xl shadow-gray-200/50 border border-gray-100 p-6 overflow-hidden transition-all animate-in slide-in-from-bottom-4">
+      {/* Header đơn hàng */}
       <div className="flex justify-between items-center mb-4">
         <div>
           <span className="font-mono text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg uppercase tracking-widest">
@@ -76,6 +86,7 @@ const OrderCard = ({ order }) => {
         <StatusBadge status={order.status} />
       </div>
 
+      {/* Nội dung đơn hàng */}
       <div className="space-y-3 mb-6">
         <p className="text-[15px] text-gray-800 font-black leading-tight">{order.items}</p>
         <div className="flex justify-between items-end border-t border-dashed pt-3">
@@ -84,59 +95,74 @@ const OrderCard = ({ order }) => {
         </div>
       </div>
 
-      {/* PHẦN THANH TOÁN */}
-      <div className="bg-gray-50 rounded-3xl p-4 mb-4 border border-gray-100">
-        <div className="flex justify-between items-center mb-3">
-          <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Thanh toán</span>
-          <span className={`text-[10px] font-black uppercase ${order.paymentStatus === 'PAID' ? 'text-green-500' : 'text-orange-500'}`}>
-            {order.paymentStatus === 'PAID' ? '✓ Đã thanh toán' : 
-             order.paymentStatus === 'WAITING_CONFIRM' ? '⏳ Đang chờ xác nhận' : 'Chưa thanh toán'}
-          </span>
-        </div>
+      {/* PHẦN THANH TOÁN (CẬP NHẬT LOGIC FIX) */}
+      {order.status !== 'CANCELLED' && (
+        <div className="bg-gray-50 rounded-3xl p-4 mb-4 border border-gray-100">
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Thanh toán</span>
+            <span className={`text-[10px] font-black uppercase ${order.paymentStatus === 'PAID' ? 'text-green-500' : 'text-orange-500'}`}>
+              {order.paymentStatus === 'PAID' ? '✓ Đã thanh toán' : 
+               order.paymentStatus === 'WAITING_CONFIRM' ? '⏳ Đang chờ xác nhận' : 
+               order.paymentMethod === 'CASH' ? 'Tiền mặt' : 'Chưa thanh toán'}
+            </span>
+          </div>
 
-        {order.paymentStatus !== 'PAID' && (
-          <div className="space-y-3">
-            {(!order.paymentMethod || showPaymentSelection || order.paymentMethod === 'CASH') ? (
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => handlePaymentSelect('CASH')}
-                  className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase transition-all ${order.paymentMethod === 'CASH' ? 'bg-gray-800 text-white' : 'bg-white text-gray-400 border border-gray-100'}`}
-                >
-                  💵 Tiền mặt
-                </button>
-                <button 
-                  onClick={() => handlePaymentSelect('TRANSFER')}
-                  className="flex-1 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-blue-100"
-                >
-                  🏦 Chuyển khoản
-                </button>
-              </div>
-            ) : (
-              <div className="text-center animate-in zoom-in duration-300">
-                <img 
-                  src={`https://api.vietqr.io/image/970423-00006464313-compact.jpg?amount=${parseInt(order.total.replace(/\D/g,''))}&addInfo=TT ${order.id.slice(-6).toUpperCase()}`} 
-                  className="w-40 h-40 mx-auto rounded-2xl shadow-sm border-2 border-white mb-3"
-                  alt="QR Thanh toán"
-                />
-                <p className="text-[9px] text-blue-500 font-bold italic mb-3 px-2 leading-tight">
-                  * Vui lòng chuyển khoản đúng số tiền và nội dung mã đơn để được xác nhận tự động.
-                </p>
-                <button 
-                  onClick={() => updatePaymentMethod(order.id, 'TRANSFER', true)}
-                  className="w-full py-3 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase shadow-md mb-2"
-                >
-                  Tôi đã chuyển khoản
-                </button>
+          {/* Thông báo đỏ khi Admin từ chối CK */}
+          {order.paymentMethod === 'CASH' && order.paymentStatus === 'UNPAID' && order.updatedAt && (
+             <p className="text-[9px] text-red-500 font-black mb-3 leading-tight italic bg-red-50 p-2 rounded-xl border border-red-100">
+               * Hệ thống chưa ghi nhận giao dịch thành công, phương thức được tự động chuyển sang Tiền mặt!
+             </p>
+          )}
+
+          {order.paymentStatus !== 'PAID' && (
+            <div className="space-y-3">
+              {/* Nếu đã chọn Tiền mặt: Hiển thị trạng thái và nút đổi */}
+              {order.paymentMethod === 'CASH' && !showPaymentSelection ? (
                 <button 
                   onClick={() => setShowPaymentSelection(true)}
-                  className="text-[9px] font-black text-gray-400 uppercase tracking-widest"
+                  className="w-full py-2 text-[10px] font-black text-blue-500 uppercase tracking-widest"
                 >
-                  Đổi phương thức thanh toán
+                  [ Đổi sang Chuyển khoản ]
                 </button>
-              </div>
-            )}
-          </div>
-        )}
+              ) : order.paymentMethod === 'TRANSFER' && !showPaymentSelection ? (
+                /* Giao diện QR Chuyển khoản */
+                <div className="text-center animate-in zoom-in duration-300">
+                  <img 
+                    src={`https://api.vietqr.io/image/970423-00006464313-compact.jpg?amount=${parseInt(order.total.replace(/\D/g,''))}&addInfo=TT ${order.id.slice(-6).toUpperCase()}`} 
+                    className="w-40 h-40 mx-auto rounded-2xl shadow-sm border-2 border-white mb-3"
+                    alt="QR Thanh toán"
+                  />
+                  {order.paymentStatus !== 'WAITING_CONFIRM' && (
+                    <button 
+                      onClick={() => updatePaymentMethod(order.id, 'TRANSFER', true)}
+                      className="w-full py-3 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase shadow-md mb-2"
+                    >
+                      Tôi đã chuyển khoản
+                    </button>
+                  )}
+                  <button onClick={() => setShowPaymentSelection(true)} className="text-[9px] font-black text-gray-400 uppercase">Đổi phương thức thanh toán</button>
+                </div>
+              ) : (
+                /* Lựa chọn 2 phương thức */
+                <div className="flex gap-2">
+                  <button onClick={() => handlePaymentSelect('CASH')} className="flex-1 py-3 bg-gray-800 text-white rounded-2xl text-[10px] font-black uppercase">💵 Tiền mặt</button>
+                  <button onClick={() => handlePaymentSelect('TRANSFER')} className="flex-1 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase">🏦 Chuyển khoản</button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* NÚT ĐẶT LẠI ĐƠN HÀNG (MỚI) */}
+      <div className="mb-4">
+        <button 
+          onClick={handleReOrder}
+          className="w-full py-4 bg-orange-50 text-orange-600 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-orange-100 flex items-center justify-center gap-2 active:scale-95 transition-all"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          Đặt lại đơn này
+        </button>
       </div>
 
       {/* PHẦN HỦY ĐƠN */}
@@ -150,7 +176,7 @@ const OrderCard = ({ order }) => {
             {!showCancelReason ? (
               <button 
                 onClick={handleCancelClick}
-                className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-400 border border-red-100 hover:bg-red-50 transition-all"
+                className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-400 border border-red-50 hover:bg-red-50 transition-all"
               >
                 {order.status === 'PENDING' && timeLeft > 0 
                   ? `Hủy đơn nhanh (${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, '0')})`
@@ -162,11 +188,11 @@ const OrderCard = ({ order }) => {
                   placeholder="Lý do hủy đơn..."
                   value={cancelReason}
                   onChange={(e) => setCancelReason(e.target.value)}
-                  className="w-full p-3 text-xs bg-white rounded-xl outline-none mb-3 border-none focus:ring-1 focus:ring-red-200"
+                  className="w-full p-3 text-xs bg-white rounded-xl outline-none mb-3 border-none"
                   rows="2"
                 />
                 <div className="flex gap-2">
-                  <button onClick={() => setShowCancelReason(false)} className="flex-1 py-2 text-[10px] font-black text-gray-400 uppercase">Hủy</button>
+                  <button onClick={() => setShowCancelReason(false)} className="flex-1 py-2 text-[10px] font-black text-gray-400 uppercase">Đóng</button>
                   <button onClick={submitCancelRequest} className="flex-1 py-2 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase">Gửi lý do</button>
                 </div>
               </div>

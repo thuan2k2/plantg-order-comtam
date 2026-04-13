@@ -23,8 +23,8 @@ export const createOrder = async (orderData) => {
       ...orderData,
       note: orderData.note || "", 
       status: 'PENDING',
-      paymentMethod: 'CASH',     // Mặc định là Tiền mặt
-      paymentStatus: 'UNPAID',    // Mặc định là Chưa thanh toán
+      paymentMethod: 'CASH',     
+      paymentStatus: 'UNPAID',    
       createdAt: serverTimestamp(),
     };
     const docRef = await addDoc(collection(db, COLLECTION_NAME), newOrder);
@@ -61,22 +61,32 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
 
 /**
  * 3. Xác nhận trạng thái tiền tệ (Dành cho Admin)
+ * FIX LỖI: Khi ấn "Chưa nhận tiền", tự động chuyển phương thức về CASH
  */
 export const confirmPaymentStatus = async (orderId, isPaid) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
-    await updateDoc(orderRef, {
+    const updateData = {
       paymentStatus: isPaid ? 'PAID' : 'UNPAID',
       updatedAt: serverTimestamp()
-    });
+    };
+
+    // Nếu Admin xác nhận CHƯA NHẬN TIỀN (isPaid = false)
+    // Tự động đẩy phương thức thanh toán quay lại Tiền mặt
+    if (!isPaid) {
+      updateData.paymentMethod = 'CASH';
+    }
+
+    await updateDoc(orderRef, updateData);
     return { success: true };
   } catch (error) {
+    console.error("Lỗi confirmPaymentStatus:", error);
     return { success: false, error: error.message };
   }
 };
 
 /**
- * 4. Hủy đơn hàng có điều kiện (Dành cho Khách hàng)
+ * 4. Hủy đơn hàng có điều kiện (Khách hàng)
  */
 export const requestCancelOrder = async (orderId, status, reason = "") => {
   try {
@@ -95,7 +105,7 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
 };
 
 /**
- * 5. Xóa đơn hàng mềm (Dành cho Admin)
+ * 5. Xóa đơn hàng mềm (Admin)
  */
 export const deleteOrderSoft = async (orderId) => {
   try {
@@ -111,8 +121,7 @@ export const deleteOrderSoft = async (orderId) => {
 };
 
 /**
- * 6. FIX LỖI BUILD: Bổ sung export hàm subscribeToOrdersByPhone
- * Dành cho trang CheckOrder tra cứu đơn hàng
+ * 6. Lắng nghe đơn hàng theo SĐT (Khách hàng)
  */
 export const subscribeToOrdersByPhone = (phone, callback) => {
   if (!phone) return () => {};
@@ -172,7 +181,7 @@ export const subscribeToAllOrders = (callback) => {
 };
 
 /**
- * 9. Cập nhật trạng thái đơn hàng (Chung)
+ * 9. Cập nhật trạng thái đơn hàng (Admin/Khách)
  */
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
