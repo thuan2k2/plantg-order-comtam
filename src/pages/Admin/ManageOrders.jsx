@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getAuth } from 'firebase/auth'; // Thêm Firebase Auth
 import { 
   subscribeToOrdersByDate, 
   updateOrderStatus, 
@@ -20,8 +21,9 @@ const ORDER_STATUSES = {
 const ManageOrders = () => {
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const auth = getAuth(); // Khởi tạo Auth instance
   
-  // TABS MỚI THEO YÊU CẦU
+  // TABS
   const [activeTab, setActiveTab] = useState('ALL');
   const tabs = [
     { id: 'ALL', label: 'Tất cả' },
@@ -32,9 +34,9 @@ const ManageOrders = () => {
     { id: 'CANCEL_REQUESTED', label: 'Yêu cầu hủy' }
   ];
 
-  // STATE CHO MODAL XÓA ĐƠN
+  // STATE CHO MODAL XÓA ĐƠN BẢO MẬT
   const [deleteModal, setDeleteModal] = useState({ show: false, orderId: null });
-  const [deleteData, setDeleteData] = useState({ reason: '', deleterName: '' });
+  const [deleteData, setDeleteData] = useState({ reason: '', confirmEmail: '' }); // Sửa deleterName thành confirmEmail
 
   useEffect(() => {
     setIsLoading(true);
@@ -74,18 +76,25 @@ const ManageOrders = () => {
   // MỞ MODAL XÓA ĐƠN
   const openDeleteModal = (orderId) => {
     setDeleteModal({ show: true, orderId });
-    setDeleteData({ reason: '', deleterName: '' });
+    setDeleteData({ reason: '', confirmEmail: '' });
   };
 
-  // XÁC NHẬN XÓA ĐƠN
+  // XÁC NHẬN XÓA ĐƠN VỚI AUTH
   const confirmDelete = async (e) => {
     e.preventDefault();
-    if (!deleteData.deleterName.trim() || !deleteData.reason.trim()) {
-      return alert("Vui lòng điền đầy đủ Tên và Lý do xóa!");
+    const currentAdminEmail = auth.currentUser?.email;
+
+    // Kiểm tra Email xác nhận
+    if (deleteData.confirmEmail !== currentAdminEmail) {
+      return alert("Email xác nhận không khớp với tài khoản Admin đang đăng nhập!");
+    }
+
+    if (!deleteData.reason.trim()) {
+      return alert("Vui lòng điền lý do xóa!");
     }
     
-    // Gọi hàm deleteOrderSoft truyền theo lý do và người xóa
-    const result = await deleteOrderSoft(deleteModal.orderId, deleteData.reason.trim(), deleteData.deleterName.trim());
+    // Gọi hàm deleteOrderSoft truyền theo lý do và lấy luôn Email làm Tên người xóa
+    const result = await deleteOrderSoft(deleteModal.orderId, deleteData.reason.trim(), currentAdminEmail);
     
     if (result.success) {
       setDeleteModal({ show: false, orderId: null });
@@ -156,8 +165,8 @@ const ManageOrders = () => {
                   </span>
                 </div>
                 {/* NÚT XÓA MỞ MODAL */}
-                <button onClick={() => openDeleteModal(order.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                <button onClick={() => openDeleteModal(order.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors" title="Xóa đơn hàng">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>
               </div>
 
@@ -256,39 +265,47 @@ const ManageOrders = () => {
         )}
       </div>
 
-      {/* MODAL NHẬP LÝ DO XÓA ĐƠN VÀO THỐNG KÊ */}
+      {/* MODAL NHẬP LÝ DO XÓA ĐƠN BẢO MẬT */}
       {deleteModal.show && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-200">
-            <h2 className="text-lg font-black text-red-600 uppercase tracking-tighter mb-2">Xác nhận xóa đơn</h2>
+            <h2 className="text-lg font-black text-red-600 uppercase tracking-tighter mb-2">Bảo mật Xóa Đơn</h2>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6 leading-relaxed">
-              Đơn hàng sẽ bị ẩn khỏi bảng điều khiển và máy khách, nhưng vẫn lưu vết tại mục Thống Kê.
+              Yêu cầu xác nhận quyền Admin để thực hiện thao tác xóa và hoàn voucher.
             </p>
             
             <form onSubmit={confirmDelete} className="space-y-4">
               <div>
-                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1 block mb-2">Người thực hiện xóa</label>
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1 block mb-2">Tài khoản Admin hiện tại</label>
                 <input 
-                  type="text" required 
-                  value={deleteData.deleterName} 
-                  onChange={e => setDeleteData({...deleteData, deleterName: e.target.value})} 
-                  placeholder="VD: Admin Tuấn..." 
-                  className="w-full bg-gray-50 border-none rounded-xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-red-500 outline-none" 
+                  type="text" disabled 
+                  value={auth.currentUser?.email || "Chưa đăng nhập"} 
+                  className="w-full bg-gray-100 border-none rounded-xl px-5 py-4 text-sm font-bold text-gray-500 outline-none cursor-not-allowed" 
                 />
               </div>
               <div>
-                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1 block mb-2">Lý do xóa đơn</label>
+                <label className="text-[9px] font-black text-blue-600 uppercase tracking-widest ml-1 block mb-2">Nhập lại Email để xác nhận *</label>
+                <input 
+                  type="email" required 
+                  value={deleteData.confirmEmail} 
+                  onChange={e => setDeleteData({...deleteData, confirmEmail: e.target.value})} 
+                  placeholder="Nhập email admin..." 
+                  className="w-full bg-blue-50 border-none rounded-xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" 
+                />
+              </div>
+              <div>
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1 block mb-2">Lý do xóa đơn *</label>
                 <textarea 
-                  required rows="3"
+                  required rows="2"
                   value={deleteData.reason} 
                   onChange={e => setDeleteData({...deleteData, reason: e.target.value})} 
-                  placeholder="Ghi rõ lý do (Khách bom hàng, đặt nhầm...)" 
+                  placeholder="Ghi rõ lý do..." 
                   className="w-full bg-gray-50 border-none rounded-xl px-5 py-4 text-sm font-bold focus:ring-2 focus:ring-red-500 outline-none resize-none" 
                 />
               </div>
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setDeleteModal({show: false, orderId: null})} className="flex-1 py-4 text-[10px] font-black text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-2xl uppercase tracking-widest transition-colors">Hủy bỏ</button>
-                <button type="submit" className="flex-[1.5] py-4 text-[10px] font-black text-white bg-red-600 rounded-2xl uppercase tracking-widest shadow-lg shadow-red-200 active:scale-95 transition-all">Xác nhận xóa</button>
+                <button type="submit" className="flex-[1.5] py-4 text-[10px] font-black text-white bg-red-600 rounded-2xl uppercase tracking-widest shadow-lg shadow-red-200 active:scale-95 transition-all">Xóa vĩnh viễn</button>
               </div>
             </form>
           </div>

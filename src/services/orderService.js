@@ -336,3 +336,29 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
     return { success: true };
   } catch (error) { return { success: false, error: error.message }; }
 };
+
+// NÂNG CẤP: Hàm Hoàn tác đơn đã xóa
+export const undoDeleteOrder = async (orderId, usedVouchers = []) => {
+  try {
+    const orderRef = doc(db, COLLECTION_NAME, orderId);
+    
+    // Khôi phục trạng thái về PENDING và xóa các trường lưu vết
+    await updateDoc(orderRef, { 
+      status: 'PENDING', 
+      deleteReason: null,
+      deletedBy: null,
+      updatedAt: serverTimestamp() 
+    });
+
+    // CƠ CHẾ QUAN TRỌNG: Trừ lại số lượng voucher vì đơn đã sống lại
+    if (usedVouchers && usedVouchers.length > 0) {
+      for (const v of usedVouchers) {
+        await updateDoc(doc(db, VOUCHER_COL, v.id), { usageLimit: increment(-1) });
+      }
+    }
+
+    return { success: true };
+  } catch (error) { 
+    return { success: false, error: error.message }; 
+  }
+};
