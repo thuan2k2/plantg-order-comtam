@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { app } from './firebase/config';
 
-// Import Provider quản lý Cài đặt chung (Ngôn ngữ & Theme)
+// Import Provider quản lý Cài đặt chung
 import { SettingsProvider } from './contexts/SettingsContext';
 
 // Import các Pages dành cho Khách hàng
@@ -11,6 +11,7 @@ import Home from './pages/Home';
 import Register from './pages/Register';
 import Order from './pages/Order';
 import CheckOrder from './pages/CheckOrder';
+import UserSettings from './pages/UserSettings'; // Trang cài đặt của khách
 
 // Import Widget Chat dành cho Khách hàng
 import CustomerChat from './components/CustomerChat';
@@ -22,9 +23,11 @@ import ManageOrders from './pages/Admin/ManageOrders';
 import ManageUsers from './pages/Admin/ManageUsers';
 import ManageMenu from './pages/Admin/ManageMenu';
 import ManageVouchers from './pages/Admin/ManageVouchers';
-import ManageChat from './pages/Admin/ManageChat'; // Trang quản lý chat Admin
+import ManageChat from './pages/Admin/ManageChat'; 
 import AdminLogin from './pages/Admin/AdminLogin';
 import Statistics from './pages/Admin/Statistics'; 
+import AdminSettings from './pages/Admin/AdminSettings'; // Trang cài đặt hệ thống Admin
+import InitializeSystem from './pages/Admin/InitializeSystem'; // Script khởi tạo Step 1
 
 // CSS Toàn cục
 import './index.css';
@@ -37,11 +40,7 @@ const ProtectedAdminRoute = ({ children }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setIsLoggedIn(true);
-      } else {
-        setIsLoggedIn(false);
-      }
+      setIsLoggedIn(!!user);
       setCheckingStatus(false);
     });
     return () => unsubscribe();
@@ -49,7 +48,7 @@ const ProtectedAdminRoute = ({ children }) => {
 
   if (checkingStatus) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-white font-sans">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white dark:bg-gray-900 font-sans">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-blue-600 mb-4"></div>
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Hệ thống đang bảo mật...</p>
       </div>
@@ -69,12 +68,16 @@ function App() {
       <Router>
         <div className="app-container dark:bg-gray-900 transition-colors duration-300 min-h-screen">
           <Routes>
+            {/* --- ROUTE KHỞI TẠO HỆ THỐNG (Dùng để fix lỗi Step 1) --- */}
+            <Route path="/setup-system" element={<InitializeSystem />} />
+
             {/* --- Cấu trúc các trang dành cho Khách hàng --- */}
             <Route path="/" element={<Home />} />
             <Route path="/dangky" element={<Register />} />
             <Route path="/order" element={<Order />} />
             <Route path="/order/:username" element={<Order />} />
             <Route path="/checkorder" element={<CheckOrder />} />
+            <Route path="/settings" element={<UserSettings />} /> 
 
             {/* --- Cấu trúc các trang dành cho Admin --- */}
             <Route path="/admin/login" element={<AdminLogin />} />
@@ -93,13 +96,16 @@ function App() {
               <Route path="users" element={<ManageUsers />} />
               <Route path="menu" element={<ManageMenu />} />
               <Route path="vouchers" element={<ManageVouchers />} />
-              <Route path="chat" element={<ManageChat />} /> {/* Thêm Route Chat cho Admin */}
+              <Route path="chat" element={<ManageChat />} />
+              
+              {/* QUAN TRỌNG: Thêm Route này để fix lỗi 404 trang settings */}
+              <Route path="settings" element={<AdminSettings />} /> 
             </Route>
 
             {/* --- Route xử lý lỗi 404 --- */}
             <Route path="*" element={
               <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-10 text-center font-sans">
-                <div className="max-w-md w-full bg-white dark:bg-gray-800 p-12 rounded-[3rem] shadow-2xl shadow-gray-200/50 dark:shadow-black/50 border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in duration-500">
+                <div className="max-w-md w-full bg-white dark:bg-gray-800 p-12 rounded-[3rem] shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in duration-500">
                   <h1 className="text-8xl font-black text-blue-50 dark:text-blue-900/30 mb-2 tracking-tighter relative">
                       404
                       <span className="absolute inset-0 flex items-center justify-center text-4xl text-gray-800 dark:text-gray-100">Oops!</span>
@@ -116,7 +122,7 @@ function App() {
             } />
           </Routes>
 
-          {/* CHÈN WIDGET CHAT TẠI ĐÂY: Sẽ nổi lên trên mọi trang khách hàng */}
+          {/* CHÈN WIDGET CHAT TẠI ĐÂY */}
           <CustomerChat />
         </div>
       </Router>
