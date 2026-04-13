@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where } from 'firebase/firestore'; // Thêm collection, query, where
 import { db } from '../firebase/config';
 import { createOrder, validateVoucher, getMyVouchers } from '../services/orderService';
-import { getUserByPhone, verifyPasscode } from '../services/authService'; // Bổ sung verifyPasscode
+import { verifyPasscode } from '../services/authService'; 
 import { subscribeToMenu } from '../services/menuService';
 
 const Order = () => {
@@ -36,7 +36,10 @@ const Order = () => {
   // STATE MỚI: Quản lý Passcode Ví
   const [showWalletPasscode, setShowWalletPasscode] = useState(false);
   const [walletPasscode, setWalletPasscode] = useState('');
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH'); // CASH, TRANSFER, WALLET
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH'); 
+  
+  // STATE MỚI: Quản lý Địa chỉ giao hàng được chọn
+  const [selectedAddress, setSelectedAddress] = useState('');
 
   useEffect(() => {
     // 1. Lắng nghe trạng thái Hệ thống liên tục
@@ -76,35 +79,61 @@ const Order = () => {
     };
   }, [userPhoneParam, navigate]);
 
+  // ĐỒNG BỘ REAL-TIME THÔNG TIN USER (VÍ TIỀN, ĐỊA CHỈ)
   useEffect(() => {
-    const syncData = async () => {
+    let unsubUser = () => {};
+
+    const syncDataRealtime = async () => {
       const cleanPhone = username.trim();
       
       const vouchers = await getMyVouchers(cleanPhone);
       setMyVouchers(vouchers);
       
       if (cleanPhone.length >= 10) {
-        try {
-          const userData = await getUserByPhone(cleanPhone);
-          setCustomerInfo(userData ? { 
-            name: userData.fullName, 
-            phone: userData.username, 
-            address: userData.address,
-            walletBalance: userData.walletBalance || 0 // Lấy thêm số dư ví
-          } : null);
+        // Lắng nghe dữ liệu khách hàng theo thời gian thực
+        const q = query(collection(db, 'users'), where("username", "==", cleanPhone));
+        
+        unsubUser = onSnapshot(q, (snapshot) => {
+          if (!snapshot.empty) {
+            const userData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
 
-          const autoFs = vouchers.find(v => v.code.trim().toUpperCase() === 'FREESHIP5K');
-          if (autoFs) {
-            setAppliedFreeship(autoFs);
-            setShippingFee(0);
+            // Kiểm tra lệnh cấm
+            if (userData.isBanned) {
+               alert("Tài khoản của bạn hiện đang bị khóa!");
+               navigate('/');
+               return;
+            }
+
+            setCustomerInfo({ 
+              name: userData.fullName, 
+              phone: userData.username, 
+              address: userData.address,
+              addresses: userData.addresses || [], 
+              walletBalance: userData.walletBalance || 0 
+            });
+
+            // Tự động set địa chỉ được chọn (Chỉ set nếu khách chưa tự chọn)
+            setSelectedAddress(prev => {
+              if (prev) return prev; // Giữ nguyên địa chỉ khách đang chọn dở
+              if (userData.addresses && userData.addresses.length > 0) {
+                const def = userData.addresses.find(a => a.isDefault);
+                return def ? def.detail : userData.addresses[0].detail;
+              }
+              return userData.address || '';
+            });
+
           } else {
-            setAppliedFreeship(null);
-            setShippingFee(5000);
+            setCustomerInfo(null);
           }
-        } catch (error) {
-          alert(error.message);
-          setCustomerInfo(null);
-          setUsername(''); 
+        });
+
+        const autoFs = vouchers.find(v => v.code.trim().toUpperCase() === 'FREESHIP5K');
+        if (autoFs) {
+          setAppliedFreeship(autoFs);
+          setShippingFee(0);
+        } else {
+          setAppliedFreeship(null);
+          setShippingFee(5000);
         }
       } else {
         setCustomerInfo(null);
@@ -113,9 +142,13 @@ const Order = () => {
       }
     };
 
-    const timer = setTimeout(syncData, 500);
-    return () => clearTimeout(timer);
-  }, [username]);
+    const timer = setTimeout(syncDataRealtime, 500);
+    
+    return () => {
+      clearTimeout(timer);
+      unsubUser(); // Hủy lắng nghe dữ liệu User khi rời khỏi
+    };
+  }, [username, navigate]);
 
   const updateQuantity = (item, delta) => {
     setCart(prev => {
@@ -202,7 +235,6 @@ const Order = () => {
       return alert("Mã Passcode không chính xác!");
     }
 
-    // Nếu Passcode đúng, đóng modal và gọi submit
     setShowWalletPasscode(false);
     setWalletPasscode('');
     await proceedOrderSubmit();
@@ -210,6 +242,10 @@ const Order = () => {
 
   const handleOrderSubmit = async () => {
     if (isSubmitting) return;
+    
+    if (!selectedAddress || selectedAddress.trim() === '') {
+       return alert("Vui lòng chọn hoặc nhập địa chỉ giao hàng!");
+    }
 
     // Nếu chọn thanh toán bằng ví, phải kiểm tra số dư và hỏi Passcode
     if (selectedPaymentMethod === 'WALLET') {
@@ -237,7 +273,7 @@ const Order = () => {
     const orderData = {
       phone: cleanPhone,
       customer: customerInfo?.name || "Khách vãng lai", 
-      address: customerInfo?.address || "Nhận tại quán", 
+      address: selectedAddress.trim(), // Lưu địa chỉ đã chọn vào Database
       items: Object.values(cart).map(item => `${item.qty}x ${item.name}`).join(', '),
       subTotal: getSubTotal(),
       shippingFee,
@@ -245,7 +281,7 @@ const Order = () => {
       total: getFinalTotal().toLocaleString('vi-VN') + 'đ',
       note: note.trim(),
       usedVouchers,
-      paymentMethod: selectedPaymentMethod // Lưu phương thức thanh toán
+      paymentMethod: selectedPaymentMethod 
     };
 
     try {
@@ -321,16 +357,17 @@ const Order = () => {
         />
         {customerInfo && (
           <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-2xl border border-blue-100 dark:border-blue-900/50 animate-in fade-in transition-colors">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center mb-1">
               <div className="text-xs font-black text-blue-700 dark:text-blue-400 uppercase">
                 Chào {customerInfo.name}!
               </div>
-              <div className="text-[10px] font-black text-green-600 bg-green-100 px-2 py-1 rounded-lg">
+              <div className="text-[10px] font-black text-green-600 bg-green-100 px-2 py-1 rounded-lg transition-all">
                 Ví: {(customerInfo.walletBalance || 0).toLocaleString()}đ
               </div>
             </div>
+            {/* Hiển thị địa chỉ sẽ giao tới ở trang chủ đặt hàng */}
             <div className="text-[9px] text-blue-500 dark:text-blue-300 font-bold mt-1 opacity-70 italic tracking-tighter">
-              📍 {customerInfo.address}
+              📍 Giao tới: {selectedAddress || 'Chưa có địa chỉ'}
             </div>
           </div>
         )}
@@ -455,12 +492,48 @@ const Order = () => {
         </div>
       )}
 
-      {/* MODAL: CHECKOUT CONFIRM */}
+      {/* MODAL: CHECKOUT CONFIRM - TÍCH HỢP CHỌN ĐỊA CHỈ */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10 transition-colors">
+          <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10 transition-colors overflow-y-auto max-h-[90vh]">
             <h2 className="text-xl font-black text-gray-800 dark:text-white uppercase tracking-tighter mb-4">Chi tiết thanh toán</h2>
             
+            {/* LỰA CHỌN ĐỊA CHỈ NHẬN HÀNG */}
+            <div className="mb-6">
+              <p className="text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 border-b dark:border-gray-700 pb-2">
+                1. Giao đến địa chỉ:
+              </p>
+              
+              {customerInfo?.addresses && customerInfo.addresses.length > 0 ? (
+                <div className="space-y-2">
+                  {customerInfo.addresses.map((addr) => (
+                    <button 
+                      key={addr.id}
+                      onClick={() => setSelectedAddress(addr.detail)}
+                      className={`w-full text-left p-3.5 rounded-xl border-2 transition-all ${
+                        selectedAddress === addr.detail 
+                        ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 text-gray-800 dark:text-white' 
+                        : 'border-gray-100 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="truncate flex-1 text-[11px] font-bold mr-2 leading-tight">{addr.detail}</span>
+                        {addr.isDefault && <span className="flex-shrink-0 text-[8px] bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 font-black px-1.5 py-0.5 rounded-md uppercase">Mặc định</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <input 
+                  type="text" 
+                  value={selectedAddress} 
+                  onChange={(e) => setSelectedAddress(e.target.value)}
+                  placeholder="Nhập địa chỉ giao hàng..." 
+                  className="w-full p-4 bg-gray-50 dark:bg-gray-700 dark:text-white border-none rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-gray-300 dark:placeholder:text-gray-500" 
+                />
+              )}
+            </div>
+
             <div className="space-y-2 mb-4 border-b border-dashed dark:border-gray-700 pb-5">
               <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest"><span>Tiền cơm:</span><span>{getSubTotal().toLocaleString()}đ</span></div>
               <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest">
@@ -478,17 +551,19 @@ const Order = () => {
 
             {/* CHỌN PHƯƠNG THỨC THANH TOÁN */}
             <div className="mb-6 space-y-2">
-               <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2">Phương thức thanh toán:</p>
+               <p className="text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 border-b dark:border-gray-700 pb-2">
+                 2. Phương thức thanh toán:
+               </p>
                <div className="grid grid-cols-2 gap-2">
                  <button 
                    onClick={() => setSelectedPaymentMethod('CASH')}
-                   className={`p-3 rounded-xl border-2 text-[10px] font-black uppercase transition-all ${selectedPaymentMethod === 'CASH' ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}
+                   className={`p-3 rounded-xl border-2 text-[10px] font-black uppercase transition-all ${selectedPaymentMethod === 'CASH' ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-gray-100 dark:border-gray-700 text-gray-400 dark:text-gray-500'}`}
                  >
                    💵 Tiền mặt
                  </button>
                  <button 
                    onClick={() => setSelectedPaymentMethod('TRANSFER')}
-                   className={`p-3 rounded-xl border-2 text-[10px] font-black uppercase transition-all ${selectedPaymentMethod === 'TRANSFER' ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-100 text-gray-400'}`}
+                   className={`p-3 rounded-xl border-2 text-[10px] font-black uppercase transition-all ${selectedPaymentMethod === 'TRANSFER' ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'border-gray-100 dark:border-gray-700 text-gray-400 dark:text-gray-500'}`}
                  >
                    🏦 Chuyển khoản
                  </button>
@@ -497,7 +572,7 @@ const Order = () => {
                {customerInfo && (
                  <button 
                    onClick={() => setSelectedPaymentMethod('WALLET')}
-                   className={`w-full p-3 mt-2 rounded-xl border-2 text-[10px] font-black uppercase transition-all ${selectedPaymentMethod === 'WALLET' ? 'border-green-500 bg-green-50 text-green-600' : 'border-gray-100 text-gray-400'}`}
+                   className={`w-full p-3 mt-2 rounded-xl border-2 text-[10px] font-black uppercase transition-all ${selectedPaymentMethod === 'WALLET' ? 'border-green-500 bg-green-50/50 dark:bg-green-900/20 text-green-600 dark:text-green-400' : 'border-gray-100 dark:border-gray-700 text-gray-400 dark:text-gray-500'}`}
                  >
                    Thanh toán bằng Ví Plant G (Số dư: {(customerInfo.walletBalance || 0).toLocaleString()}đ)
                  </button>

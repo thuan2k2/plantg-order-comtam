@@ -51,10 +51,11 @@ export const registerUser = async (userData) => {
       isBanned: false, 
       banUntil: null,
       
-      // BỔ SUNG BẢO MẬT & VÍ TÀI KHOẢN
+      // BỔ SUNG BẢO MẬT, VÍ & ĐỊA CHỈ
       passcode: "123456", // Passcode mặc định để giao dịch
       walletBalance: 0,    // Số dư ví (VNĐ)
-      avatarUrl: ""       // Ảnh đại diện
+      avatarUrl: "",      // Ảnh đại diện
+      addresses: userData.address ? [{ id: Date.now(), detail: userData.address, isDefault: true }] : [] // Khởi tạo mảng địa chỉ
     };
 
     const docRef = await addDoc(usersRef, newUser);
@@ -146,6 +147,36 @@ export const updateCustomerSecure = async (phone, newData, inputPasscode) => {
   }
 };
 
+/**
+ * MỚI: Cập nhật danh sách sổ địa chỉ (Tối đa 3)
+ */
+export const updateCustomerAddresses = async (phone, addressList, inputPasscode) => {
+  const isValid = await verifyPasscode(phone, inputPasscode);
+  if (!isValid) return { success: false, error: "Mã Passcode không chính xác!" };
+
+  if (addressList.length > 3) {
+    return { success: false, error: "Chỉ được lưu tối đa 3 địa chỉ giao hàng." };
+  }
+
+  try {
+    const q = query(collection(db, COLLECTION_NAME), where("username", "==", phone.trim()));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return { success: false, error: "Không tìm thấy dữ liệu người dùng." };
+    
+    const userId = snapshot.docs[0].id;
+    const userRef = doc(db, COLLECTION_NAME, userId);
+    
+    await updateDoc(userRef, { 
+      addresses: addressList, // Lưu mảng địa chỉ mới
+      updatedAt: serverTimestamp() 
+    });
+    
+    return { success: true };
+  } catch (e) { 
+    return { success: false, error: e.message }; 
+  }
+};
+
 export const changeCustomerPasscode = async (phone, oldPasscode, newPasscode) => {
   const isValid = await verifyPasscode(phone, oldPasscode);
   if (!isValid) return { success: false, error: "Mã Passcode hiện tại không chính xác!" };
@@ -215,9 +246,6 @@ export const resetPasscodeByAdmin = async (userId, newPasscode) => {
   }
 };
 
-/**
- * MỚI: Admin nạp tiền vào ví của khách
- */
 export const topUpUserWallet = async (userId, amount, note = "Admin nạp tiền") => {
   try {
     const userRef = doc(db, COLLECTION_NAME, userId);
@@ -239,18 +267,13 @@ export const topUpUserWallet = async (userId, amount, note = "Admin nạp tiền
   }
 };
 
-/**
- * MỚI: Cập nhật hồ sơ Admin (Ảnh đại diện)
- */
 export const updateAdminProfile = async (photoURL) => {
   try {
     const currentUser = auth.currentUser;
     if (!currentUser) return { success: false, error: "Chưa đăng nhập Admin" };
 
-    // Cập nhật Profile của Firebase Auth
     await updateProfile(currentUser, { photoURL });
     
-    // Đồng thời lưu vào Firestore để các thiết bị khác đồng bộ dễ dàng hơn
     const adminRef = doc(db, 'system', 'admin_profile');
     await setDoc(adminRef, { 
       photoURL, 
