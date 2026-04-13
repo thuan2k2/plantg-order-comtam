@@ -50,7 +50,7 @@ const Home = () => {
         
         <div className="mt-6">
           <h1 className="text-4xl font-black text-[#4A2C2A] tracking-tighter leading-none">
-            PLANT G <br/>
+            CƠM TẤM VINHOMES <br/>
             <span className="text-orange-600 text-2xl">CƠM TẤM NHÀ LÀM</span>
           </h1>
           <div className="flex justify-center gap-1 mt-3">

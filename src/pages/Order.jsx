@@ -169,7 +169,7 @@ const Order = () => {
           <button onClick={() => navigate(-1)} className="p-2 bg-gray-50 rounded-2xl active:scale-90 transition-all">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Thực đơn Plant G</h1>
+          <h1 className="text-lg font-black text-gray-800 uppercase tracking-tighter">Thực đơn</h1>
           <div className="w-9"></div>
         </div>
         
