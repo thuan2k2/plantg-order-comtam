@@ -11,7 +11,7 @@ import Home from './pages/Home';
 import Register from './pages/Register';
 import Order from './pages/Order';
 import CheckOrder from './pages/CheckOrder';
-import UserSettings from './pages/UserSettings'; // Trang cài đặt của khách
+import UserSettings from './pages/UserSettings'; 
 
 // Import Widget Chat dành cho Khách hàng
 import CustomerChat from './components/CustomerChat';
@@ -26,8 +26,7 @@ import ManageVouchers from './pages/Admin/ManageVouchers';
 import ManageChat from './pages/Admin/ManageChat'; 
 import AdminLogin from './pages/Admin/AdminLogin';
 import Statistics from './pages/Admin/Statistics'; 
-import AdminSettings from './pages/Admin/AdminSettings'; // Trang cài đặt hệ thống Admin
-import InitializeSystem from './pages/Admin/InitializeSystem'; // Script khởi tạo Step 1
+import AdminSettings from './pages/Admin/AdminSettings'; 
 
 // CSS Toàn cục
 import './index.css';
@@ -68,9 +67,6 @@ function App() {
       <Router>
         <div className="app-container dark:bg-gray-900 transition-colors duration-300 min-h-screen">
           <Routes>
-            {/* --- ROUTE KHỞI TẠO HỆ THỐNG (Dùng để fix lỗi Step 1) --- */}
-            <Route path="/setup-system" element={<InitializeSystem />} />
-
             {/* --- Cấu trúc các trang dành cho Khách hàng --- */}
             <Route path="/" element={<Home />} />
             <Route path="/dangky" element={<Register />} />
@@ -97,8 +93,6 @@ function App() {
               <Route path="menu" element={<ManageMenu />} />
               <Route path="vouchers" element={<ManageVouchers />} />
               <Route path="chat" element={<ManageChat />} />
-              
-              {/* QUAN TRỌNG: Thêm Route này để fix lỗi 404 trang settings */}
               <Route path="settings" element={<AdminSettings />} /> 
             </Route>
 
