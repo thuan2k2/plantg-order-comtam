@@ -2,6 +2,7 @@ import {
   collection, 
   addDoc, 
   updateDoc, 
+  deleteDoc,
   getDocs,
   doc, 
   query, 
@@ -13,46 +14,122 @@ import {
 import { db } from '../firebase/config';
 
 const COLLECTION_NAME = 'orders';
+const VOUCHER_COL = 'vouchers';
+
+// --- BIẾN TRẠNG THÁI CHỐNG SPAM (LOCAL) ---
+let isSubmittingOrder = false;
 
 /**
- * 1. Tạo đơn hàng mới
+ * 1. Tạo đơn hàng mới (Có chống Spam & Lưu vết Voucher)
  */
 export const createOrder = async (orderData) => {
+  // Cơ chế chống spam: Nếu đang có tiến trình đặt đơn thì chặn ngay
+  if (isSubmittingOrder) {
+    return { success: false, error: "Hệ thống đang xử lý đơn hàng, vui lòng không ấn liên tiếp!" };
+  }
+
+  isSubmittingOrder = true;
   try {
     const newOrder = {
       ...orderData,
-      note: orderData.note || "", 
       status: 'PENDING',
-      paymentMethod: 'CASH',     
-      paymentStatus: 'UNPAID',    
+      paymentStatus: 'UNPAID',
       createdAt: serverTimestamp(),
+      // Mặc định phí ship nếu không có freeship là 5,000đ (Logic xử lý tại UI)
     };
     const docRef = await addDoc(collection(db, COLLECTION_NAME), newOrder);
+    
+    // Nếu có voucher áp dụng, trừ lượt sử dụng của voucher đó
+    if (orderData.appliedVoucherId) {
+      const vRef = doc(db, VOUCHER_COL, orderData.appliedVoucherId);
+      await updateDoc(vRef, {
+        usageLimit: orderData.currentUsageLimit - 1
+      });
+    }
+
+    isSubmittingOrder = false;
     return { success: true, id: docRef.id };
   } catch (error) {
+    isSubmittingOrder = false;
     console.error("Lỗi createOrder:", error);
     return { success: false, error: error.message };
   }
 };
 
 /**
- * 2. Cập nhật phương thức thanh toán (Dành cho Khách hàng)
+ * 2. CƠ CHẾ VOUCHER CHUYÊN SÂU
  */
-export const updatePaymentMethod = async (orderId, method, isTransferred = false) => {
+
+// Kiểm tra Voucher (Dành cho khách hàng)
+export const validateVoucher = async (code, phone) => {
   try {
-    const orderRef = doc(db, COLLECTION_NAME, orderId);
-    const updateData = {
-      paymentMethod: method,
-      updatedAt: serverTimestamp()
-    };
+    const q = query(collection(db, VOUCHER_COL), where("code", "==", code.toUpperCase()));
+    const snapshot = await getDocs(q);
     
-    if (method === 'TRANSFER' && isTransferred) {
-      updateData.paymentStatus = 'WAITING_CONFIRM';
-    } else if (method === 'CASH') {
-      updateData.paymentStatus = 'UNPAID';
+    if (snapshot.empty) return { valid: false, msg: "Mã giảm giá không tồn tại!" };
+    
+    const v = snapshot.docs[0].data();
+    const vId = snapshot.docs[0].id;
+    const now = new Date();
+
+    // Kiểm tra gán SĐT: Nếu voucher có gán SĐT mà không khớp với khách đang đặt thì chặn
+    if (v.assignedPhone && v.assignedPhone !== phone) {
+      return { valid: false, msg: "Mã này không dành cho số điện thoại của bạn!" };
     }
 
-    await updateDoc(orderRef, updateData);
+    // Kiểm tra số lượng
+    if (v.usageLimit <= 0) return { valid: false, msg: "Mã đã hết lượt sử dụng!" };
+
+    // Kiểm tra ngày hết hạn
+    if (v.expiry && v.expiry.toDate() < now) return { valid: false, msg: "Mã đã hết hạn sử dụng!" };
+
+    return { valid: true, voucher: { id: vId, ...v } };
+  } catch (error) {
+    return { valid: false, msg: "Lỗi kết nối voucher." };
+  }
+};
+
+// Lấy Voucher được gán riêng cho SĐT (Tự động áp dụng)
+export const getMyVouchers = async (phone) => {
+  try {
+    const q = query(collection(db, VOUCHER_COL), where("assignedPhone", "==", phone));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    return [];
+  }
+};
+
+// Admin: Tạo Voucher mới
+export const createVoucher = async (vData) => {
+  try {
+    await addDoc(collection(db, VOUCHER_COL), {
+      ...vData,
+      code: vData.code.toUpperCase(),
+      createdAt: serverTimestamp()
+    });
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+};
+
+// Admin: Xóa Voucher
+export const deleteVoucher = async (vId) => {
+  try {
+    await deleteDoc(doc(db, VOUCHER_COL, vId));
+    return { success: true };
+  } catch (e) { return { success: false, error: e.message }; }
+};
+
+/**
+ * 3. QUẢN LÝ KHÁCH HÀNG (Sửa thông tin)
+ */
+export const updateCustomerProfile = async (userId, updatedData) => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      ...updatedData,
+      updatedAt: serverTimestamp()
+    });
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -60,8 +137,7 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
 };
 
 /**
- * 3. Xác nhận trạng thái tiền tệ (Dành cho Admin)
- * FIX LỖI: Khi ấn "Chưa nhận tiền", tự động chuyển phương thức về CASH
+ * 4. LOGIC THANH TOÁN & TRẠNG THÁI (Đã đồng bộ "Chưa nhận tiền")
  */
 export const confirmPaymentStatus = async (orderId, isPaid) => {
   try {
@@ -71,128 +147,69 @@ export const confirmPaymentStatus = async (orderId, isPaid) => {
       updatedAt: serverTimestamp()
     };
 
-    // Nếu Admin xác nhận CHƯA NHẬN TIỀN (isPaid = false)
-    // Tự động đẩy phương thức thanh toán quay lại Tiền mặt
     if (!isPaid) {
-      updateData.paymentMethod = 'CASH';
+      updateData.paymentMethod = 'CASH'; // Tự động trả về tiền mặt nếu Admin báo chưa nhận tiền
     }
 
     await updateDoc(orderRef, updateData);
     return { success: true };
   } catch (error) {
-    console.error("Lỗi confirmPaymentStatus:", error);
     return { success: false, error: error.message };
   }
 };
 
-/**
- * 4. Hủy đơn hàng có điều kiện (Khách hàng)
- */
-export const requestCancelOrder = async (orderId, status, reason = "") => {
-  try {
-    const orderRef = doc(db, COLLECTION_NAME, orderId);
-    const isDirectCancel = status === 'PENDING'; 
-    
-    await updateDoc(orderRef, {
-      status: isDirectCancel ? 'CANCELLED' : 'CANCEL_REQUESTED',
-      cancelReason: reason || "Khách tự hủy trong thời gian cho phép",
-      updatedAt: serverTimestamp()
-    });
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-};
+// --- CÁC HÀM SUBSCRIPTION (GIỮ NGUYÊN HOẶC TỐI ƯU NHẸ) ---
 
-/**
- * 5. Xóa đơn hàng mềm (Admin)
- */
-export const deleteOrderSoft = async (orderId) => {
-  try {
-    const orderRef = doc(db, COLLECTION_NAME, orderId);
-    await updateDoc(orderRef, {
-      status: 'DELETED',
-      updatedAt: serverTimestamp()
-    });
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-};
-
-/**
- * 6. Lắng nghe đơn hàng theo SĐT (Khách hàng)
- */
 export const subscribeToOrdersByPhone = (phone, callback) => {
   if (!phone) return () => {};
-  const cleanPhone = phone.trim();
-  const q = query(
-    collection(db, COLLECTION_NAME),
-    where("phone", "==", cleanPhone),
-    orderBy("createdAt", "desc")
-  );
-
+  const q = query(collection(db, COLLECTION_NAME), where("phone", "==", phone.trim()), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
-    const orders = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'Vừa xong'
-    }));
-    callback(orders);
-  }, (error) => {
-    console.error("Lỗi lắng nghe theo SĐT:", error);
+    callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'Mới' })));
   });
 };
 
-/**
- * 7. Lắng nghe đơn hàng trong ngày (Admin)
- */
 export const subscribeToOrdersByDate = (dateStr, callback) => {
-  const ordersRef = collection(db, COLLECTION_NAME);
-  const q = query(ordersRef, orderBy("createdAt", "desc"));
-
+  const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
-    const allOrders = snapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        time: data.createdAt?.toDate().toLocaleString('vi-VN') || 'Vừa xong'
-      };
-    });
-    const filtered = allOrders.filter(o => o.time.includes(dateStr) && o.status !== 'DELETED');
+    const filtered = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data(), time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || '' }))
+      .filter(o => o.time.includes(dateStr) && o.status !== 'DELETED');
     callback(filtered);
   });
 };
 
-/**
- * 8. Lắng nghe toàn bộ đơn hàng (Thống kê)
- */
 export const subscribeToAllOrders = (callback) => {
   const q = query(collection(db, COLLECTION_NAME), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
-    const orders = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'N/A'
-    }));
-    callback(orders);
+    callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), time: doc.data().createdAt?.toDate().toLocaleString('vi-VN') || 'N/A' })));
   });
 };
 
-/**
- * 9. Cập nhật trạng thái đơn hàng (Admin/Khách)
- */
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
+    await updateDoc(orderRef, { status: newStatus, updatedAt: serverTimestamp() });
+    return { success: true };
+  } catch (error) { return { success: false, error: error.message }; }
+};
+
+export const deleteOrderSoft = async (orderId) => {
+  try {
+    const orderRef = doc(db, COLLECTION_NAME, orderId);
+    await updateDoc(orderRef, { status: 'DELETED', updatedAt: serverTimestamp() });
+    return { success: true };
+  } catch (error) { return { success: false, error: error.message }; }
+};
+
+export const requestCancelOrder = async (orderId, status, reason = "") => {
+  try {
+    const orderRef = doc(db, COLLECTION_NAME, orderId);
+    const isDirectCancel = status === 'PENDING'; 
     await updateDoc(orderRef, {
-      status: newStatus,
+      status: isDirectCancel ? 'CANCELLED' : 'CANCEL_REQUESTED',
+      cancelReason: reason || "Khách tự hủy",
       updatedAt: serverTimestamp()
     });
     return { success: true };
-  } catch (error) {
-    console.error("Lỗi updateOrderStatus:", error);
-    return { success: false, error: error.message };
-  }
+  } catch (error) { return { success: false, error: error.message }; }
 };
