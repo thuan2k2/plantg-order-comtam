@@ -1,5 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  // QUAN TRỌNG: Cho phép Tailwind chuyển chế độ tối dựa trên class "dark" ở thẻ html
+  darkMode: 'class', 
+  
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -7,7 +10,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'sans-serif'], // Font chữ mặc định đã lấy ở index.html
+        sans: ['Inter', 'sans-serif'],
       },
     },
   },

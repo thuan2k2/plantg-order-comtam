@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-// IMPORT hàm service để làm việc với Firebase
 import { registerUser } from '../services/authService'; 
+// Import Hook Cài đặt
+import { useSettings } from '../contexts/SettingsContext';
 
 const Register = () => {
   const navigate = useNavigate();
+  const { t } = useSettings(); // Hook dịch thuật (Bạn có thể thêm từ khóa vào SettingsContext)
+  
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
@@ -21,10 +24,9 @@ const Register = () => {
     }));
   };
 
-  const handleSubmit = async (e) => { // Thêm async ở đây
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Kiểm tra dữ liệu cơ bản
     if (!formData.username || !formData.fullName || !formData.deliveryPhone || !formData.address) {
       alert('Vui lòng điền đầy đủ tất cả các thông tin!');
       return;
@@ -33,18 +35,13 @@ const Register = () => {
     setIsLoading(true);
 
     try {
-      // GỌI API THẬT: Lưu dữ liệu lên Firebase Firestore
       const result = await registerUser(formData);
 
       if (result.success) {
         setIsLoading(false);
         alert('Đăng ký tài khoản thành công! Mời bạn tiếp tục đặt hàng.');
-        
-        // Chuyển hướng sang trang đặt món với thông tin username thực tế
-        // Lưu ý: Route của bạn nên khớp với cấu trúc URL bên App.jsx
         navigate(`/order?user=${formData.username}`);
       } else {
-        // Xử lý khi số điện thoại đã tồn tại hoặc lỗi khác
         setIsLoading(false);
         alert(result.error || 'Có lỗi xảy ra, vui lòng thử lại.');
       }
@@ -56,13 +53,13 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col p-4 md:items-center md:justify-center">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col p-4 md:items-center md:justify-center transition-colors duration-300 font-sans">
       
       {/* Nút quay lại */}
       <div className="w-full max-w-md mb-4">
         <button 
           onClick={() => navigate('/')} 
-          className="text-gray-600 hover:text-gray-900 flex items-center gap-1 font-medium transition-colors"
+          className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white flex items-center gap-1 font-medium transition-colors"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
@@ -72,33 +69,33 @@ const Register = () => {
       </div>
 
       {/* Form Đăng Ký */}
-      <div className="w-full max-w-md bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-        <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-gray-800">Tạo tài khoản mới</h1>
-          <p className="text-sm text-gray-500 mt-1">Điền thông tin để đặt món nhanh hơn cho những lần sau</p>
+      <div className="w-full max-w-md bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-xl dark:shadow-none border border-gray-100 dark:border-gray-700 transition-colors">
+        <div className="mb-8 text-center">
+          <h1 className="text-2xl font-black text-gray-800 dark:text-white uppercase tracking-tighter">Tạo tài khoản mới</h1>
+          <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 mt-2 uppercase tracking-widest">Điền thông tin để đặt món nhanh hơn</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           
           {/* Username / SĐT Đăng nhập */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
+            <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2 ml-1">
               Username (Số điện thoại) <span className="text-red-500">*</span>
             </label>
             <input
-              type="text"
+              type="tel"
               name="username"
               value={formData.username}
               onChange={handleChange}
               placeholder="Ví dụ: 0901234567"
-              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-gray-50/50"
+              className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-blue-600 outline-none transition-all placeholder:text-gray-300 dark:placeholder:text-gray-500"
             />
-            <p className="text-[12px] text-gray-400 mt-1 italic">Dùng số điện thoại để hệ thống ghi nhớ bạn.</p>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 italic ml-1">Dùng số điện thoại để hệ thống ghi nhớ bạn.</p>
           </div>
 
           {/* Họ và Tên */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
+            <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2 ml-1">
               Họ và tên người nhận <span className="text-red-500">*</span>
             </label>
             <input
@@ -107,37 +104,35 @@ const Register = () => {
               value={formData.fullName}
               onChange={handleChange}
               placeholder="Nhập tên của bạn"
-              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-gray-50/50"
+              className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-blue-600 outline-none transition-all placeholder:text-gray-300 dark:placeholder:text-gray-500"
             />
           </div>
 
           {/* SĐT Nhận Hàng */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
+            <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2 ml-1">
               Số điện thoại nhận hàng <span className="text-red-500">*</span>
             </label>
-            <div className="flex">
-              <input
-                type="text"
-                name="deliveryPhone"
-                value={formData.deliveryPhone}
-                onChange={handleChange}
-                placeholder="Nhập SĐT người nhận"
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-gray-50/50"
-              />
-            </div>
+            <input
+              type="tel"
+              name="deliveryPhone"
+              value={formData.deliveryPhone}
+              onChange={handleChange}
+              placeholder="Nhập SĐT người nhận"
+              className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-blue-600 outline-none transition-all placeholder:text-gray-300 dark:placeholder:text-gray-500"
+            />
             <button 
               type="button"
               onClick={() => setFormData({...formData, deliveryPhone: formData.username})}
-              className="text-[12px] text-blue-500 mt-1.5 hover:underline"
+              className="text-[10px] font-black text-blue-500 dark:text-blue-400 mt-2 hover:underline uppercase tracking-widest ml-1"
             >
-              Giống Username (SĐT đăng nhập)
+              Giống SĐT đăng nhập
             </button>
           </div>
 
           {/* Địa chỉ */}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">
+            <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2 ml-1">
               Địa chỉ nhận hàng <span className="text-red-500">*</span>
             </label>
             <textarea
@@ -146,7 +141,7 @@ const Register = () => {
               onChange={handleChange}
               rows="3"
               placeholder="Số nhà, Phân khu, Toà (Ví dụ: S1.01 Origami, Vinhomes)"
-              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-gray-50/50 resize-none"
+              className="w-full bg-gray-50 dark:bg-gray-700 dark:text-white border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-blue-600 outline-none transition-all placeholder:text-gray-300 dark:placeholder:text-gray-500 resize-none"
             ></textarea>
           </div>
 
@@ -154,12 +149,12 @@ const Register = () => {
           <button
             type="submit"
             disabled={isLoading}
-            className={`w-full text-white font-semibold py-3.5 px-4 rounded-xl transition-all duration-200 shadow-sm mt-4 
-              ${isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600'}`}
+            className={`w-full text-white font-black py-5 px-4 rounded-[2rem] transition-all duration-200 shadow-xl mt-4 uppercase text-xs tracking-[0.2em]
+              ${isLoading ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' : 'bg-green-500 dark:bg-green-600 hover:bg-green-600 dark:hover:bg-green-700 shadow-green-100 dark:shadow-none active:scale-95'}`}
           >
             {isLoading ? (
               <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
