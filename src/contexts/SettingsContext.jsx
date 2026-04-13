@@ -3,43 +3,49 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 const SettingsContext = createContext();
 
 export const SettingsProvider = ({ children }) => {
-  // 1. Chỉ giữ lại State của Theme (Sáng/Tối/Hệ thống)
+  // 1. Quản lý Theme (Sáng/Tối)
   const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'system');
 
-  // 2. Cập nhật LocalStorage và giao diện khi Theme thay đổi
+  // 2. Quản lý Chế độ hiển thị (Máy tính/Điện thoại)
+  // Mặc định là 'desktop', lưu vào localStorage để ghi nhớ lựa chọn
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('admin_view_mode') || 'desktop');
+
+  // Cập nhật LocalStorage và giao diện khi Theme thay đổi
   useEffect(() => {
     localStorage.setItem('app_theme', theme);
     applyTheme(theme);
   }, [theme]);
 
-  // 3. Hàm xử lý logic Theme (Thêm/Xóa class 'dark' vào thẻ HTML)
+  // Cập nhật LocalStorage khi ViewMode thay đổi
+  useEffect(() => {
+    localStorage.setItem('admin_view_mode', viewMode);
+  }, [viewMode]);
+
+  // Hàm xử lý logic Theme
   const applyTheme = (currentTheme) => {
     const root = window.document.documentElement;
-    
     if (currentTheme === 'dark') {
       root.classList.add('dark');
     } else if (currentTheme === 'light') {
       root.classList.remove('dark');
     } else {
-      // Nếu là 'system', kiểm tra cấu hình của máy người dùng
       const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       if (isDark) root.classList.add('dark');
       else root.classList.remove('dark');
     }
   };
 
-  // 4. Lắng nghe thay đổi theme từ hệ thống (khi máy người dùng tự động chuyển ngày/đêm)
+  // Lắng nghe thay đổi theme từ hệ thống
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
       if (theme === 'system') applyTheme('system');
     };
-
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
 
-  // 5. Hàm dịch thuật dự phòng (Tránh lỗi build khi bạn chưa gỡ hết biến t() ở các file khác)
+  // Hàm dịch thuật dự phòng (Giữ nguyên để tránh lỗi các file chưa sửa)
   const t = (key) => {
     const fallbackDictionary = {
       welcome: 'Chào mừng',
@@ -54,8 +60,11 @@ export const SettingsProvider = ({ children }) => {
   };
 
   return (
-    // Đã gỡ bỏ language và setLanguage
-    <SettingsContext.Provider value={{ theme, setTheme, t }}>
+    <SettingsContext.Provider value={{ 
+      theme, setTheme, 
+      viewMode, setViewMode, // Cung cấp ViewMode cho toàn bộ App
+      t 
+    }}>
       {children}
     </SettingsContext.Provider>
   );

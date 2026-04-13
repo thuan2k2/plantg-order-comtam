@@ -21,7 +21,7 @@ const ORDER_STATUSES = {
 const ManageOrders = () => {
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const auth = getAuth(); // Khởi tạo Auth instance
+  const auth = getAuth(); 
   
   // TABS
   const [activeTab, setActiveTab] = useState('ALL');
@@ -36,7 +36,7 @@ const ManageOrders = () => {
 
   // STATE CHO MODAL XÓA ĐƠN BẢO MẬT
   const [deleteModal, setDeleteModal] = useState({ show: false, orderId: null });
-  const [deleteData, setDeleteData] = useState({ reason: '', confirmEmail: '' }); // Sửa deleterName thành confirmEmail
+  const [deleteData, setDeleteData] = useState({ reason: '', confirmEmail: '' }); 
 
   useEffect(() => {
     setIsLoading(true);
@@ -84,7 +84,6 @@ const ManageOrders = () => {
     e.preventDefault();
     const currentAdminEmail = auth.currentUser?.email;
 
-    // Kiểm tra Email xác nhận
     if (deleteData.confirmEmail !== currentAdminEmail) {
       return alert("Email xác nhận không khớp với tài khoản Admin đang đăng nhập!");
     }
@@ -93,18 +92,15 @@ const ManageOrders = () => {
       return alert("Vui lòng điền lý do xóa!");
     }
     
-    // Gọi hàm deleteOrderSoft truyền theo lý do và lấy luôn Email làm Tên người xóa
     const result = await deleteOrderSoft(deleteModal.orderId, deleteData.reason.trim(), currentAdminEmail);
     
     if (result.success) {
       setDeleteModal({ show: false, orderId: null });
-      // Không cần load lại mảng orders vì onSnapshot sẽ tự động ẩn đơn bị xóa
     } else {
       alert("Lỗi kết nối khi xóa đơn.");
     }
   };
 
-  // Logic Lọc theo Tab mới
   const filteredOrders = orders.filter(order => {
     if (activeTab === 'ALL') return true;
     return order.status === activeTab;
@@ -142,7 +138,8 @@ const ManageOrders = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      {/* DANH SÁCH ĐƠN HÀNG: Cấu hình Responsive tự co giãn */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
         {filteredOrders.map(order => {
           const statusConfig = ORDER_STATUSES[order.status] || ORDER_STATUSES.PENDING;
 
@@ -182,12 +179,12 @@ const ManageOrders = () => {
                     </div>
                     <div className="flex gap-2">
                       {order.paymentStatus !== 'PAID' ? (
-                        <>
-                          <button onClick={() => handleConfirmPayment(order.id, true)} className="bg-green-600 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md">Đã nhận tiền</button>
-                          <button onClick={() => handleConfirmPayment(order.id, false)} className="bg-white text-red-500 border border-red-100 px-3 py-2 rounded-xl text-[9px] font-black uppercase hover:bg-red-50">Chưa nhận</button>
-                        </>
+                        <div className="flex flex-col gap-1">
+                          <button onClick={() => handleConfirmPayment(order.id, true)} className="bg-green-600 text-white px-2 py-1 rounded-lg text-[8px] font-black uppercase shadow-md">Nhận tiền</button>
+                          <button onClick={() => handleConfirmPayment(order.id, false)} className="bg-white text-red-500 border border-red-100 px-2 py-1 rounded-lg text-[8px] font-black uppercase hover:bg-red-50">Chưa nhận</button>
+                        </div>
                       ) : (
-                        <span className="text-green-600 font-black text-[10px] uppercase flex items-center gap-1">✓ Đã thu tiền</span>
+                        <span className="text-green-600 font-black text-[10px] uppercase flex items-center gap-1">✓ Đã thu</span>
                       )}
                     </div>
                   </div>
@@ -199,8 +196,8 @@ const ManageOrders = () => {
                     <p className="text-[10px] font-black text-red-600 uppercase mb-1">Lý do hủy từ khách:</p>
                     <p className="text-xs font-bold text-red-900 italic">"{order.cancelReason || 'Không có lý do'}"</p>
                     <div className="flex gap-2 mt-3">
-                      <button onClick={() => handleUpdateStatus(order.id, 'CANCELLED')} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-red-200">Đồng ý hủy</button>
-                      <button onClick={() => handleUpdateStatus(order.id, 'PREPARING')} className="flex-1 bg-white text-gray-600 border border-gray-200 py-2.5 rounded-xl text-[10px] font-black uppercase">Từ chối (Tiếp tục làm)</button>
+                      <button onClick={() => handleUpdateStatus(order.id, 'CANCELLED')} className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-red-200">Đồng ý</button>
+                      <button onClick={() => handleUpdateStatus(order.id, 'PREPARING')} className="flex-1 bg-white text-gray-600 border border-gray-200 py-2.5 rounded-xl text-[10px] font-black uppercase">Từ chối</button>
                     </div>
                   </div>
                 )}
@@ -208,8 +205,8 @@ const ManageOrders = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Khách hàng</p>
-                    <p className="font-black text-gray-800 leading-none">{order.customer}</p>
-                    <p className="text-blue-600 font-bold mt-1">{order.phone}</p>
+                    <p className="font-black text-gray-800 leading-none truncate">{order.customer}</p>
+                    <p className="text-blue-600 font-bold mt-1 text-[10px]">{order.phone}</p>
                   </div>
                   <div>
                     <p className="text-[9px] font-black text-gray-400 uppercase mb-1 tracking-widest">Thời gian</p>
@@ -217,7 +214,7 @@ const ManageOrders = () => {
                   </div>
                 </div>
 
-                <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100">
+                <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
                   <p className="text-[9px] font-black text-gray-400 uppercase mb-2 tracking-widest">Chi tiết món</p>
                   <p className="text-sm font-black text-gray-800 leading-relaxed">{order.items}</p>
                   {order.note && (
@@ -226,38 +223,39 @@ const ManageOrders = () => {
                     </div>
                   )}
                   {order.address && (
-                    <p className="text-[10px] font-bold text-gray-500 mt-2 uppercase tracking-wide">📍 Giao tới: <span className="text-gray-700 normal-case">{order.address}</span></p>
+                    <p className="text-[10px] font-bold text-gray-500 mt-2 uppercase tracking-wide">📍 Giao tới: <span className="text-gray-700 normal-case block line-clamp-2">{order.address}</span></p>
                   )}
                 </div>
               </div>
 
               {/* Footer Actions */}
-              <div className="pl-6 px-4 py-5 bg-gray-50/30 border-t border-gray-100 flex justify-between items-center">
-                <span className="text-2xl font-black text-red-500 tracking-tighter">{order.total}</span>
+              <div className="pl-6 px-4 py-4 bg-gray-50/30 border-t border-gray-100 flex flex-wrap justify-between items-center gap-3">
+                <span className="text-xl font-black text-red-500 tracking-tighter">{order.total}</span>
                 <div className="flex gap-2">
                   {!['COMPLETED', 'CANCELLED', 'CANCEL_REQUESTED'].includes(order.status) && (
                     <button 
                       onClick={() => { if(window.confirm("Xác nhận hủy đơn của khách?")) handleUpdateStatus(order.id, 'CANCELLED') }}
-                      className="bg-white border border-red-200 text-red-500 hover:bg-red-50 px-4 py-3 rounded-2xl text-[10px] font-black uppercase transition-colors"
+                      className="bg-white border border-red-200 text-red-500 hover:bg-red-50 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase transition-colors"
                     >
-                      Hủy đơn
+                      Hủy
                     </button>
                   )}
 
                   {order.status === 'PENDING' && (
-                    <button onClick={() => handleUpdateStatus(order.id, 'PREPARING')} className="bg-blue-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-blue-100 active:scale-95">Nhận đơn</button>
+                    <button onClick={() => handleUpdateStatus(order.id, 'PREPARING')} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-blue-100 active:scale-95">Nhận đơn</button>
                   )}
                   {order.status === 'PREPARING' && (
-                    <button onClick={() => handleUpdateStatus(order.id, 'DELIVERING')} className="bg-orange-500 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-orange-100 active:scale-95">Giao shipper</button>
+                    <button onClick={() => handleUpdateStatus(order.id, 'DELIVERING')} className="bg-orange-500 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-orange-100 active:scale-95">Giao ship</button>
                   )}
                   {order.status === 'DELIVERING' && (
-                    <button onClick={() => handleFinishOrder(order)} className="bg-green-600 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-green-100 active:scale-95">Hoàn thành</button>
+                    <button onClick={() => handleFinishOrder(order)} className="bg-green-600 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-green-100 active:scale-95">Hoàn thành</button>
                   )}
                 </div>
               </div>
             </div>
           );
         })}
+        
         {filteredOrders.length === 0 && (
           <div className="col-span-full py-20 text-center border-2 border-dashed border-gray-100 rounded-[2.5rem]">
             <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Không có đơn hàng nào trong mục này</p>

@@ -1,24 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { logoutAdmin } from '../../services/authService';
-import { subscribeToAdminChats } from '../../services/chatService'; // Import service chat
+import { subscribeToAdminChats } from '../../services/chatService'; 
+import { useSettings } from '../../contexts/SettingsContext'; // Import Hook cài đặt
 
 const AdminLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
   
+  // Lấy state viewMode từ SettingsContext
+  const { viewMode, setViewMode } = useSettings();
+  
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [unreadChatCount, setUnreadChatCount] = useState(0); // State giữ số tin chưa đọc
+  const [unreadChatCount, setUnreadChatCount] = useState(0); 
 
   // LẮNG NGHE TIN NHẮN MỚI REAL-TIME ĐỂ HIỆN THÔNG BÁO
   useEffect(() => {
     const unsub = subscribeToAdminChats((chats) => {
-      // Đếm số phòng chat có thuộc tính unreadAdmin === true
       const count = chats.filter(c => c.unreadAdmin).length;
       setUnreadChatCount(count);
     });
     return () => unsub();
   }, []);
+
+  // Ép thu nhỏ Sidebar nếu đang bật chế độ Mobile
+  useEffect(() => {
+    if (viewMode === 'mobile') setIsSidebarOpen(false);
+    else setIsSidebarOpen(true); // Tự động mở rộng khi về PC
+  }, [viewMode]);
 
   const isActive = (path) => location.pathname === path;
 
@@ -48,7 +57,7 @@ const AdminLayout = () => {
     { 
       path: '/admin/chat', 
       label: 'Hỗ trợ khách', 
-      isChat: true, // Đánh dấu để hiện Badge
+      isChat: true, 
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
     )},
@@ -67,12 +76,18 @@ const AdminLayout = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex overflow-hidden">
+    // THAY ĐỔI: Bóp khung nếu viewMode là mobile
+    <div className={`min-h-screen bg-gray-50 flex overflow-hidden transition-all duration-300
+      ${viewMode === 'mobile' ? 'max-w-[480px] mx-auto shadow-2xl border-x border-gray-200' : 'w-full'}`}
+    >
       
       {/* SIDEBAR */}
       <aside 
         className={`bg-gray-900 text-white flex flex-col sticky top-0 h-screen transition-all duration-300 ease-in-out z-50 shadow-2xl
-          ${isSidebarOpen ? 'w-64' : 'w-20'}`}
+          ${isSidebarOpen ? 'w-64' : 'w-20'}
+          ${viewMode === 'mobile' ? 'fixed inset-y-0 left-0 transform' : ''}
+          ${viewMode === 'mobile' && !isSidebarOpen ? '-translate-x-full' : 'translate-x-0'}
+        `}
       >
         <div className={`p-6 border-b border-gray-800 flex items-center ${isSidebarOpen ? 'justify-between' : 'justify-center'}`}>
           {isSidebarOpen && (
@@ -96,6 +111,7 @@ const AdminLayout = () => {
             <Link 
               key={item.path}
               to={item.path} 
+              onClick={() => viewMode === 'mobile' && setIsSidebarOpen(false)} // Đóng menu sau khi chọn ở Mobile
               className={`flex items-center gap-4 px-4 py-4 rounded-2xl font-bold text-sm transition-all group relative
                 ${isActive(item.path) 
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' 
@@ -141,40 +157,72 @@ const AdminLayout = () => {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        <header className="bg-white/80 backdrop-blur-md h-20 flex items-center justify-between px-8 z-20 border-b border-gray-100">
-          <div className="flex flex-col">
-            <h1 className="text-sm font-black text-gray-800 uppercase tracking-tighter">
-              {isActive('/admin') && 'Bảng điều khiển hệ thống'}
-              {isActive('/admin/orders') && 'Quản lý đơn bếp hôm nay'}
-              {isActive('/admin/chat') && 'Hỗ trợ khách hàng trực tuyến'}
-              {isActive('/admin/statistics') && 'Báo cáo & Lịch sử vĩnh viễn'}
-              {isActive('/admin/vouchers') && 'Quản lý kho Voucher'}
-              {isActive('/admin/users') && 'Cơ sở dữ liệu khách hàng'}
-              {isActive('/admin/menu') && 'Thiết lập danh mục thực đơn'}
-            </h1>
-            <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">Plant G Management System v2.0</p>
+      {/* MAIN CONTENT */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+        <header className="bg-white/80 backdrop-blur-md h-20 flex items-center justify-between px-4 sm:px-8 z-20 border-b border-gray-100">
+          
+          <div className="flex items-center gap-3">
+            {/* Nút Hamburger hiện ra ở chế độ Mobile Force */}
+            {viewMode === 'mobile' && (
+              <button 
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-2 bg-gray-100 text-gray-600 rounded-xl"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+              </button>
+            )}
+
+            <div className="flex flex-col">
+              <h1 className="text-xs sm:text-sm font-black text-gray-800 uppercase tracking-tighter truncate max-w-[150px] sm:max-w-[300px]">
+                {isActive('/admin') && 'Bảng điều khiển'}
+                {isActive('/admin/orders') && 'Quản lý đơn bếp'}
+                {isActive('/admin/chat') && 'Hỗ trợ trực tuyến'}
+                {isActive('/admin/statistics') && 'Báo cáo & Thống kê'}
+                {isActive('/admin/vouchers') && 'Kho Voucher'}
+                {isActive('/admin/users') && 'Khách hàng'}
+                {isActive('/admin/menu') && 'Thực đơn'}
+              </h1>
+              <p className="text-[8px] sm:text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-0.5 truncate">Plant G Admin</p>
+            </div>
           </div>
           
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-[11px] font-black text-gray-800 uppercase leading-none">Admin Root</p>
-              <p className="text-[9px] text-green-500 font-black uppercase mt-1 tracking-widest">● Trực tuyến</p>
+          <div className="flex items-center gap-3">
+            {/* NÚT CHUYỂN ĐỔI CHẾ ĐỘ HIỂN THỊ */}
+            <button 
+              onClick={() => setViewMode(viewMode === 'auto' || viewMode === 'desktop' ? 'mobile' : 'desktop')}
+              className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase transition-all shadow-sm border
+                ${viewMode === 'mobile' 
+                  ? 'bg-blue-600 text-white border-blue-500 hover:bg-blue-700' 
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+              title="Chuyển đổi giao diện Điện thoại / Máy tính"
+            >
+              {viewMode === 'mobile' ? '📱 Mobile' : '💻 PC'}
+            </button>
+
+            <div className="text-right hidden sm:block ml-2">
+              <p className="text-[11px] font-black text-gray-800 uppercase leading-none">Admin</p>
             </div>
-            <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-500 rounded-[1.25rem] flex items-center justify-center text-white font-black shadow-xl shadow-blue-200 border-2 border-white">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-tr from-blue-600 to-indigo-500 rounded-[1rem] sm:rounded-[1.25rem] flex items-center justify-center text-white text-xs sm:text-base font-black shadow-xl shadow-blue-200 border-2 border-white">
               PG
             </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto bg-gray-50/50 p-6">
+        <div className="flex-1 overflow-auto bg-gray-50/50 p-4 sm:p-6">
           <div className="max-w-[1600px] mx-auto animate-in fade-in duration-700">
             <Outlet />
           </div>
         </div>
+
+        {/* Lớp phủ màn hình mờ khi mở Sidebar ở chế độ Mobile */}
+        {viewMode === 'mobile' && isSidebarOpen && (
+          <div 
+            onClick={() => setIsSidebarOpen(false)} 
+            className="absolute inset-0 bg-black/50 z-40 backdrop-blur-sm animate-in fade-in"
+          ></div>
+        )}
       </main>
 
-      {!isSidebarOpen && <div className="fixed inset-0 bg-black/5 z-40 md:hidden pointer-events-none"></div>}
     </div>
   );
 };
