@@ -17,6 +17,7 @@ const Order = () => {
   const [activeTab, setActiveTab] = useState('MAIN'); 
   const [showConfirm, setShowConfirm] = useState(false); 
   const [note, setNote] = useState('');
+  const [recentPhones, setRecentPhones] = useState([]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [voucherCode, setVoucherCode] = useState('');
@@ -26,30 +27,38 @@ const Order = () => {
   const [myVouchers, setMyVouchers] = useState([]); 
   const [showVoucherList, setShowVoucherList] = useState(false); 
 
-  // 1. Subscribe to Menu
+  // 1. Lắng nghe Thực đơn Real-time & Phục hồi SĐT
   useEffect(() => {
     const unsubscribe = subscribeToMenu((data) => {
       setMenu(data);
       setIsLoading(false);
     });
+    
+    // Nạp lại SĐT gần nhất từ localStorage
+    const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
+    setRecentPhones(savedPhones);
+    if (!userPhoneParam && savedPhones.length > 0) {
+      setUsername(savedPhones[0]);
+    }
+    
     return () => unsubscribe();
-  }, []);
+  }, [userPhoneParam]);
 
-  // 2. Fetch User & Vouchers (Sửa lỗi ẩn mã công khai)
+  // 2. Fetch User & Vouchers (Đã xử lý Index Firebase)
   useEffect(() => {
     const syncData = async () => {
       const cleanPhone = username.trim();
       
-      // LUÔN TẢI VOUCHER (Bao gồm mã công khai + cá nhân nếu có SĐT)
+      // Luôn gọi lấy Voucher (Hàm này giờ sẽ gom cả mã công khai)
       const vouchers = await getMyVouchers(cleanPhone);
       setMyVouchers(vouchers);
       
+      // Chỉ tìm info khách và tự động áp mã FREESHIP khi SĐT đủ 10 số
       if (cleanPhone.length >= 10) {
         const userData = await getUserByPhone(cleanPhone);
         setCustomerInfo(userData ? { name: userData.fullName, phone: userData.username, address: userData.address } : null);
 
-        // Auto-apply FREESHIP5K if available and has uses left
-        const autoFs = vouchers.find(v => v.code.trim().toUpperCase() === 'FREESHIP5K' && v.usageLimit > 0);
+        const autoFs = vouchers.find(v => v.code.trim().toUpperCase() === 'FREESHIP5K');
         
         if (autoFs) {
           setAppliedFreeship(autoFs);
@@ -65,11 +74,11 @@ const Order = () => {
       }
     };
 
-    const timer = setTimeout(syncData, 500); // Rút ngắn delay để nút kho mã hiện nhanh hơn
+    const timer = setTimeout(syncData, 500);
     return () => clearTimeout(timer);
   }, [username]);
 
-  // Cart Management
+  // Logic giỏ hàng
   const updateQuantity = (item, delta) => {
     setCart(prev => {
       const currentItem = prev[item.id];
@@ -97,7 +106,6 @@ const Order = () => {
     return total > 0 ? total : 0;
   };
 
-  // Voucher Application (Manual & Modal Selection)
   const handleApplyVoucher = async (codeOverride = null) => {
     const targetCode = (codeOverride || voucherCode).trim().toUpperCase();
     if (!targetCode) return;
@@ -122,14 +130,14 @@ const Order = () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     
-    // Determine which voucher ID to deduct from
     const activeVoucherId = appliedVoucher ? appliedVoucher.id : (appliedFreeship ? appliedFreeship.id : null);
     const activeUsageLimit = appliedVoucher ? appliedVoucher.usageLimit : (appliedFreeship ? appliedFreeship.usageLimit : 0);
+    const cleanPhone = username.trim();
 
     const orderData = {
-      phone: username.trim(),
+      phone: cleanPhone,
       customer: customerInfo?.name || "Khách vãng lai", 
-      address: customerInfo?.address || "Nhận tại quán", // Default if no address
+      address: customerInfo?.address || "Nhận tại quán", 
       items: Object.values(cart).map(item => `${item.qty}x ${item.name}`).join(', '),
       subTotal: getSubTotal(),
       shippingFee,
@@ -143,8 +151,16 @@ const Order = () => {
     try {
       const result = await createOrder(orderData);
       if (result.success) {
+        
+        // --- PHỤC HỒI LOGIC LƯU SĐT LOCALSTORAGE ---
+        const currentPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
+        if (!currentPhones.includes(cleanPhone)) {
+          // Lưu tối đa 3 SĐT gần nhất vào bộ nhớ trình duyệt
+          localStorage.setItem('recentPhones', JSON.stringify([cleanPhone, ...currentPhones].slice(0, 3)));
+        }
+
         localStorage.removeItem('reorder_items');
-        navigate(`/checkorder?user=${username.trim()}`);
+        navigate(`/checkorder?user=${cleanPhone}`);
       } else {
          alert(`Lỗi: ${result.error}`);
       }
@@ -193,34 +209,30 @@ const Order = () => {
         )}
       </div>
 
-      {/* VOUCHER UI ĐÃ CẬP NHẬT */}
+      {/* Voucher Input & Selection */}
       <div className="px-4 mb-6">
         <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100">
            <div className="flex justify-between items-center mb-3 ml-1">
               <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Ưu đãi giảm giá</p>
            </div>
-           
            <div className="flex gap-2 items-center">
               <input 
                 type="text" value={voucherCode} 
                 onChange={e => setVoucherCode(e.target.value.toUpperCase())} 
-                placeholder="Nhập mã ưu đãi..." 
-                className="flex-1 bg-gray-50 border-none rounded-xl px-4 py-3 text-xs font-bold outline-none min-w-0" 
+                placeholder="Nhập mã..." 
+                className="flex-1 bg-gray-50 border-none rounded-xl px-4 py-3.5 text-xs font-bold outline-none min-w-0" 
               />
-              
-              {/* NÚT KHO MÃ: NẰM GIỮA Ô NHẬP MÃ VÀ NÚT ÁP DỤNG */}
               {myVouchers.length > 0 && (
                 <button 
                   onClick={() => setShowVoucherList(true)} 
-                  className="bg-blue-50 text-blue-600 px-3 py-3 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border border-blue-100 active:scale-95 transition-all shadow-sm"
+                  className="bg-blue-50 text-blue-600 px-3 py-3.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border border-blue-100 active:scale-95 transition-all shadow-sm"
                 >
                   🎁 Kho mã ({myVouchers.length})
                 </button>
               )}
-
               <button 
                 onClick={() => handleApplyVoucher()} 
-                className="bg-gray-800 text-white px-4 py-3 rounded-xl text-[10px] font-black uppercase whitespace-nowrap active:scale-95 transition-all shadow-sm"
+                className="bg-gray-800 text-white px-4 py-3.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap active:scale-95 transition-all shadow-sm"
               >
                 Áp dụng
               </button>
@@ -228,7 +240,7 @@ const Order = () => {
            
            {(appliedVoucher || appliedFreeship) && (
               <div className="mt-3 flex flex-wrap gap-2 animate-in zoom-in duration-300">
-                 {appliedFreeship && <span className="bg-green-500 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ FREE SHIP</span>}
+                 {appliedFreeship && <span className="bg-green-500 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ FREE SHIP TỰ ĐỘNG</span>}
                  {appliedVoucher && <span className="bg-blue-600 text-white text-[8px] font-black px-3 py-1.5 rounded-lg uppercase shadow-sm">✓ GIẢM {appliedVoucher.value.toLocaleString()}đ</span>}
               </div>
            )}
@@ -277,7 +289,7 @@ const Order = () => {
               <button onClick={() => setShowVoucherList(false)} className="w-10 h-10 flex items-center justify-center bg-gray-50 rounded-full text-gray-400">&times;</button>
             </div>
             <div className="space-y-3 max-h-80 overflow-y-auto pr-2 no-scrollbar">
-              {myVouchers.filter(v => v.usageLimit > 0).map(v => (
+              {myVouchers.map(v => (
                 <button 
                   key={v.id}
                   onClick={() => handleApplyVoucher(v.code)}

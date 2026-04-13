@@ -76,21 +76,19 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
 };
 
 /**
- * 3. QUẢN LÝ VOUCHER & LOGIC ĐỀN BÙ GIAO TRỄ
+ * 3. QUẢN LÝ VOUCHER (Đã tối ưu bằng Composite Index)
  */
-
-// Lấy kho Voucher GỒM: Mã Công Khai + Mã của riêng SĐT đó
 export const getMyVouchers = async (phone) => {
   try {
     const vouchersRef = collection(db, VOUCHER_COL);
     const now = new Date();
 
-    // 1. Lấy toàn bộ Voucher Công Khai (assignedPhone == "")
+    // 1. Tối ưu: Lấy trực tiếp từ Firebase những mã Công khai CÒN LƯỢT (Yêu cầu Index)
     const qPublic = query(vouchersRef, where("assignedPhone", "==", ""), where("usageLimit", ">", 0));
     const snapPublic = await getDocs(qPublic);
     const publicVouchers = snapPublic.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // 2. Lấy Voucher Cá Nhân (Nếu SĐT hợp lệ)
+    // 2. Tối ưu: Lấy trực tiếp những mã Cá nhân CÒN LƯỢT (Yêu cầu Index)
     let personalVouchers = [];
     if (phone && phone.trim().length >= 10) {
       const cleanPhone = phone.trim();
@@ -99,7 +97,7 @@ export const getMyVouchers = async (phone) => {
       personalVouchers = snapPersonal.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
 
-    // 3. Gộp lại và loại bỏ mã đã hết hạn (nếu có trường expiry)
+    // 3. Gộp lại và chỉ lọc hạn sử dụng
     const allVouchers = [...publicVouchers, ...personalVouchers].filter(v => {
       if (!v.expiry) return true;
       return v.expiry.toDate() > now;
@@ -135,12 +133,10 @@ export const completeOrderWithBonus = async (order) => {
       updatedAt: serverTimestamp()
     });
 
-    // Tính toán thời gian: (Thời điểm hiện tại - Thời điểm bắt đầu làm món)
     if (order.confirmedAt) {
       const confirmTime = order.confirmedAt.toDate();
       const diffInMinutes = Math.floor((now - confirmTime) / (1000 * 60));
 
-      // Nếu làm và giao mất hơn 30 phút -> Tặng mã xin lỗi
       if (diffInMinutes >= 30) {
         const bonusVoucher = {
           code: `SORRY${Math.floor(1000 + Math.random() * 9000)}`,
@@ -172,8 +168,6 @@ export const validateVoucher = async (code, phone) => {
     const now = new Date();
 
     // KIỂM TRA ĐIỀU KIỆN ÁP DỤNG:
-    // Nếu voucher có SĐT gán, và SĐT đó KHÁC với SĐT người dùng -> Cấm
-    // (Nếu assignedPhone rỗng -> Mọi người đều được dùng)
     if (v.assignedPhone && v.assignedPhone.trim() !== "" && v.assignedPhone !== phone.trim()) {
       return { valid: false, msg: "Mã này không dành cho số điện thoại của bạn!" };
     }
@@ -234,7 +228,6 @@ export const updateOrderStatus = async (orderId, newStatus) => {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
     const updateData = { status: newStatus, updatedAt: serverTimestamp() };
     
-    // MỐC QUAN TRỌNG: Ghi lại thời gian Admin bấm "Nhận đơn" để bắt đầu tính 30p
     if (newStatus === 'PREPARING') {
       updateData.confirmedAt = serverTimestamp();
     }
