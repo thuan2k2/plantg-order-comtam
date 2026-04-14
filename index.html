@@ -9,8 +9,17 @@
     
     <title>Cơm Tấm Vinhomes - Đặt món trực tuyến</title>
 
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Plant G" />
+    
+    <link rel="apple-touch-icon" href="https://plantg.id.vn/logo192.png" />
+
     <meta name="description" content="Cơm dẻo, sườn thơm, đậm đà vị nhà. Đặt cơm tấm giao tận nơi tại Vinhomes nhanh chóng, tiện lợi!" />
-    <meta name="theme-color" content="#ea580c" /> <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#ea580c" /> 
+    <meta property="og:type" content="website" />
     <meta property="og:url" content="https://plantg.id.vn/" />
     <meta property="og:title" content="Cơm Tấm Vinhomes - Đặt món trực tuyến" />
     <meta property="og:description" content="Cơm dẻo, sườn thơm, đậm đà vị nhà. Đặt cơm tấm giao tận nơi tại Vinhomes ngay!" />
@@ -24,11 +33,38 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <style>
+      body {
+        overflow-x: hidden;
+        width: 100%;
+        position: relative;
+        -webkit-tap-highlight-color: transparent; /* Tối ưu cảm ứng trên mobile */
+      }
+      /* Ẩn scrollbar cho các trình duyệt nhưng vẫn cuộn được */
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
     
     <script type="module" src="/src/main.jsx"></script>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(err => {
+            console.log('ServiceWorker registration failed: ', err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>

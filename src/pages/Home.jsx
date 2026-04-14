@@ -14,10 +14,12 @@ const Home = () => {
   const [hasOrderedBefore, setHasOrderedBefore] = useState(false);
   const [savedPhone, setSavedPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState(''); // MỚI: State lưu trữ Avatar
+  const [avatarUrl, setAvatarUrl] = useState(''); 
   const [showThemeMenu, setShowThemeMenu] = useState(false);
-
   const [totalXu, setTotalXu] = useState(0);
+
+  // MỚI: State lưu trữ trạng thái Online của Admin
+  const [isAdminOnline, setIsAdminOnline] = useState(false);
 
   const [sysConfig, setSysConfig] = useState({
     isOpen: true,
@@ -28,14 +30,21 @@ const Home = () => {
   useEffect(() => {
     // 1. Lắng nghe thay đổi Cấu hình hệ thống
     const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (doc) => {
-      if (doc.exists()) {
-        setSysConfig(doc.data());
-      }
+      if (doc.exists()) setSysConfig(doc.data());
     }, (error) => {
       console.error("Lỗi lắng nghe cấu hình:", error);
     });
 
-    // 2. Logic đồng bộ thông tin khách hàng Real-time
+    // 2. Lắng nghe trạng thái Online của Admin
+    const unsubAdminStatus = onSnapshot(doc(db, 'system', 'admin_status'), (doc) => {
+      if (doc.exists()) {
+        // Tùy chọn kiểm tra lastActive nếu cần xác định timeout (ví dụ: sau 5p không có tín hiệu thì coi như offline)
+        // Hiện tại chỉ dựa vào flag isOnline do AdminLayout ghi đè
+        setIsAdminOnline(doc.data().isOnline || false);
+      }
+    });
+
+    // 3. Logic đồng bộ thông tin khách hàng Real-time
     const syncWithFirebase = async () => {
       const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
       const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
@@ -48,12 +57,12 @@ const Home = () => {
         const cleanPhone = phone.trim();
         const userRef = doc(db, 'users', cleanPhone);
 
-        // FIX ĐỒNG BỘ: Lắng nghe toàn bộ thay đổi của user bao gồm cả avatarUrl
+        // Lắng nghe toàn bộ thay đổi của user
         const unsubUser = onSnapshot(userRef, (snap) => {
           if (snap.exists()) {
             const data = snap.data();
             setTotalXu(data.totalXu || 0); 
-            setAvatarUrl(data.avatarUrl || ''); // Cập nhật Avatar lập tức
+            setAvatarUrl(data.avatarUrl || ''); 
             
             if (data.fullName && data.fullName !== customerName) {
               setCustomerName(data.fullName);
@@ -98,12 +107,13 @@ const Home = () => {
 
     return () => {
       unsubConfig();
+      unsubAdminStatus();
       if (typeof cleanupUser === 'function') cleanupUser();
     };
   }, []);
 
   const handleLogoutCustomer = (confirm = true) => {
-    if (!confirm || window.confirm("Bạn muốn đặt hàng bằng số điện thoại khác?")) {
+    if (!confirm || window.confirm("Bạn muốn đăng xuất khỏi tài khoản này?")) {
       localStorage.removeItem('recentPhones');
       localStorage.removeItem('userProfile');
       setHasOrderedBefore(false);
@@ -113,14 +123,6 @@ const Home = () => {
       setTotalXu(0);
       window.location.reload(); 
     }
-  };
-
-  const handleOrderClick = () => {
-    if (!sysConfig.isOpen) {
-      alert("Quán hiện đang đóng cửa, bạn vui lòng quay lại sau nhé!");
-      return;
-    }
-    hasOrderedBefore ? navigate(`/order?user=${savedPhone}`) : setIsPopupOpen(true);
   };
 
   return (
@@ -206,7 +208,7 @@ const Home = () => {
       </div>
 
       {/* CUSTOMER GREETING & XU REWARDS */}
-      <div className="w-full max-w-xs mb-10 flex flex-col items-center">
+      <div className="w-full max-w-xs mb-8 flex flex-col items-center">
         {hasOrderedBefore ? (
           <>
             <div className="w-full bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-orange-100 dark:border-gray-700 text-center relative overflow-hidden transition-colors group">
@@ -219,10 +221,10 @@ const Home = () => {
               <p className="text-xs text-gray-400 font-bold mb-4">{savedPhone}</p>
               
               <button 
-                onClick={handleLogoutCustomer}
+                onClick={() => handleLogoutCustomer()}
                 className="text-[10px] font-black text-red-500 border border-red-100 dark:border-red-900/50 px-4 py-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors uppercase tracking-widest"
               >
-                Đổi số khác
+                Đăng xuất
               </button>
             </div>
 
@@ -245,24 +247,38 @@ const Home = () => {
           </>
         ) : (
           <div className="text-center">
-            <p className="text-sm text-gray-400 dark:text-gray-400 font-medium italic transition-colors">
+            <p className="text-sm text-gray-400 dark:text-gray-400 font-medium italic transition-colors mb-2">
               "Cơm dẻo, sườn thơm, đậm đà vị nhà"
             </p>
           </div>
         )}
       </div>
 
-      {/* ACTION BUTTONS (Đã Cấu Trúc Lại Cân Đối) */}
+      {/* ACTION BUTTONS (Đã Cấu Trúc Lại Cân Đối & Thêm Đặt Giao Sau) */}
       <div className="w-full max-w-xs space-y-4">
         
-        {/* Nút 1: Đặt Cơm (To) */}
+        {/* Nút 1: Đặt Cơm Ngay (To) */}
         <button
-          onClick={handleOrderClick}
+          onClick={() => {
+            if (!sysConfig.isOpen) return alert("Quán đóng cửa");
+            hasOrderedBefore ? navigate(`/order?user=${savedPhone}`) : setIsPopupOpen(true);
+          }}
           className={`w-full ${sysConfig.isOpen ? 'bg-gray-800 dark:bg-orange-600 hover:bg-black dark:hover:bg-orange-700 shadow-xl shadow-gray-200 dark:shadow-none' : 'bg-gray-400 cursor-not-allowed'} text-white font-black py-5 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest`}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
           {sysConfig.isOpen ? 'ĐẶT CƠM NGAY' : 'TẠM ĐÓNG CỬA'}
         </button>
+
+        {/* MỚI: Nút 1.5: Đặt giao sau (Chỉ hiện khi quán mở) */}
+        {sysConfig.isOpen && (
+          <button
+            onClick={() => hasOrderedBefore ? navigate(`/order?user=${savedPhone}&type=schedule`) : setIsPopupOpen(true)}
+            className="w-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 font-black py-4 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-xs tracking-widest border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/50"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            Đặt giao sau (Hẹn giờ)
+          </button>
+        )}
 
         {/* Nút 2: Kiểm Tra Đơn Hàng (To) */}
         <button
@@ -275,16 +291,16 @@ const Home = () => {
 
         {/* Nút 3 & 4: Đăng Nhập & Đăng Ký (Chia đôi nằm ngang) */}
         {!hasOrderedBefore && (
-          <div className="flex gap-4">
+          <div className="flex gap-4 pt-2">
             <button
               onClick={() => setIsPopupOpen(true)}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-lg shadow-blue-200 dark:shadow-none transition-all active:scale-95 uppercase text-xs tracking-widest"
+              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl shadow-lg shadow-blue-200 dark:shadow-none transition-all active:scale-95 uppercase text-[11px] tracking-widest"
             >
               ĐĂNG NHẬP
             </button>
             <button
               onClick={() => navigate('/dangky')}
-              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-black py-5 rounded-2xl shadow-lg shadow-orange-200 dark:shadow-none transition-all active:scale-95 uppercase text-xs tracking-widest"
+              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-orange-200 dark:shadow-none transition-all active:scale-95 uppercase text-[11px] tracking-widest"
             >
               ĐĂNG KÝ
             </button>
@@ -292,8 +308,21 @@ const Home = () => {
         )}
       </div>
 
-      {/* FOOTER */}
-      <div className="mt-auto pt-10 pb-6 text-center">
+      {/* TRẠNG THÁI ONLINE CỦA ADMIN VÀ FOOTER */}
+      <div className="mt-auto pt-10 pb-6 text-center w-full flex flex-col items-center">
+        {/* MỚI: Hiển thị trạng thái Admin */}
+        <div className="flex items-center justify-center gap-2 mb-4 bg-white/50 dark:bg-gray-800/50 px-4 py-2 rounded-full border border-gray-100 dark:border-gray-700 shadow-sm backdrop-blur-sm">
+          <div className="relative flex h-2.5 w-2.5">
+            {isAdminOnline && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+            )}
+            <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isAdminOnline ? 'bg-green-500' : 'bg-gray-400'}`}></span>
+          </div>
+          <span className="text-[9px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">
+            Hỗ trợ: {isAdminOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
+          </span>
+        </div>
+
         <p className="text-[10px] font-black text-orange-200 dark:text-gray-600 uppercase tracking-[0.3em] transition-colors">
           Open: {sysConfig.openTime || '11:00 - 21:00'}
         </p>

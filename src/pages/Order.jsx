@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { doc, onSnapshot, collection, query, where } from 'firebase/firestore'; 
 import { db } from '../firebase/config';
-import { createOrderSecure, validateVoucher, getMyVouchers } from '../services/orderService'; // Đổi sang createOrderSecure
+import { createOrderSecure, validateVoucher, getMyVouchers } from '../services/orderService';
 import { verifyPasscode } from '../services/authService'; 
 import { subscribeToMenu } from '../services/menuService';
 
@@ -10,6 +10,9 @@ const Order = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const userPhoneParam = searchParams.get('user') || '';
+  
+  // MỚI: Xác định loại đơn hàng (Giao ngay hay Hẹn giờ)
+  const isScheduled = searchParams.get('type') === 'schedule';
 
   const [username, setUsername] = useState(userPhoneParam);
   const [customerInfo, setCustomerInfo] = useState(null);
@@ -38,8 +41,9 @@ const Order = () => {
   const [walletPasscode, setWalletPasscode] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('CASH'); 
   
-  // STATE: Quản lý Địa chỉ giao hàng được chọn
+  // STATE: Quản lý Địa chỉ và Hẹn giờ
   const [selectedAddress, setSelectedAddress] = useState('');
+  const [deliveryTime, setDeliveryTime] = useState(''); // Lưu giờ khách chọn
 
   useEffect(() => {
     // 1. Lắng nghe trạng thái Hệ thống liên tục
@@ -218,6 +222,16 @@ const Order = () => {
     if (getSubTotal() < sysConfig.minOrder) {
       return alert(`Đơn hàng tối thiểu phải từ ${sysConfig.minOrder.toLocaleString()}đ trở lên. Vui lòng chọn thêm món!`);
     }
+    
+    // Nếu là đơn Hẹn giờ, set thời gian mặc định là hiện tại + 30 phút để gợi ý
+    if (isScheduled && !deliveryTime) {
+       const now = new Date();
+       now.setMinutes(now.getMinutes() + 30);
+       const hours = String(now.getHours()).padStart(2, '0');
+       const mins = String(now.getMinutes()).padStart(2, '0');
+       setDeliveryTime(`${hours}:${mins}`);
+    }
+
     setShowConfirm(true);
   };
 
@@ -247,12 +261,26 @@ const Order = () => {
        return alert("Vui lòng chọn hoặc nhập địa chỉ giao hàng!");
     }
 
+    // Kiểm tra giờ hẹn nếu là đơn SCHEDULED
+    if (isScheduled) {
+       if (!deliveryTime) return alert("Vui lòng chọn giờ bạn muốn nhận cơm!");
+       
+       const selectedDate = new Date();
+       const [hours, minutes] = deliveryTime.split(':');
+       selectedDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0);
+       
+       const now = new Date();
+       if (selectedDate <= now) {
+         return alert("Giờ hẹn giao phải muộn hơn giờ hiện hành!");
+       }
+    }
+
     // Nếu chọn thanh toán bằng ví, phải kiểm tra số dư và hỏi Passcode
     if (selectedPaymentMethod === 'WALLET') {
       if (!customerInfo || customerInfo.walletBalance < getFinalTotal()) {
         return alert("Số dư ví không đủ để thanh toán đơn hàng này!");
       }
-      setShowWalletPasscode(true); // Hiện bảng hỏi Passcode
+      setShowWalletPasscode(true); 
       return;
     }
 
@@ -281,7 +309,11 @@ const Order = () => {
       total: getFinalTotal().toLocaleString('vi-VN') + 'đ',
       note: note.trim(),
       usedVouchers,
-      paymentMethod: selectedPaymentMethod 
+      paymentMethod: selectedPaymentMethod,
+      
+      // MỚI: Thêm thông tin loại đơn hàng và giờ hẹn
+      deliveryType: isScheduled ? 'SCHEDULED' : 'ASAP',
+      scheduledTime: isScheduled ? deliveryTime : null
     };
 
     try {
@@ -321,9 +353,14 @@ const Order = () => {
           <button onClick={() => navigate(-1)} className="p-2 bg-gray-50 dark:bg-gray-700 rounded-2xl active:scale-90 transition-all text-gray-800 dark:text-gray-100">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-lg font-black text-gray-800 dark:text-gray-100 uppercase tracking-tighter transition-colors">
-            Đặt cơm Plant G
-          </h1>
+          <div className="flex flex-col items-center">
+             <h1 className="text-lg font-black text-gray-800 dark:text-gray-100 uppercase tracking-tighter transition-colors leading-none">
+               Đặt cơm Plant G
+             </h1>
+             {isScheduled && (
+               <span className="text-[9px] font-black text-orange-500 uppercase tracking-widest mt-1 bg-orange-100 dark:bg-orange-900/30 px-2 py-0.5 rounded-md border border-orange-200 dark:border-orange-800">Đơn hẹn giờ</span>
+             )}
+          </div>
           <div className="w-9"></div>
         </div>
         <div className="flex px-4 gap-2 pb-3">
@@ -496,8 +533,13 @@ const Order = () => {
       {/* MODAL: CHECKOUT CONFIRM - TÍCH HỢP CHỌN ĐỊA CHỈ */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10 transition-colors overflow-y-auto max-h-[90vh]">
-            <h2 className="text-xl font-black text-gray-800 dark:text-white uppercase tracking-tighter mb-4">Chi tiết thanh toán</h2>
+          <div className="bg-white dark:bg-gray-800 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10 transition-colors overflow-y-auto max-h-[90vh] no-scrollbar">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-xl font-black text-gray-800 dark:text-white uppercase tracking-tighter">Chi tiết thanh toán</h2>
+                {isScheduled && <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest mt-1">Đơn đặt giao sau</p>}
+              </div>
+            </div>
             
             {/* LỰA CHỌN ĐỊA CHỈ NHẬN HÀNG */}
             <div className="mb-6">
@@ -535,7 +577,28 @@ const Order = () => {
               )}
             </div>
 
-            <div className="space-y-2 mb-4 border-b border-dashed dark:border-gray-700 pb-5">
+            {/* --- MỚI: CHỌN GIỜ NẾU LÀ ĐƠN GIAO SAU --- */}
+            {isScheduled && (
+              <div className="mb-6 animate-in fade-in zoom-in-95">
+                <p className="text-[9px] font-black text-orange-600 dark:text-orange-400 uppercase tracking-widest mb-3 border-b dark:border-gray-700 pb-2">
+                  2. Thời gian mong muốn nhận cơm:
+                </p>
+                <div className="flex items-center gap-4 bg-orange-50 dark:bg-orange-900/20 p-4 rounded-2xl border border-orange-100 dark:border-orange-800">
+                   <svg className="w-6 h-6 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                   <input 
+                     type="time" 
+                     value={deliveryTime}
+                     onChange={(e) => setDeliveryTime(e.target.value)}
+                     className="flex-1 bg-white dark:bg-gray-800 dark:text-white border-none rounded-xl px-4 py-3 font-black text-center text-lg outline-none focus:ring-2 focus:ring-orange-500 transition-colors"
+                   />
+                </div>
+                <p className="text-[9px] text-gray-500 dark:text-gray-400 font-bold italic mt-2 ml-1">
+                  * Vui lòng chọn giờ trong ngày. Bếp sẽ chuẩn bị đồ ăn để giao đúng giờ cho bạn.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2 mb-4 border-b border-dashed dark:border-gray-700 pb-5 mt-2">
               <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest"><span>Tiền cơm:</span><span>{getSubTotal().toLocaleString()}đ</span></div>
               <div className="flex justify-between text-[11px] font-bold text-gray-400 uppercase tracking-widest">
                 <span>Phí vận chuyển:</span>
@@ -553,7 +616,7 @@ const Order = () => {
             {/* CHỌN PHƯƠNG THỨC THANH TOÁN */}
             <div className="mb-6 space-y-2">
                <p className="text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-3 border-b dark:border-gray-700 pb-2">
-                 2. Phương thức thanh toán:
+                 {isScheduled ? '3.' : '2.'} Phương thức thanh toán:
                </p>
                <div className="grid grid-cols-2 gap-2">
                  <button 
@@ -588,9 +651,11 @@ const Order = () => {
             />
             
             <div className="flex gap-4">
-              <button onClick={() => setShowConfirm(false)} className="flex-1 py-5 text-[10px] font-black text-gray-400 dark:text-gray-300 uppercase tracking-widest bg-gray-50 dark:bg-gray-700 rounded-2xl active:scale-95 transition-all">Quay lại</button>
-              <button onClick={handleOrderSubmit} disabled={isSubmitting} className="flex-[2] bg-blue-600 text-white text-[10px] font-black rounded-2xl shadow-xl shadow-blue-100 dark:shadow-none uppercase tracking-[0.2em] active:scale-95 transition-all">
-                {isSubmitting ? 'ĐANG XỬ LÝ...' : 'ĐẶT CƠM NGAY'}
+              <button onClick={() => setShowConfirm(false)} className="flex-1 py-5 text-[10px] font-black text-gray-400 dark:text-gray-300 uppercase tracking-widest bg-gray-50 dark:bg-gray-700 rounded-2xl active:scale-95 transition-all hover:bg-gray-200 dark:hover:bg-gray-600">Quay lại</button>
+              <button onClick={handleOrderSubmit} disabled={isSubmitting} className={`flex-[2] text-white text-[10px] font-black rounded-2xl shadow-xl uppercase tracking-[0.2em] active:scale-95 transition-all
+                ${isScheduled ? 'bg-orange-500 shadow-orange-200 dark:shadow-none hover:bg-orange-600' : 'bg-blue-600 shadow-blue-200 dark:shadow-none hover:bg-blue-700'}
+              `}>
+                {isSubmitting ? 'ĐANG XỬ LÝ...' : (isScheduled ? 'XÁC NHẬN LỊCH HẸN' : 'ĐẶT CƠM NGAY')}
               </button>
             </div>
           </div>
