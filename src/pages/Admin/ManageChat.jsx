@@ -10,6 +10,10 @@ const ManageChat = () => {
   const [searchPhone, setSearchPhone] = useState('');
   const [isSearching, setIsSearching] = useState(false);
 
+  // MỚI: State cho Tin nhắn nhanh
+  const [quickReplies, setQuickReplies] = useState([]);
+  const [showQuickMenu, setShowQuickMenu] = useState(false);
+
   const audioRef = useRef(new Audio('/status-update.mp3'));
   const messagesEndRef = useRef(null);
   const prevChatsRef = useRef([]);
@@ -40,46 +44,57 @@ const ManageChat = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. Tìm kiếm SĐT để chủ động nhắn tin
-  const handleSearchCustomer = async (e) => {
-    e.preventDefault();
-    const phone = searchPhone.trim();
-    if (phone.length < 10) return alert("Vui lòng nhập SĐT hợp lệ");
-
-    setIsSearching(true);
-    try {
-      // Kiểm tra xem khách có tồn tại trong hệ thống không
-      const userRef = doc(db, 'users', phone);
-      const userSnap = await getDoc(userRef);
-
-      if (!userSnap.exists()) {
-        alert("Không tìm thấy khách hàng này trong hệ thống!");
-      } else {
-        const userData = userSnap.data();
-        const chatId = phone; // Dùng SĐT làm ID chat cho đồng bộ
-
-        // Kiểm tra xem phòng chat đã tồn tại chưa, nếu chưa thì tạo mới
-        const chatRef = doc(db, 'support_chats', chatId);
-        const chatSnap = await getDoc(chatRef);
-
-        if (!chatSnap.exists()) {
-          await setDoc(chatRef, {
-            userPhone: phone,
-            userName: userData.fullName || 'Khách hàng',
-            userAvatar: userData.avatarUrl || '',
-            messages: [],
-            lastUpdated: serverTimestamp(),
-            unreadAdmin: false,
-            unreadUser: false
-          });
-        }
-        setActiveId(chatId);
-        setSearchPhone('');
+  // MỚI: Lắng nghe danh sách Tin nhắn nhanh từ Firestore
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'system', 'quick_replies'), (doc) => {
+      if (doc.exists()) {
+        setQuickReplies(doc.data().list || []);
       }
-    } catch (error) {
-      console.error("Lỗi tìm khách:", error);
-    } finally {
-      setIsSearching(false);
+    });
+    return () => unsub();
+  }, []);
+
+  // 2. Tìm kiếm SĐT để chủ động nhắn tin (TÌM NGAY KHI GÕ)
+  const handleInstantSearch = async (val) => {
+    setSearchPhone(val);
+    const cleanPhone = val.trim();
+    
+    // Chỉ bắt đầu tìm khi nhập đủ 10 số
+    if (cleanPhone.length >= 10) {
+      setIsSearching(true);
+      try {
+        const userRef = doc(db, 'users', cleanPhone);
+        const userSnap = await getDoc(userRef);
+
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          const chatId = cleanPhone; 
+
+          const chatRef = doc(db, 'support_chats', chatId);
+          const chatSnap = await getDoc(chatRef);
+
+          if (!chatSnap.exists()) {
+            await setDoc(chatRef, {
+              userPhone: cleanPhone,
+              userName: userData.fullName || 'Khách hàng',
+              userAvatar: userData.avatarUrl || '',
+              messages: [],
+              lastUpdated: serverTimestamp(),
+              unreadAdmin: false,
+              unreadUser: false
+            });
+          }
+          setActiveId(chatId);
+          setSearchPhone(''); // Xóa ô tìm kiếm sau khi tìm thấy
+        } else {
+          // Báo lỗi nhẹ (có thể bỏ qua alert để đỡ phiền nếu gõ sai số)
+          console.warn("Không tìm thấy khách hàng.");
+        }
+      } catch (error) {
+        console.error("Lỗi tìm khách:", error);
+      } finally {
+        setIsSearching(false);
+      }
     }
   };
 
@@ -98,6 +113,13 @@ const ManageChat = () => {
     setReply('');
   };
 
+  // MỚI: Hàm gửi tin nhắn nhanh
+  const handleSendQuickReply = async (text) => {
+    if (!activeId) return;
+    await sendMessage(activeId, 'ADMIN', text);
+    setShowQuickMenu(false);
+  };
+
   const handleCloseChat = async (id) => {
     if (window.confirm("Xóa hội thoại này khỏi danh sách quản lý?")) {
       await closeChat(id);
@@ -105,25 +127,36 @@ const ManageChat = () => {
     }
   };
 
+  // Xử lý đóng menu tin nhanh khi click ra ngoài
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (showQuickMenu && !e.target.closest('.quick-reply-container')) {
+        setShowQuickMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showQuickMenu]);
+
   return (
     <div className="flex h-[calc(100vh-140px)] bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden transition-all duration-500">
       
       {/* CỘT TRÁI: DANH SÁCH & TÌM KIẾM */}
       <div className="w-full md:w-1/3 border-r border-gray-100 dark:border-gray-700 flex flex-col bg-gray-50/30 dark:bg-gray-900/20">
         
-        {/* THANH TÌM KIẾM SĐT */}
+        {/* THANH TÌM KIẾM SĐT (Đã đổi thành Instant Search) */}
         <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <form onSubmit={handleSearchCustomer} className="relative">
+          <div className="relative">
             <input 
               type="tel"
-              placeholder="Tìm SĐT khách..."
+              placeholder="Tìm SĐT khách (Gõ đủ 10 số)..."
               value={searchPhone}
-              onChange={e => setSearchPhone(e.target.value)}
+              onChange={e => handleInstantSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-gray-100 dark:bg-gray-700 dark:text-white rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all"
             />
             <span className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30">🔍</span>
             {isSearching && <div className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>}
-          </form>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto no-scrollbar">
@@ -200,13 +233,52 @@ const ManageChat = () => {
 
             {/* Form trả lời */}
             <form onSubmit={handleReply} className="p-6 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 flex gap-4">
+              
+              {/* NÚT TIN NHẮN NHANH */}
+              <div className="relative quick-reply-container flex items-center">
+                <button 
+                  type="button"
+                  onClick={() => setShowQuickMenu(!showQuickMenu)}
+                  className="w-12 h-12 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-2xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-all text-xl"
+                  title="Gửi tin nhắn nhanh"
+                >
+                  ⚡
+                </button>
+                
+                {/* Popup Menu Tin nhắn nhanh */}
+                {showQuickMenu && (
+                  <div className="absolute bottom-full mb-4 left-0 w-80 bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden animate-in slide-in-from-bottom-2 z-50">
+                    <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-700 text-[10px] font-black uppercase text-gray-400 tracking-widest">
+                      Chọn tin nhắn nhanh ({quickReplies.length})
+                    </div>
+                    {quickReplies.length === 0 ? (
+                       <div className="p-6 text-center text-xs text-gray-400 italic">Chưa có mẫu nào. Hãy thêm trong phần Cài đặt.</div>
+                    ) : (
+                      <div className="max-h-60 overflow-y-auto no-scrollbar">
+                        {quickReplies.map((text, i) => (
+                          <button 
+                            key={i} 
+                            type="button"
+                            onClick={() => handleSendQuickReply(text)}
+                            className="w-full text-left p-4 text-sm font-bold border-b border-gray-50 dark:border-gray-700/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-700 dark:text-gray-200 transition-colors"
+                          >
+                            {text}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Ô Nhập nội dung */}
               <input 
                 value={reply} 
                 onChange={e => setReply(e.target.value)} 
                 placeholder="Nhập nội dung phản hồi..." 
                 className="flex-1 bg-gray-100 dark:bg-gray-700 dark:text-white border-none rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500/50 transition-all" 
               />
-              <button type="submit" className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-blue-200 dark:shadow-none">
+              <button type="submit" className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-blue-200 dark:shadow-none hover:bg-blue-700">
                 Gửi ngay
               </button>
             </form>

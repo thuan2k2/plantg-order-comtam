@@ -593,7 +593,7 @@ const Order = () => {
                    />
                 </div>
                 <p className="text-[9px] text-gray-500 dark:text-gray-400 font-bold italic mt-2 ml-1">
-                  * Vui lòng chọn giờ trong ngày. Bếp sẽ chuẩn bị đồ ăn để giao đúng giờ cho bạn.
+                  * Vui lòng chọn giờ trong ngày (Cho phép đặt trước tối thiểu 1 giờ). Bếp sẽ chuẩn bị đồ ăn để giao đúng giờ cho bạn.
                 </p>
               </div>
             )}
