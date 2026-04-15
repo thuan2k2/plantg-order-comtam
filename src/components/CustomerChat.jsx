@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { startChat, sendMessage, markRead } from '../services/chatService';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, orderBy, addDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 const CustomerChat = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [chat, setChat] = useState(null);
+  const [chatData, setChatData] = useState(null); // Lưu thông tin trạng thái chung (unread...)
+  const [messages, setMessages] = useState([]); // Lưu danh sách tin nhắn
   const [input, setInput] = useState('');
   
   // 1. Ref xử lý âm thanh (Lấy từ thư mục public trực tiếp)
@@ -18,52 +19,80 @@ const CustomerChat = () => {
   const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
   const phone = savedPhones[0];
 
-  // 2. Lắng nghe tin nhắn và phát âm thanh khi có phản hồi từ Admin
+  // 2. LẮNG NGHE TRẠNG THÁI PHÒNG CHAT (Chỉ để check unreadUser)
+  useEffect(() => {
+    if (!phone) return;
+    const unsubDoc = onSnapshot(doc(db, 'support_chats', phone), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setChatData(data);
+        // Nếu đang mở khung chat mà có tin nhắn chưa đọc, đánh dấu đã xem ngay
+        if (isOpen && data.unreadUser) {
+          markRead(phone, 'USER');
+        }
+      }
+    });
+    return () => unsubDoc();
+  }, [phone, isOpen]);
+
+  // 3. LẮNG NGHE TIN NHẮN TỪ SUBCOLLECTION (Đồng bộ Real-time với Telegram)
   useEffect(() => {
     if (!phone) return;
     
-    const unsub = onSnapshot(doc(db, 'support_chats', phone), (snap) => {
-      const newData = snap.data();
-
-      if (newData && newData.messages) {
-        const currentLen = newData.messages.length;
-        
-        // Logic phát âm thanh: Chỉ khi có tin mới từ Admin và không phải lần đầu load
-        if (currentLen > msgCountRef.current && msgCountRef.current !== 0) {
-          const lastMsg = newData.messages[currentLen - 1];
-          if (lastMsg.sender === 'ADMIN') {
-            audioRef.current.play().catch(err => console.log("Audio play blocked:", err));
-          }
+    const q = query(collection(db, 'support_chats', phone, 'messages'), orderBy('createdAt', 'asc'));
+    const unsubMessages = onSnapshot(q, (snap) => {
+      const msgs = snap.docs.map(doc => doc.data());
+      const currentLen = msgs.length;
+      
+      // Logic phát âm thanh: Chỉ khi có tin mới từ Admin và không phải lần đầu load
+      if (currentLen > msgCountRef.current && msgCountRef.current !== 0) {
+        const lastMsg = msgs[currentLen - 1];
+        // Sử dụng toUpperCase() để tránh lỗi do Webhook gửi 'admin' viết thường
+        if (lastMsg?.sender?.toUpperCase() === 'ADMIN') {
+          audioRef.current.play().catch(err => console.log("Audio play blocked:", err));
         }
-        msgCountRef.current = currentLen; 
       }
-
-      setChat(newData);
-      // Nếu đang mở khung chat mà có tin nhắn chưa đọc, đánh dấu đã xem ngay
-      if (isOpen && newData?.unreadUser) markRead(phone, 'USER');
+      
+      msgCountRef.current = currentLen; 
+      setMessages(msgs);
     });
     
-    return () => unsub();
-  }, [phone, isOpen]);
+    return () => unsubMessages();
+  }, [phone]);
 
-  // 3. Tự động cuộn xuống cuối
+  // 4. Tự động cuộn xuống cuối
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [chat?.messages, isOpen]);
+  }, [messages, isOpen]);
 
   const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
     
-    // Nếu chưa từng chat, bắt đầu phiên chat mới với Tên và Avatar hiện tại
-    if (!chat) {
-      await startChat(phone, userProfile.fullName || 'Khách hàng', userProfile.avatarUrl || '');
-    }
+    const messageText = input.trim();
+    setInput(''); // Xóa text ngay để tạo cảm giác mượt mà
     
-    await sendMessage(phone, 'USER', input);
-    setInput('');
+    try {
+      // 1. Cập nhật thông tin khách vào document chính
+      await setDoc(doc(db, 'support_chats', phone), {
+        customerName: userProfile.fullName || 'Khách hàng',
+        avatarUrl: userProfile.avatarUrl || '',
+        unreadAdmin: true,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      // 2. Lưu tin nhắn vào Subcollection để KÍCH HOẠT Cloud Functions (Telegram Bot)
+      await addDoc(collection(db, 'support_chats', phone, 'messages'), {
+        text: messageText,
+        sender: 'USER',
+        createdAt: serverTimestamp()
+      });
+      
+    } catch (error) {
+      console.error("Lỗi gửi tin nhắn:", error);
+    }
   };
 
   if (!phone) return null;
@@ -88,8 +117,8 @@ const CustomerChat = () => {
           
           {/* NỘI DUNG TIN NHẮN */}
           <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-gray-50 dark:bg-gray-900/50 no-scrollbar">
-            {chat?.messages.map((m, i) => {
-              const isUser = m.sender === 'USER';
+            {messages.map((m, i) => {
+              const isUser = m.sender?.toUpperCase() === 'USER';
               return (
                 <div key={i} className={`flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
                   {/* Avatar cạnh tin nhắn */}
@@ -97,7 +126,7 @@ const CustomerChat = () => {
                     <img 
                       src={isUser 
                         ? (userProfile.avatarUrl || `https://ui-avatars.com/api/?name=${userProfile.fullName}&background=random`) 
-                        : '/logo-admin.png' // Bạn có thể để logo quán ở đây
+                        : '/logo-admin.png'
                       } 
                       onError={(e) => { e.target.src = 'https://ui-avatars.com/api/?name=Admin&background=000'; }}
                       className="w-full h-full object-cover"
@@ -147,7 +176,7 @@ const CustomerChat = () => {
         </svg>
         
         {/* Chấm đỏ thông báo */}
-        {chat?.unreadUser && !isOpen && (
+        {chatData?.unreadUser && !isOpen && (
           <span className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 border-4 border-white dark:border-gray-900 rounded-full flex items-center justify-center text-[8px] font-black animate-bounce shadow-lg">1</span>
         )}
       </button>

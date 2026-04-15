@@ -239,7 +239,7 @@ const CheckOrder = () => {
   // STATE MỚI: Tab trạng thái hoạt động
   const [activeTab, setActiveTab] = useState('ALL');
 
-  // Refs để quản lý logic phát âm thanh
+  // Refs để quản lý logic phát âm thanh đồng bộ Telegram
   const prevStatuses = useRef({});
   const isInitialLoad = useRef(true);
 
@@ -253,32 +253,35 @@ const CheckOrder = () => {
       setIsSearching(true);
       unsubscribe = subscribeToOrdersByPhone(userPhoneParam, (updatedOrders) => {
         
-        let hasStatusChanged = false;
-
-        // Quét qua các đơn hàng để tìm sự thay đổi trạng thái
+        // ĐỒNG BỘ REAL-TIME VỚI TELEGRAM: Quét qua các đơn hàng để tìm sự thay đổi
         updatedOrders.forEach(order => {
           const oldStatus = prevStatuses.current[order.id];
           
           if (oldStatus && oldStatus !== order.status) {
-            hasStatusChanged = true;
+            // Chỉ phát âm thanh nếu không phải lần load đầu
+            if (!isInitialLoad.current) {
+              try {
+                let audioPath = '/status-update.mp3';
+                // Nếu muốn tiếng báo Bếp làm / Đang giao khác nhau, bạn có thể chỉ định file cụ thể
+                if (order.status === 'PREPARING' || order.status === 'DELIVERING') {
+                   audioPath = '/status-update.mp3'; 
+                }
+                const audio = new Audio(audioPath);
+                audio.play().catch(e => console.warn("Trình duyệt chặn autoplay âm thanh, cần khách hàng tương tác trước:", e));
+              } catch (error) {
+                console.error("Lỗi phát âm thanh:", error);
+              }
+            }
           }
           
           // Cập nhật trạng thái mới nhất vào bộ nhớ tạm
           prevStatuses.current[order.id] = order.status;
         });
 
-        // Chỉ phát âm thanh nếu không phải lần load đầu và có sự thay đổi
-        if (!isInitialLoad.current && hasStatusChanged) {
-          try {
-            const audio = new Audio('/status-update.mp3');
-            audio.play().catch(e => console.warn("Trình duyệt chặn autoplay âm thanh:", e));
-          } catch (error) {
-            console.error("Lỗi phát âm thanh:", error);
-          }
-        }
-
         // Đánh dấu đã qua lần tải dữ liệu đầu tiên
-        if (isInitialLoad.current) isInitialLoad.current = false;
+        if (isInitialLoad.current) {
+          isInitialLoad.current = false;
+        }
 
         setOrders(updatedOrders);
         setIsSearching(false);
