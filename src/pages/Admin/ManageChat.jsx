@@ -74,7 +74,7 @@ const ManageChat = () => {
     return () => unsub();
   }, []);
 
-  // 3. FIX: TÌM KIẾM SĐT (Cho phép khách chưa đăng ký tài khoản)
+  // 3. TÌM KIẾM SĐT (Đã sửa để đồng bộ thông tin Users)
   const handleInstantSearch = async (val) => {
     setSearchPhone(val);
     const cleanPhone = val.trim();
@@ -85,7 +85,6 @@ const ManageChat = () => {
         const userRef = doc(db, 'users', cleanPhone);
         const userSnap = await getDoc(userRef);
 
-        // Lấy data hoặc khởi tạo đối tượng rỗng
         const userData = userSnap.exists() ? userSnap.data() : {};
         const chatId = cleanPhone; 
 
@@ -243,7 +242,7 @@ const ManageChat = () => {
               </button>
             </div>
             
-            {/* FIX: Hiển thị tin nhắn từ activeMessages */}
+            {/* Hiển thị tin nhắn từ activeMessages */}
             <div className="flex-1 p-8 overflow-y-auto space-y-6 bg-gray-50/20 dark:bg-gray-900/10 no-scrollbar">
               {activeMessages && activeMessages.length > 0 ? (
                 activeMessages.map((m, i) => {

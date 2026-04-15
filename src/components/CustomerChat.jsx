@@ -1,41 +1,41 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { startChat, sendMessage, markRead } from '../services/chatService';
-import { collection, doc, onSnapshot, query, orderBy, addDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { sendMessage, markRead } from '../services/chatService';
+import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 const CustomerChat = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [chatData, setChatData] = useState(null); // Lưu thông tin trạng thái chung (unread...)
-  const [messages, setMessages] = useState([]); // Lưu danh sách tin nhắn
+  const [chatData, setChatData] = useState(null); 
+  const [messages, setMessages] = useState([]); 
   const [input, setInput] = useState('');
   
-  // 1. Ref xử lý âm thanh (Lấy từ thư mục public trực tiếp)
   const audioRef = useRef(new Audio('/status-update.mp3'));
   const messagesEndRef = useRef(null);
   const msgCountRef = useRef(0);
 
-  // Lấy dữ liệu khách hàng từ localStorage
   const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
   const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
   const phone = savedPhones[0];
 
-  // 2. LẮNG NGHE TRẠNG THÁI PHÒNG CHAT (Chỉ để check unreadUser)
+  // 1. LẮNG NGHE TRẠNG THÁI PHÒNG CHAT
   useEffect(() => {
     if (!phone) return;
     const unsubDoc = onSnapshot(doc(db, 'support_chats', phone), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
         setChatData(data);
-        // Nếu đang mở khung chat mà có tin nhắn chưa đọc, đánh dấu đã xem ngay
         if (isOpen && data.unreadUser) {
           markRead(phone, 'USER');
         }
+      } else {
+        // Nếu bị Admin xóa chat, reset data hiển thị
+        setChatData(null);
       }
     });
     return () => unsubDoc();
   }, [phone, isOpen]);
 
-  // 3. LẮNG NGHE TIN NHẮN TỪ SUBCOLLECTION (Đồng bộ Real-time với Telegram)
+  // 2. LẮNG NGHE TIN NHẮN TỪ SUBCOLLECTION
   useEffect(() => {
     if (!phone) return;
     
@@ -44,10 +44,9 @@ const CustomerChat = () => {
       const msgs = snap.docs.map(doc => doc.data());
       const currentLen = msgs.length;
       
-      // Logic phát âm thanh: Chỉ khi có tin mới từ Admin và không phải lần đầu load
+      // Phát âm thanh khi có tin nhắn mới từ Admin
       if (currentLen > msgCountRef.current && msgCountRef.current !== 0) {
         const lastMsg = msgs[currentLen - 1];
-        // Sử dụng toUpperCase() để tránh lỗi do Webhook gửi 'admin' viết thường
         if (lastMsg?.sender?.toUpperCase() === 'ADMIN') {
           audioRef.current.play().catch(err => console.log("Audio play blocked:", err));
         }
@@ -60,36 +59,25 @@ const CustomerChat = () => {
     return () => unsubMessages();
   }, [phone]);
 
-  // 4. Tự động cuộn xuống cuối
+  // 3. TỰ ĐỘNG CUỘN XUỐNG CUỐI
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, isOpen]);
 
+  // 4. GỬI TIN NHẮN (Tối ưu hóa: Dùng chung chatService)
   const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
     
     const messageText = input.trim();
-    setInput(''); // Xóa text ngay để tạo cảm giác mượt mà
+    setInput(''); 
     
     try {
-      // 1. Cập nhật thông tin khách vào document chính
-      await setDoc(doc(db, 'support_chats', phone), {
-        customerName: userProfile.fullName || 'Khách hàng',
-        avatarUrl: userProfile.avatarUrl || '',
-        unreadAdmin: true,
-        lastUpdated: serverTimestamp() // FIX: Sử dụng lastUpdated để đồng bộ với bộ lọc của trang Admin
-      }, { merge: true });
-
-      // 2. Lưu tin nhắn vào Subcollection để KÍCH HOẠT Cloud Functions (Telegram Bot)
-      await addDoc(collection(db, 'support_chats', phone, 'messages'), {
-        text: messageText,
-        sender: 'USER',
-        createdAt: serverTimestamp()
-      });
-      
+      // Gọi thẳng hàm từ chatService. 
+      // Hàm này sẽ tự động chọc vào collection 'users' để lấy đúng Tên và Avatar của khách.
+      await sendMessage(phone, 'USER', messageText);
     } catch (error) {
       console.error("Lỗi gửi tin nhắn:", error);
     }
@@ -125,7 +113,7 @@ const CustomerChat = () => {
                   <div className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 border border-white dark:border-gray-700 shadow-sm">
                     <img 
                       src={isUser 
-                        ? (userProfile.avatarUrl || `https://ui-avatars.com/api/?name=${userProfile.fullName}&background=random`) 
+                        ? (userProfile.avatarUrl || `https://ui-avatars.com/api/?name=${userProfile.fullName || 'Khách'}&background=random`) 
                         : '/logo-admin.png'
                       } 
                       onError={(e) => { e.target.src = 'https://ui-avatars.com/api/?name=Admin&background=000'; }}
