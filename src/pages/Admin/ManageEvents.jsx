@@ -11,7 +11,8 @@ const ManageEvents = () => {
   const defaultData = {
     luckyXu: { min: 10, max: 100, duration: 15, activeTimes: [] },
     dailyBox: { min: 10, max: 50 },
-    attendance: { coins: 10 }
+    attendance: { coins: 10 },
+    newUserReward: { enabled: true, coins: 1000 } // MỚI: Quà người mới
   };
 
   const [formData, setFormData] = useState(defaultData);
@@ -25,7 +26,8 @@ const ManageEvents = () => {
           setFormData({
             luckyXu: { ...defaultData.luckyXu, ...snap.data().luckyXu },
             dailyBox: { ...defaultData.dailyBox, ...snap.data().dailyBox },
-            attendance: { ...defaultData.attendance, ...snap.data().attendance }
+            attendance: { ...defaultData.attendance, ...snap.data().attendance },
+            newUserReward: { ...defaultData.newUserReward, ...snap.data().newUserReward }
           });
         }
       } catch (error) {
@@ -180,7 +182,7 @@ const ManageEvents = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         
         {/* ========================================================= */}
         {/* KHỐI 2: HỘP QUÀ HẰNG NGÀY */}
@@ -190,13 +192,13 @@ const ManageEvents = () => {
             <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-500 rounded-xl flex items-center justify-center text-white text-xl shadow-lg border-2 border-orange-300">🎁</div>
             <div>
               <h3 className="font-black text-base text-gray-800 dark:text-white uppercase tracking-wide">Hộp quà hằng ngày</h3>
-              <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1">Mỗi khách nhận 1 lần/ngày</p>
+              <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1">Mỗi khách 1 lần/ngày</p>
             </div>
           </div>
           
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-4">
-              <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest w-24">Tối thiểu</span>
+              <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest w-16">Tối thiểu</span>
               <input 
                 type="number" min="1"
                 value={formData.dailyBox.min} 
@@ -205,7 +207,7 @@ const ManageEvents = () => {
               />
             </div>
             <div className="flex items-center justify-between gap-4">
-              <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest w-24">Tối đa</span>
+              <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest w-16">Tối đa</span>
               <input 
                 type="number" min="1"
                 value={formData.dailyBox.max} 
@@ -223,13 +225,13 @@ const ManageEvents = () => {
           <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center text-white text-xl shadow-lg border-2 border-blue-300">📅</div>
             <div>
-              <h3 className="font-black text-base text-gray-800 dark:text-white uppercase tracking-wide">Điểm danh 7 ngày</h3>
-              <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1">Hệ thống tự x10 quà vào ngày 7</p>
+              <h3 className="font-black text-base text-gray-800 dark:text-white uppercase tracking-wide">Điểm danh</h3>
+              <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1">Tự x10 xu vào ngày 7</p>
             </div>
           </div>
           
           <div>
-            <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest ml-1 mb-2 block">Xu nhận mỗi ngày (Cơ bản)</label>
+            <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest ml-1 mb-2 block">Xu nhận mỗi ngày</label>
             <div className="relative">
               <input 
                 type="number" min="1"
@@ -240,8 +242,49 @@ const ManageEvents = () => {
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl">🪙</span>
             </div>
             <p className="text-xs font-bold text-blue-600 dark:text-blue-400 mt-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl">
-              👉 Ngày 7 khách sẽ nhận được: <span className="font-black">{formData.attendance.coins * 10} Xu</span>
+              👉 Ngày 7: <span className="font-black">{formData.attendance.coins * 10} Xu</span>
             </p>
+          </div>
+        </div>
+
+        {/* ========================================================= */}
+        {/* KHỐI 4: QUÀ NGƯỜI MỚI (TẶNG XU ĐĂNG KÝ) */}
+        {/* ========================================================= */}
+        <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-[2.5rem] shadow-sm border border-purple-100 dark:border-purple-900/30 transition-colors md:col-span-2 lg:col-span-1">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center text-white text-xl shadow-lg border-2 border-purple-300">👤</div>
+              <div>
+                <h3 className="font-black text-base text-gray-800 dark:text-white uppercase tracking-wide">Quà người mới</h3>
+                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1">Tặng xu khi đăng ký</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl border border-gray-100 dark:border-gray-700">
+              <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Trạng thái</span>
+              <button 
+                onClick={() => setFormData({...formData, newUserReward: {...formData.newUserReward, enabled: !formData.newUserReward.enabled}})}
+                className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-sm ${formData.newUserReward.enabled ? 'bg-green-500 text-white' : 'bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300'}`}
+              >
+                {formData.newUserReward.enabled ? 'Đang bật' : 'Đang tắt'}
+              </button>
+            </div>
+            
+            <div>
+              <label className="text-[10px] font-black uppercase text-gray-500 tracking-widest ml-1 mb-2 block">Số xu tặng</label>
+              <div className="relative">
+                <input 
+                  type="number" min="0"
+                  value={formData.newUserReward.coins} 
+                  onChange={(e) => setFormData({...formData, newUserReward: {...formData.newUserReward, coins: Number(e.target.value)}})}
+                  disabled={!formData.newUserReward.enabled}
+                  className={`w-full p-4 rounded-2xl border-none font-black text-lg focus:ring-2 focus:ring-purple-500 outline-none transition-all pl-12 ${formData.newUserReward.enabled ? 'bg-gray-50 dark:bg-gray-700 dark:text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'}`} 
+                />
+                <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-xl ${formData.newUserReward.enabled ? '' : 'opacity-50'}`}>🪙</span>
+              </div>
+            </div>
           </div>
         </div>
 

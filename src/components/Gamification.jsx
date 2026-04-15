@@ -11,6 +11,9 @@ const Gamification = () => {
   // Trạng thái hiển thị Popup
   const [showCalendar, setShowCalendar] = useState(false);
   const [rewardMessage, setRewardMessage] = useState(null);
+  
+  // MỚI: State lưu trữ thời gian đếm ngược
+  const [timeLeftToReset, setTimeLeftToReset] = useState("");
 
   // Lấy SĐT từ localStorage (giống cách Home.jsx đang làm)
   const phone = JSON.parse(localStorage.getItem('recentPhones') || '[]')[0];
@@ -43,6 +46,32 @@ const Gamification = () => {
   const canClaimGift = checkAvailableToday(userData?.lastDailyGift);
   const canCheckIn = checkAvailableToday(userData?.lastCheckIn);
   const currentStreak = userData?.checkInStreak || 0;
+
+  // MỚI: Logic đồng hồ đếm ngược reset ngày mới
+  useEffect(() => {
+    if (!showCalendar) return;
+
+    const timer = setInterval(() => {
+      const now = new Date();
+      // Tính mốc 0h:00 sáng mai
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+
+      const diff = tomorrow - now;
+      
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+
+      setTimeLeftToReset(
+        `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+      );
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [showCalendar]);
+
 
   // 3. Gọi API Hộp Quà (Backend)
   const handleOpenGift = async () => {
@@ -147,6 +176,12 @@ const Gamification = () => {
             <div className="text-center mb-6">
               <h2 className="text-xl font-black text-gray-800 dark:text-white uppercase tracking-wide">Điểm danh 7 ngày</h2>
               <p className="text-xs font-bold text-gray-500 mt-1">Duy trì chuỗi để nhận thưởng lớn vào ngày 7!</p>
+              
+              {/* ĐỒNG HỒ RESET */}
+              <div className="inline-flex items-center gap-2 mt-3 px-3 py-1 bg-gray-50 dark:bg-gray-700/50 rounded-full border border-gray-100 dark:border-gray-600">
+                <span className="text-[9px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Làm mới sau:</span>
+                <span className="text-[11px] font-mono font-black text-blue-500 dark:text-blue-400 w-[50px] text-left">{timeLeftToReset}</span>
+              </div>
             </div>
 
             {/* Grid hiển thị 7 ngày */}
