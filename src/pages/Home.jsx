@@ -6,6 +6,10 @@ import UsernamePopup from '../components/UsernamePopup';
 import { useSettings } from '../contexts/SettingsContext'; 
 import { getUserByPhone } from '../services/authService'; 
 
+// IMPORT 2 COMPONENT MỚI
+import Gamification from '../components/Gamification';
+import NotificationCenter from '../components/NotificationCenter';
+
 const Home = () => {
   const navigate = useNavigate();
   const { theme, setTheme } = useSettings(); 
@@ -18,7 +22,6 @@ const Home = () => {
   const [showThemeMenu, setShowThemeMenu] = useState(false);
   const [totalXu, setTotalXu] = useState(0);
 
-  // MỚI: State lưu trữ trạng thái Online của Admin
   const [isAdminOnline, setIsAdminOnline] = useState(false);
 
   const [sysConfig, setSysConfig] = useState({
@@ -38,8 +41,6 @@ const Home = () => {
     // 2. Lắng nghe trạng thái Online của Admin
     const unsubAdminStatus = onSnapshot(doc(db, 'system', 'admin_status'), (doc) => {
       if (doc.exists()) {
-        // Tùy chọn kiểm tra lastActive nếu cần xác định timeout (ví dụ: sau 5p không có tín hiệu thì coi như offline)
-        // Hiện tại chỉ dựa vào flag isOnline do AdminLayout ghi đè
         setIsAdminOnline(doc.data().isOnline || false);
       }
     });
@@ -61,7 +62,7 @@ const Home = () => {
         const unsubUser = onSnapshot(userRef, (snap) => {
           if (snap.exists()) {
             const data = snap.data();
-            setTotalXu(data.totalXu || 0); 
+            setTotalXu(data.totalXu || data.coins || 0); // Ưu tiên load Xu mới cập nhật
             setAvatarUrl(data.avatarUrl || ''); 
             
             if (data.fullName && data.fullName !== customerName) {
@@ -126,7 +127,7 @@ const Home = () => {
   };
 
   return (
-    <div className="min-h-screen bg-orange-50/30 dark:bg-gray-900 flex flex-col items-center p-6 font-sans transition-colors duration-300">
+    <div className="min-h-screen bg-orange-50/30 dark:bg-gray-900 flex flex-col items-center p-6 font-sans transition-colors duration-300 relative">
       
       {/* THÔNG BÁO TỪ ADMIN */}
       {sysConfig.sysNotice && (
@@ -136,21 +137,7 @@ const Home = () => {
       )}
 
       {/* TOP BAR: THIẾT LẬP & AVATAR */}
-      <div className="absolute top-6 right-6 flex gap-3 z-50">
-        {hasOrderedBefore && (
-          <button 
-            onClick={() => navigate('/settings')}
-            className="w-10 h-10 flex items-center justify-center bg-white dark:bg-gray-800 rounded-full shadow-md border border-gray-100 dark:border-gray-700 hover:scale-105 transition-transform overflow-hidden"
-            title="Cài đặt tài khoản"
-          >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-            )}
-          </button>
-        )}
-
+      <div className="absolute top-6 left-6 flex gap-3 z-50">
         <div className="relative">
           <button 
             onClick={() => setShowThemeMenu(!showThemeMenu)}
@@ -160,7 +147,7 @@ const Home = () => {
           </button>
           
           {showThemeMenu && (
-            <div className="absolute right-0 mt-2 w-36 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="absolute left-0 mt-2 w-36 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden animate-in fade-in zoom-in-95">
               {[
                 { id: 'light', label: '☀️ Giao diện sáng' },
                 { id: 'dark', label: '🌙 Giao diện tối' },
@@ -177,6 +164,25 @@ const Home = () => {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="absolute top-6 right-6 flex gap-3 z-50">
+        {/* COMPONENT: NOTIFICATION & MAILBOX */}
+        {hasOrderedBefore && <NotificationCenter />}
+
+        {hasOrderedBefore && (
+          <button 
+            onClick={() => navigate('/settings')}
+            className="w-12 h-12 flex items-center justify-center bg-white dark:bg-gray-800 rounded-full shadow-md border border-gray-100 dark:border-gray-700 hover:scale-105 transition-transform overflow-hidden"
+            title="Cài đặt tài khoản"
+          >
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+            )}
+          </button>
+        )}
       </div>
 
       {/* HEADER LOGO */}
@@ -208,7 +214,7 @@ const Home = () => {
       </div>
 
       {/* CUSTOMER GREETING & XU REWARDS */}
-      <div className="w-full max-w-xs mb-8 flex flex-col items-center">
+      <div className="w-full max-w-xs mb-8 flex flex-col items-center z-10">
         {hasOrderedBefore ? (
           <>
             <div className="w-full bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-orange-100 dark:border-gray-700 text-center relative overflow-hidden transition-colors group">
@@ -254,10 +260,10 @@ const Home = () => {
         )}
       </div>
 
-      {/* ACTION BUTTONS (Đã Cấu Trúc Lại Cân Đối & Thêm Đặt Giao Sau) */}
-      <div className="w-full max-w-xs space-y-4">
+      {/* ACTION BUTTONS */}
+      <div className="w-full max-w-xs space-y-4 z-10">
         
-        {/* Nút 1: Đặt Cơm Ngay (To) */}
+        {/* Nút 1: Đặt Cơm Ngay */}
         <button
           onClick={() => {
             if (!sysConfig.isOpen) return alert("Quán đóng cửa");
@@ -269,7 +275,7 @@ const Home = () => {
           {sysConfig.isOpen ? 'ĐẶT CƠM NGAY' : 'TẠM ĐÓNG CỬA'}
         </button>
 
-        {/* MỚI: Nút 1.5: Đặt giao sau (Chỉ hiện khi quán mở) */}
+        {/* Nút 1.5: Đặt giao sau */}
         {sysConfig.isOpen && (
           <button
             onClick={() => hasOrderedBefore ? navigate(`/order?user=${savedPhone}&type=schedule`) : setIsPopupOpen(true)}
@@ -280,7 +286,7 @@ const Home = () => {
           </button>
         )}
 
-        {/* Nút 2: Kiểm Tra Đơn Hàng (To) */}
+        {/* Nút 2: Kiểm Tra Đơn Hàng */}
         <button
           onClick={() => navigate(hasOrderedBefore ? `/checkorder?user=${savedPhone}` : '/checkorder')}
           className="w-full bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-orange-400 hover:bg-gray-50 dark:hover:bg-gray-700 font-black py-5 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest"
@@ -289,7 +295,7 @@ const Home = () => {
           KIỂM TRA ĐƠN HÀNG
         </button>
 
-        {/* Nút 3 & 4: Đăng Nhập & Đăng Ký (Chia đôi nằm ngang) */}
+        {/* Nút 3 & 4: Đăng Nhập & Đăng Ký */}
         {!hasOrderedBefore && (
           <div className="flex gap-4 pt-2">
             <button
@@ -308,9 +314,11 @@ const Home = () => {
         )}
       </div>
 
+      {/* COMPONENT: HỘP QUÀ VÀ ĐIỂM DANH (Góc trái dưới) */}
+      {hasOrderedBefore && <Gamification />}
+
       {/* TRẠNG THÁI ONLINE CỦA ADMIN VÀ FOOTER */}
-      <div className="mt-auto pt-10 pb-6 text-center w-full flex flex-col items-center">
-        {/* MỚI: Hiển thị trạng thái Admin */}
+      <div className="mt-auto pt-10 pb-6 text-center w-full flex flex-col items-center z-10">
         <div className="flex items-center justify-center gap-2 mb-4 bg-white/50 dark:bg-gray-800/50 px-4 py-2 rounded-full border border-gray-100 dark:border-gray-700 shadow-sm backdrop-blur-sm">
           <div className="relative flex h-2.5 w-2.5">
             {isAdminOnline && (

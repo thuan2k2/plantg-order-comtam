@@ -3,6 +3,7 @@ import { doc, getDoc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth'; 
 import { db } from '../../firebase/config';
 import { updateAdminProfile } from '../../services/authService'; 
+import { resetTestingGamification } from '../../services/chatService'; // Thêm import hàm test
 
 const AdminSettings = () => {
   const auth = getAuth();
@@ -24,6 +25,9 @@ const AdminSettings = () => {
     openTime: '',
     sysNotice: ''
   });
+
+  // State cho Test Reset Gamification
+  const [testPhone, setTestPhone] = useState('');
 
   // Tải cấu hình từ Firebase khi vào trang
   useEffect(() => {
@@ -100,7 +104,7 @@ const AdminSettings = () => {
     }
   };
 
-  // --- MỚI: CÁC HÀM QUẢN LÝ TIN NHẮN NHANH ---
+  // --- CÁC HÀM QUẢN LÝ TIN NHẮN NHANH ---
   const handleAddReply = async (e) => {
     e.preventDefault(); // Ngăn form reload trang
     const text = newReply.trim();
@@ -129,6 +133,20 @@ const AdminSettings = () => {
         console.error("Lỗi xóa tin nhắn nhanh:", error);
         alert("Lỗi khi xóa tin nhắn nhanh!");
       }
+    }
+  };
+
+  // --- HÀM RESET GAMIFICATION (TESTING) ---
+  const handleResetGamification = async () => {
+    if (!testPhone.trim() || testPhone.trim().length < 10) {
+      return alert("Vui lòng nhập đúng Số điện thoại cần reset!");
+    }
+    try {
+      await resetTestingGamification(testPhone.trim());
+      alert(`Đã reset thành công Hộp quà và Lịch điểm danh cho SĐT: ${testPhone}`);
+      setTestPhone('');
+    } catch (error) {
+      alert("Lỗi khi reset: " + error.message);
     }
   };
 
@@ -187,7 +205,7 @@ const AdminSettings = () => {
 
       <hr className="border-dashed border-gray-200 dark:border-gray-700 transition-colors" />
 
-      {/* --- MỚI: 2. KHỐI QUẢN LÝ TIN NHẮN NHANH --- */}
+      {/* 2. KHỐI QUẢN LÝ TIN NHẮN NHANH */}
       <section className="space-y-4">
         <div className="flex justify-between items-end">
           <div>
@@ -315,6 +333,33 @@ const AdminSettings = () => {
             </>
           ) : 'Lưu tất cả thiết lập hệ thống'}
         </button>
+      </section>
+
+      <hr className="border-dashed border-gray-200 dark:border-gray-700 transition-colors" />
+
+      {/* --- MỚI: 4. KHỐI CÔNG CỤ TEST (TẠM THỜI) --- */}
+      <section className="space-y-4">
+        <h2 className="text-xl font-black uppercase tracking-tighter text-red-600 dark:text-red-400">🛠 Công cụ Test (Tạm thời)</h2>
+        <div className="bg-red-50 dark:bg-red-900/10 p-6 sm:p-8 rounded-[2.5rem] border border-red-100 dark:border-red-900/30 shadow-sm flex flex-col sm:flex-row gap-4 items-end transition-colors">
+          <div className="flex-1 w-full">
+            <label className="block text-[10px] font-black text-red-400 dark:text-red-500 uppercase mb-2 tracking-widest ml-1">
+              SĐT cần reset Hộp quà & Điểm danh
+            </label>
+            <input
+              type="tel"
+              value={testPhone}
+              onChange={(e) => setTestPhone(e.target.value)}
+              placeholder="Nhập SĐT khách hàng..."
+              className="w-full p-4 bg-white dark:bg-gray-800 dark:text-white rounded-2xl border border-red-200 dark:border-red-800 outline-none font-bold text-sm focus:ring-2 focus:ring-red-500 transition-all placeholder:text-gray-300 dark:placeholder:text-gray-600"
+            />
+          </div>
+          <button
+            onClick={handleResetGamification}
+            className="w-full sm:w-auto px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg shadow-red-200 dark:shadow-none active:scale-95"
+          >
+            Reset Ngay
+          </button>
+        </div>
       </section>
 
     </div>

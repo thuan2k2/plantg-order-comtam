@@ -15,7 +15,7 @@ const AdminLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [unreadChatCount, setUnreadChatCount] = useState(0); 
 
-  // --- MỚI: THEO DÕI TRẠNG THÁI ONLINE/OFFLINE CỦA ADMIN ---
+  // --- THEO DÕI TRẠNG THÁI ONLINE/OFFLINE CỦA ADMIN ---
   useEffect(() => {
     const adminStatusRef = doc(db, 'system', 'admin_status');
     
@@ -34,11 +34,8 @@ const AdminLayout = () => {
 
     // 2. Hàm set Offline
     const setOffline = () => {
-      // Dùng sendBeacon nếu có thể để đảm bảo chạy khi tab bị tắt
       const data = JSON.stringify({ isOnline: false });
       const blob = new Blob([data], { type: 'application/json' });
-      // LƯU Ý: Đây là phương pháp dự phòng nâng cao (không bắt buộc, nhưng Firebase API đôi khi không kịp chạy lúc tắt tab)
-      // Trong mô hình này, ta gọi Firebase updateDoc trước
       setDoc(adminStatusRef, { isOnline: false, lastActive: serverTimestamp() }, { merge: true }).catch(e => console.log(e));
     };
 
@@ -72,7 +69,6 @@ const AdminLayout = () => {
   const handleLogout = async () => {
     if (window.confirm("Bạn có chắc chắn muốn thoát quyền Quản trị viên không?")) {
       try {
-        // Cập nhật trạng thái offline trước khi logout
         const adminStatusRef = doc(db, 'system', 'admin_status');
         await setDoc(adminStatusRef, { isOnline: false, lastActive: serverTimestamp() }, { merge: true });
 
@@ -114,6 +110,10 @@ const AdminLayout = () => {
     )},
     { path: '/admin/users', label: 'Khách hàng', icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+    )},
+    // --- BỔ SUNG: TRANG QUẢN LÝ THÔNG BÁO & HÒM THƯ ---
+    { path: '/admin/communication', label: 'Thông báo & Quà', icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
     )},
     { path: '/admin/settings', label: 'Cài đặt hệ thống', icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
@@ -225,6 +225,8 @@ const AdminLayout = () => {
                 {isActive('/admin/vouchers') && 'Kho Voucher'}
                 {isActive('/admin/users') && 'Khách hàng'}
                 {isActive('/admin/menu') && 'Thực đơn'}
+                {/* BỔ SUNG TIÊU ĐỀ TRANG MỚI */}
+                {isActive('/admin/communication') && 'Thông báo & Quà tặng'}
                 {isActive('/admin/settings') && 'Cài đặt hệ thống'}
               </h1>
               <p className="text-[8px] sm:text-[9px] text-green-500 font-bold uppercase tracking-widest mt-0.5 truncate flex items-center gap-1">

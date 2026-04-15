@@ -3,6 +3,7 @@ import {
   collection, doc, setDoc, updateDoc, getDoc,
   onSnapshot, query, orderBy, serverTimestamp, addDoc, getDocs, writeBatch 
 } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions'; // THÊM THƯ VIỆN NÀY
 
 const CHAT_COLLECTION = 'support_chats';
 
@@ -112,4 +113,64 @@ export const subscribeToAdminChats = (callback) => {
     const chats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     callback(chats);
   });
+};
+
+// ============================================================================
+// HỆ THỐNG GAMIFICATION & HÒM THƯ (NEW)
+// ============================================================================
+
+const functions = getFunctions();
+
+// 6. Giao tiếp với API Nhận đính kèm Hòm thư
+export const claimMailboxAttachment = async (phone, mailId) => {
+  try {
+    const claimFn = httpsCallable(functions, 'claimMailAttachment');
+    const result = await claimFn({ phone, mailId });
+    return result.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// 7. Giao tiếp với API Mở hộp quà hàng ngày
+export const claimDailyReward = async (phone) => {
+  try {
+    const giftFn = httpsCallable(functions, 'claimDailyGift');
+    const result = await giftFn({ phone });
+    return result.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// 8. Giao tiếp với API Điểm danh 7 ngày
+export const claimDailyCheckIn = async (phone) => {
+  try {
+    const checkInFn = httpsCallable(functions, 'claimDailyCheckIn');
+    const result = await checkInFn({ phone });
+    return result.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+// ============================================================================
+// HÀM TESTING (Dùng để reset giả lập qua ngày mới)
+// ============================================================================
+
+// 9. Xóa thời gian nhận quà để test lại
+export const resetTestingGamification = async (phone) => {
+  try {
+    const userRef = doc(db, 'users', phone);
+    // Ghi đè các trường thời gian thành null để Frontend và Backend hiểu là chưa nhận
+    await updateDoc(userRef, {
+      lastDailyGift: null,
+      lastCheckIn: null
+    });
+    console.log("Đã reset thời gian nhận thưởng! Bạn có thể mở lại Hộp quà và Điểm danh.");
+    return true;
+  } catch (error) {
+    console.error("Lỗi khi reset test:", error);
+    throw error;
+  }
 };

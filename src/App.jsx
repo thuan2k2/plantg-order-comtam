@@ -29,6 +29,9 @@ import AdminLogin from './pages/Admin/AdminLogin';
 import Statistics from './pages/Admin/Statistics'; 
 import AdminSettings from './pages/Admin/AdminSettings'; 
 
+// --- MỚI: Bổ sung trang Quản lý Truyền thông (Thông báo & Hòm thư) ---
+import ManageCommunication from './pages/Admin/ManageCommunication'; 
+
 // CSS Toàn cục
 import './index.css';
 
@@ -98,6 +101,8 @@ function App() {
               <Route path="vouchers" element={<ManageVouchers />} />
               <Route path="chat" element={<ManageChat />} />
               <Route path="settings" element={<AdminSettings />} /> 
+              {/* --- MỚI: Route cho Thông báo và Hòm thư --- */}
+              <Route path="communication" element={<ManageCommunication />} />
             </Route>
 
             {/* --- Route xử lý lỗi 404 --- */}
