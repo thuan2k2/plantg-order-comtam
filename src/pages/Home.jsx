@@ -10,6 +10,28 @@ import { getUserByPhone } from '../services/authService';
 import Gamification from '../components/Gamification';
 import NotificationCenter from '../components/NotificationCenter';
 
+// --- HÀM KIỂM TRA GIỜ MỞ CỬA ---
+const checkIfOpen = (openTimeStr) => {
+  if (!openTimeStr || !openTimeStr.includes('-')) return true; // Mặc định mở nếu không parse được
+  
+  try {
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes(); 
+
+    const [startStr, endStr] = openTimeStr.split('-');
+    
+    const [startH, startM] = startStr.trim().split(':').map(Number);
+    const start = (startH || 0) * 60 + (startM || 0);
+
+    const [endH, endM] = endStr.trim().split(':').map(Number);
+    const end = (endH || 0) * 60 + (endM || 0);
+
+    return currentTime >= start && currentTime <= end;
+  } catch (e) {
+    return true;
+  }
+};
+
 const Home = () => {
   const navigate = useNavigate();
   const { theme, setTheme } = useSettings(); 
@@ -26,12 +48,13 @@ const Home = () => {
 
   const [sysConfig, setSysConfig] = useState({
     isOpen: true,
+    isActuallyOpen: true, // MỚI: Trạng thái thực tế sau khi tính toán giờ
     openTime: '11:00 - 21:00',
     sysNotice: ''
   });
 
   // ====================================================
-  // MỚI: STATES CHO SỰ KIỆN LUCKY XU (LÌ XÌ RƠI)
+  // STATES CHO SỰ KIỆN LUCKY XU (LÌ XÌ RƠI)
   // ====================================================
   const [luckyConfig, setLuckyConfig] = useState(null);
   const [showLuckyXu, setShowLuckyXu] = useState(false);
@@ -39,15 +62,27 @@ const Home = () => {
   const [luckyReward, setLuckyReward] = useState(null);
 
   useEffect(() => {
-    // 1. Lắng nghe thay đổi Cấu hình hệ thống
-    const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (doc) => {
-      if (doc.exists()) setSysConfig(doc.data());
+    // 1. Lắng nghe thay đổi Cấu hình hệ thống & Cập nhật tự động theo giờ
+    const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const actuallyOpen = data.isOpen && checkIfOpen(data.openTime);
+        setSysConfig({ ...data, isActuallyOpen: actuallyOpen });
+      }
     });
 
+    // 1.5 Tạo timer để check giờ mở cửa tự động mỗi phút
+    const openStatusTimer = setInterval(() => {
+      setSysConfig(prev => ({
+        ...prev,
+        isActuallyOpen: prev.isOpen && checkIfOpen(prev.openTime)
+      }));
+    }, 60000);
+
     // 2. Lắng nghe trạng thái Online của Admin
-    const unsubAdminStatus = onSnapshot(doc(db, 'system', 'admin_status'), (doc) => {
-      if (doc.exists()) {
-        setIsAdminOnline(doc.data().isOnline || false);
+    const unsubAdminStatus = onSnapshot(doc(db, 'system', 'admin_status'), (docSnap) => {
+      if (docSnap.exists()) {
+        setIsAdminOnline(docSnap.data().isOnline || false);
       }
     });
 
@@ -116,25 +151,24 @@ const Home = () => {
       unsubConfig();
       unsubAdminStatus();
       unsubEvents();
+      clearInterval(openStatusTimer);
       if (typeof cleanupUser === 'function') cleanupUser();
     };
   }, []);
 
   // ====================================================
-  // MỚI: VÒNG LẶP KIỂM TRA GIỜ XUẤT HIỆN LUCKY XU
+  // VÒNG LẶP KIỂM TRA GIỜ XUẤT HIỆN LUCKY XU
   // ====================================================
   useEffect(() => {
     if (!luckyConfig || !savedPhone) return;
 
     const checkTime = async () => {
-      // Đang hiển thị hoặc đang mở quà thì không check nữa tránh đè popup
       if (showLuckyXu || isOpeningLuckyXu || luckyReward !== null) return;
 
       const now = new Date();
       const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
       
       if (luckyConfig.activeTimes && luckyConfig.activeTimes.includes(currentTime)) {
-        // Kiểm tra xem khách đã nhận trong phút này chưa
         const todayStr = now.toDateString();
         const timeKey = `${todayStr} ${currentTime}`;
         
@@ -142,7 +176,6 @@ const Home = () => {
         if (userSnap.exists() && userSnap.data().lastLuckyReceived !== timeKey) {
           setShowLuckyXu(true);
           
-          // Tự động ẩn sau X giây nếu không click
           window.luckyTimeout = setTimeout(() => {
             setShowLuckyXu(false);
           }, (luckyConfig.duration || 15) * 1000);
@@ -150,7 +183,6 @@ const Home = () => {
       }
     };
 
-    // Kiểm tra mỗi 10 giây để đảm bảo bắt đúng phút
     const timer = setInterval(checkTime, 10000); 
     return () => {
       clearInterval(timer);
@@ -159,12 +191,11 @@ const Home = () => {
   }, [luckyConfig, savedPhone, showLuckyXu, isOpeningLuckyXu, luckyReward]);
 
   // ====================================================
-  // MỚI: HÀM XỬ LÝ KHUI LÌ XÌ
+  // HÀM XỬ LÝ KHUI LÌ XÌ
   // ====================================================
   const handleOpenLuckyXu = async () => {
     if (!savedPhone || isOpeningLuckyXu) return;
     
-    // Hủy lệnh tự động đóng phong bì khi người dùng đã bấm
     if (window.luckyTimeout) clearTimeout(window.luckyTimeout);
     
     setIsOpeningLuckyXu(true);
@@ -177,7 +208,6 @@ const Home = () => {
     const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     const timeKey = `${now.toDateString()} ${currentTime}`;
 
-    // Chốt chặn cuối cùng để chống bug 2 thiết bị bấm cùng lúc
     if (userData.lastLuckyReceived === timeKey) {
       alert("Bạn đã nhận lì xì ở khung giờ này rồi!");
       setIsOpeningLuckyXu(false);
@@ -185,7 +215,6 @@ const Home = () => {
       return;
     }
 
-    // Delay 3 giây tạo cảm giác hồi hộp
     setTimeout(async () => {
       try {
         const min = luckyConfig.min || 1;
@@ -194,7 +223,6 @@ const Home = () => {
 
         const currentXu = userData.totalXu || userData.coins || 0;
 
-        // Cập nhật Database
         await updateDoc(userRef, {
           totalXu: currentXu + randomXu,
           coins: currentXu + randomXu,
@@ -283,12 +311,12 @@ const Home = () => {
       </div>
 
       {/* HEADER LOGO */}
-      <div className={`w-full max-w-md mt-24 mb-8 text-center transition-all duration-500 ${sysConfig.isOpen ? '' : 'grayscale opacity-70'}`}>
+      <div className={`w-full max-w-md mt-24 mb-8 text-center transition-all duration-500 ${sysConfig.isActuallyOpen ? '' : 'grayscale opacity-70'}`}>
         <div className="relative inline-block">
-          <div className={`w-28 h-28 ${sysConfig.isOpen ? 'bg-orange-500' : 'bg-gray-500'} rounded-full flex items-center justify-center shadow-2xl shadow-orange-200 dark:shadow-none border-4 border-white dark:border-gray-800 transition-colors`}>
+          <div className={`w-28 h-28 ${sysConfig.isActuallyOpen ? 'bg-orange-500' : 'bg-gray-500'} rounded-full flex items-center justify-center shadow-2xl shadow-orange-200 dark:shadow-none border-4 border-white dark:border-gray-800 transition-colors`}>
             <span className="text-5xl">🍱</span>
           </div>
-          {sysConfig.isOpen ? (
+          {sysConfig.isActuallyOpen ? (
             <div className="absolute -top-2 -right-4 bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-lg rotate-12 shadow-md">
               HOT!
             </div>
@@ -302,7 +330,7 @@ const Home = () => {
         <div className="mt-6">
           <h1 className="text-4xl font-black text-gray-800 dark:text-gray-100 tracking-tighter leading-none transition-colors">
             CƠM TẤM VINHOMES <br/>
-            <span className={`${sysConfig.isOpen ? 'text-orange-600' : 'text-gray-500'} text-2xl uppercase italic`}>Kitchen House</span>
+            <span className={`${sysConfig.isActuallyOpen ? 'text-orange-600' : 'text-gray-500'} text-2xl uppercase italic`}>Kitchen House</span>
           </h1>
           <div className="flex justify-center gap-1 mt-3">
             {[1,2,3,4,5].map(i => <span key={i} className="text-yellow-500 text-sm">⭐</span>)}
@@ -360,16 +388,16 @@ const Home = () => {
       <div className="w-full max-w-xs space-y-4 z-10">
         <button
           onClick={() => {
-            if (!sysConfig.isOpen) return alert("Quán đóng cửa");
+            if (!sysConfig.isActuallyOpen) return alert(`Quán đang đóng cửa.\nGiờ mở cửa: ${sysConfig.openTime || '11:00 - 21:00'}`);
             hasOrderedBefore ? navigate(`/order?user=${savedPhone}`) : setIsPopupOpen(true);
           }}
-          className={`w-full ${sysConfig.isOpen ? 'bg-gray-800 dark:bg-orange-600 hover:bg-black dark:hover:bg-orange-700 shadow-xl shadow-gray-200 dark:shadow-none' : 'bg-gray-400 cursor-not-allowed'} text-white font-black py-5 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest`}
+          className={`w-full ${sysConfig.isActuallyOpen ? 'bg-gray-800 dark:bg-orange-600 hover:bg-black dark:hover:bg-orange-700 shadow-xl shadow-gray-200 dark:shadow-none' : 'bg-gray-400 cursor-not-allowed'} text-white font-black py-5 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest`}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
-          {sysConfig.isOpen ? 'ĐẶT CƠM NGAY' : 'TẠM ĐÓNG CỬA'}
+          {sysConfig.isActuallyOpen ? 'ĐẶT CƠM NGAY' : 'TẠM ĐÓNG CỬA'}
         </button>
 
-        {sysConfig.isOpen && (
+        {sysConfig.isActuallyOpen && (
           <button
             onClick={() => hasOrderedBefore ? navigate(`/order?user=${savedPhone}&type=schedule`) : setIsPopupOpen(true)}
             className="w-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 font-black py-4 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-xs tracking-widest border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/50"
@@ -427,7 +455,7 @@ const Home = () => {
       </div>
 
       {/* ========================================================= */}
-      {/* MỚI: OVERLAY GIAO DIỆN SỰ KIỆN LUCKY XU */}
+      {/* OVERLAY GIAO DIỆN SỰ KIỆN LUCKY XU */}
       {/* ========================================================= */}
       {showLuckyXu && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'; 
+import { db } from '../firebase/config';
 import StatusBadge from '../components/StatusBadge'; 
 import CountdownBorder from '../components/CountdownBorder'; 
 import { 
@@ -59,6 +61,11 @@ const OrderCard = ({ order }) => {
   const [cancelReason, setCancelReason] = useState('');
   const [showPaymentSelection, setShowPaymentSelection] = useState(false);
 
+  // MỚI: State cho Đánh giá (Rating)
+  const [ratingStars, setRatingStars] = useState(5);
+  const [ratingComment, setRatingComment] = useState('');
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+
   useEffect(() => {
     if (order.status === 'PENDING' && order.createdAt) {
       const calculateTime = () => {
@@ -108,11 +115,35 @@ const OrderCard = ({ order }) => {
     }
   };
 
+  // --- MỚI: HÀM GỬI ĐÁNH GIÁ ---
+  const handleSubmitRating = async (e) => {
+    e.preventDefault();
+    if (isSubmittingRating) return;
+    setIsSubmittingRating(true);
+
+    try {
+      await updateDoc(doc(db, 'orders', order.id), {
+        rating: {
+          stars: ratingStars,
+          comment: ratingComment.trim(),
+          createdAt: serverTimestamp(),
+          adminReply: "" // Khởi tạo trống để Admin phản hồi sau
+        }
+      });
+      alert("Cảm ơn bạn đã đánh giá món ăn!");
+    } catch (error) {
+      console.error("Lỗi gửi đánh giá:", error);
+      alert("Có lỗi xảy ra, vui lòng thử lại.");
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
+
   const isProcessing = order.status === 'PREPARING' || order.status === 'DELIVERING';
   const isWalletPayment = order.paymentMethod === 'WALLET';
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 p-6 overflow-hidden transition-all animate-in slide-in-from-bottom-4 relative group">
+    <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 p-6 overflow-hidden transition-all animate-in slide-in-from-bottom-4 relative group flex flex-col h-full">
       
       {/* VÒNG ĐẾM NGƯỢC */}
       <CountdownBorder 
@@ -120,7 +151,7 @@ const OrderCard = ({ order }) => {
         isActive={isProcessing} 
       />
 
-      <div className="relative z-10">
+      <div className="relative z-10 flex-1 flex flex-col">
         <div className="flex justify-between items-center mb-4">
           <div>
             <span className="font-mono text-[10px] font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-lg uppercase tracking-widest transition-colors">
@@ -131,7 +162,7 @@ const OrderCard = ({ order }) => {
           <StatusBadge status={order.status} />
         </div>
 
-        <div className="space-y-3 mb-6">
+        <div className="space-y-3 mb-6 flex-1">
           <p className="text-[15px] text-gray-800 dark:text-gray-100 font-black leading-tight transition-colors">{order.items}</p>
           <div className="flex justify-between items-end border-t border-dashed dark:border-gray-700 pt-3 transition-colors">
             <span className="text-[10px] text-gray-400 dark:text-gray-500 font-black uppercase">Thành tiền:</span>
@@ -182,7 +213,68 @@ const OrderCard = ({ order }) => {
           </div>
         )}
 
-        <button onClick={handleReOrder} className="w-full py-4 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-orange-100 dark:border-orange-900/30 flex items-center justify-center gap-2 mb-4 transition-all active:scale-95 hover:bg-orange-100 dark:hover:bg-orange-900/40">
+        {/* ======================================= */}
+        {/* MỚI: KHU VỰC ĐÁNH GIÁ (CHỈ HIỆN KHI COMPLETED) */}
+        {/* ======================================= */}
+        {order.status === 'COMPLETED' && (
+          <div className="mb-4">
+            {!order.rating ? (
+              <form onSubmit={handleSubmitRating} className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-3xl border border-yellow-100 dark:border-yellow-900/30">
+                <p className="text-[10px] font-black text-yellow-600 dark:text-yellow-500 uppercase tracking-widest mb-2 text-center">Đánh giá món ăn</p>
+                <div className="flex justify-center gap-1 mb-3">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button 
+                      key={star} 
+                      type="button" 
+                      onClick={() => setRatingStars(star)}
+                      className={`text-2xl transition-all ${star <= ratingStars ? 'text-yellow-400 scale-110' : 'text-gray-300 dark:text-gray-600 grayscale'}`}
+                    >
+                      ⭐
+                    </button>
+                  ))}
+                </div>
+                <textarea 
+                  placeholder="Chia sẻ cảm nhận của bạn (tùy chọn)..." 
+                  value={ratingComment} 
+                  onChange={(e) => setRatingComment(e.target.value)} 
+                  className="w-full p-3 text-xs bg-white dark:bg-gray-800 dark:text-white rounded-xl mb-3 outline-none transition-colors border border-yellow-200 dark:border-gray-700 focus:ring-2 focus:ring-yellow-400 resize-none" 
+                  rows="2" 
+                />
+                <button 
+                  type="submit" 
+                  disabled={isSubmittingRating}
+                  className={`w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isSubmittingRating ? 'bg-gray-400 text-white' : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500 shadow-md shadow-yellow-200 dark:shadow-none active:scale-95'}`}
+                >
+                  {isSubmittingRating ? 'Đang gửi...' : 'Gửi đánh giá'}
+                </button>
+              </form>
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-3xl border border-gray-100 dark:border-gray-700">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Đánh giá của bạn</span>
+                  <div className="flex text-yellow-400 text-sm">
+                    {"★".repeat(order.rating.stars)}{"☆".repeat(5-order.rating.stars)}
+                  </div>
+                </div>
+                {order.rating.comment && (
+                  <p className="text-xs text-gray-600 dark:text-gray-300 italic mb-2">"{order.rating.comment}"</p>
+                )}
+                {/* HIỂN THỊ PHẢN HỒI CỦA ADMIN */}
+                {order.rating.adminReply && (
+                  <div className="mt-3 pt-3 border-t border-dashed border-gray-200 dark:border-gray-700">
+                    <p className="text-[9px] font-black text-blue-500 dark:text-blue-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                      Phản hồi từ Quán
+                    </p>
+                    <p className="text-xs text-gray-800 dark:text-gray-200 font-medium">"{order.rating.adminReply}"</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <button onClick={handleReOrder} className="w-full py-4 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-orange-100 dark:border-orange-900/30 flex items-center justify-center gap-2 mb-4 transition-all active:scale-95 hover:bg-orange-100 dark:hover:bg-orange-900/40 mt-auto">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
           Đặt lại đơn này
         </button>
@@ -262,12 +354,11 @@ const CheckOrder = () => {
             if (!isInitialLoad.current) {
               try {
                 let audioPath = '/status-update.mp3';
-                // Nếu muốn tiếng báo Bếp làm / Đang giao khác nhau, bạn có thể chỉ định file cụ thể
                 if (order.status === 'PREPARING' || order.status === 'DELIVERING') {
                    audioPath = '/status-update.mp3'; 
                 }
                 const audio = new Audio(audioPath);
-                audio.play().catch(e => console.warn("Trình duyệt chặn autoplay âm thanh, cần khách hàng tương tác trước:", e));
+                audio.play().catch(e => console.warn("Trình duyệt chặn autoplay âm thanh:", e));
               } catch (error) {
                 console.error("Lỗi phát âm thanh:", error);
               }

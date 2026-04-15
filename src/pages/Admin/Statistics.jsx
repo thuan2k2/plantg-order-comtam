@@ -27,6 +27,9 @@ const Statistics = () => {
   const [detailsModal, setDetailsModal] = useState(null);
   const [undoEmail, setUndoEmail] = useState('');
 
+  // MỚI: STATE MODAL XEM LOG THỜI GIAN ĐƠN HÀNG
+  const [logModalOrder, setLogModalOrder] = useState(null);
+
   useEffect(() => {
     setIsLoading(true);
     const unsubscribe = subscribeToAllOrders((data) => {
@@ -123,6 +126,29 @@ const Statistics = () => {
     }
   };
 
+  // MỚI: HÀM TÍNH TỔNG THỜI GIAN HOÀN THÀNH
+  const calculateTotalTime = (logArray) => {
+    if (!logArray || logArray.length < 2) return null;
+    
+    // Tìm thời điểm PENDING (hoặc PREPARING) và COMPLETED
+    const startLog = logArray.find(l => l.status === 'PREPARING' || l.status === 'PENDING');
+    const endLog = logArray.find(l => l.status === 'COMPLETED');
+    
+    if (startLog?.time && endLog?.time) {
+      const startTime = startLog.time.toDate();
+      const endTime = endLog.time.toDate();
+      const diffMs = endTime - startTime;
+      
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 60) return `${diffMins} phút`;
+      
+      const hours = Math.floor(diffMins / 60);
+      const mins = diffMins % 60;
+      return `${hours} giờ ${mins} phút`;
+    }
+    return null;
+  };
+
 
   if (isLoading) return <div className="p-20 text-center font-black text-blue-500 animate-pulse uppercase tracking-widest text-xs">Đang tải dữ liệu hệ thống...</div>;
 
@@ -214,7 +240,14 @@ const Statistics = () => {
                   {filteredOrders.map(order => (
                     <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="px-8 py-5">
-                        <span className="font-mono font-black text-blue-600 text-xs uppercase">#{order.id.slice(-6)}</span>
+                        {/* NÚT BẤM XEM LOG THỜI GIAN */}
+                        <button 
+                          onClick={() => setLogModalOrder(order)}
+                          className="font-mono font-black text-blue-600 text-xs uppercase hover:underline cursor-pointer flex items-center gap-1"
+                          title="Bấm để xem Log thời gian đơn hàng"
+                        >
+                          #{order.id.slice(-6)} ⏱️
+                        </button>
                         <p className="text-[10px] text-gray-400 font-bold mt-1 tracking-tight">{order.time}</p>
                       </td>
                       <td className="px-8 py-5">
@@ -281,10 +314,66 @@ const Statistics = () => {
       )}
 
       {/* ======================================= */}
+      {/* MỚI: MODAL XEM LOG THỜI GIAN */}
+      {/* ======================================= */}
+      {logModalOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl relative">
+            <button 
+              onClick={() => setLogModalOrder(null)} 
+              className="absolute top-6 right-6 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-red-500 transition-colors"
+            >✕</button>
+
+            <h2 className="text-xl font-black text-gray-800 uppercase tracking-tighter mb-2">Log thời gian</h2>
+            <p className="font-mono font-black text-blue-600 text-xs mb-6">ĐƠN #{logModalOrder.id.slice(-6).toUpperCase()}</p>
+
+            <div className="space-y-4 mb-8">
+              {logModalOrder.statusLog && logModalOrder.statusLog.length > 0 ? (
+                logModalOrder.statusLog.map((log, index) => (
+                  <div key={index} className="flex gap-4 items-start relative">
+                    {/* Đường kẻ dọc nối các timeline */}
+                    {index !== logModalOrder.statusLog.length - 1 && (
+                      <div className="absolute left-[9px] top-6 bottom-[-16px] w-[2px] bg-gray-100"></div>
+                    )}
+                    
+                    <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5 z-10 border-2 border-white">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    </div>
+                    
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest">
+                        {log.time?.toDate().toLocaleString('vi-VN')}
+                      </p>
+                      <div className="mt-1">
+                        <StatusBadge status={log.status} />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 bg-gray-50 rounded-2xl text-center">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Không có dữ liệu log</p>
+                  <p className="text-xs text-gray-500 mt-1">Đơn này được tạo trước khi hệ thống ghi log được kích hoạt.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Tính tổng thời gian */}
+            {logModalOrder.status === 'COMPLETED' && calculateTotalTime(logModalOrder.statusLog) && (
+              <div className="bg-green-50 p-4 rounded-2xl border border-green-100 flex justify-between items-center">
+                <span className="text-[10px] font-black text-green-600 uppercase tracking-widest">Tổng T/g hoàn thành:</span>
+                <span className="font-black text-green-700 text-sm">{calculateTotalTime(logModalOrder.statusLog)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ======================================= */}
       {/* MODAL: CHI TIẾT & BẢO MẬT HOÀN TÁC XÓA */}
       {/* ======================================= */}
       {detailsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-200">
             <h2 className="text-xl font-black text-gray-800 uppercase tracking-tighter mb-4">Hồ sơ đơn xóa</h2>
             

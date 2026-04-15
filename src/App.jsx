@@ -29,9 +29,10 @@ import AdminLogin from './pages/Admin/AdminLogin';
 import Statistics from './pages/Admin/Statistics'; 
 import AdminSettings from './pages/Admin/AdminSettings'; 
 import ManageCommunication from './pages/Admin/ManageCommunication'; 
-
-// --- MỚI: Bổ sung trang Quản lý Sự kiện (Hộp quà, Điểm danh, Lucky Xu) ---
 import ManageEvents from './pages/Admin/ManageEvents'; 
+
+// --- MỚI: Bổ sung trang Quản lý Đánh giá Đơn hàng ---
+import ManageRatings from './pages/Admin/ManageRatings'; 
 
 // CSS Toàn cục
 import './index.css';
@@ -100,9 +101,10 @@ function App() {
               <Route path="vouchers" element={<ManageVouchers />} />
               <Route path="chat" element={<ManageChat />} />
               <Route path="communication" element={<ManageCommunication />} />
-              
-              {/* --- KÍCH HOẠT ĐƯỜNG DẪN /admin/events TẠI ĐÂY --- */}
               <Route path="events" element={<ManageEvents />} />
+              
+              {/* --- KÍCH HOẠT ĐƯỜNG DẪN /admin/ratings TẠI ĐÂY --- */}
+              <Route path="ratings" element={<ManageRatings />} />
               
               <Route path="settings" element={<AdminSettings />} /> 
             </Route>
