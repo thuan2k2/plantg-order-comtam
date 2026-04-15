@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, orderBy, onSnapshot, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, getDoc, setDoc, serverTimestamp, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import { sendMessage, markRead, closeChat } from '../../services/chatService';
+import { sendMessage, markRead } from '../../services/chatService'; // Đã gỡ closeChat cũ vì tích hợp thẳng batch vào đây
 
 const ManageChat = () => {
   const [chats, setChats] = useState([]);
   const [activeId, setActiveId] = useState(null);
+  const [activeMessages, setActiveMessages] = useState([]); // STATE MỚI: Lưu tin nhắn của phiên chat hiện tại
   const [reply, setReply] = useState('');
   const [searchPhone, setSearchPhone] = useState('');
   const [isSearching, setIsSearching] = useState(false);
 
-  // MỚI: State cho Tin nhắn nhanh
+  // State cho Tin nhắn nhanh
   const [quickReplies, setQuickReplies] = useState([]);
   const [showQuickMenu, setShowQuickMenu] = useState(false);
 
@@ -22,17 +23,17 @@ const ManageChat = () => {
     audioRef.current.volume = 0.5;
   }, []);
 
-  // 1. Lắng nghe danh sách Chat real-time
+  // 1. LẮNG NGHE DANH SÁCH CHAT (Chỉ lấy siêu dữ liệu & trạng thái Chưa đọc)
   useEffect(() => {
     const q = query(collection(db, 'support_chats'), orderBy('lastUpdated', 'desc'));
     const unsubscribe = onSnapshot(q, (snap) => {
       const newChats = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+      // LOGIC CHUÔNG MỚI: Kêu khi có tin nhắn chưa đọc và thời gian cập nhật thay đổi
       newChats.forEach(newChat => {
         const oldChat = prevChatsRef.current.find(c => c.id === newChat.id);
-        if (!oldChat || newChat.messages?.length > oldChat.messages?.length) {
-          const lastMsg = newChat.messages?.[newChat.messages.length - 1];
-          if (lastMsg && lastMsg.sender === 'USER') {
+        if (newChat.unreadAdmin) {
+          if (!oldChat || !oldChat.unreadAdmin || (newChat.lastUpdated?.toMillis() !== oldChat.lastUpdated?.toMillis())) {
             audioRef.current.play().catch(e => console.log("Chuông bị chặn:", e));
           }
         }
@@ -44,7 +45,28 @@ const ManageChat = () => {
     return () => unsubscribe();
   }, []);
 
-  // MỚI: Lắng nghe danh sách Tin nhắn nhanh từ Firestore
+  // 2. LẮNG NGHE TIN NHẮN TỪ SUBCOLLECTION CHO CHAT ĐANG MỞ
+  useEffect(() => {
+    if (!activeId) {
+      setActiveMessages([]);
+      return;
+    }
+    
+    // Truy vấn thẳng vào subcollection 'messages'
+    const q = query(
+      collection(db, 'support_chats', activeId, 'messages'),
+      orderBy('createdAt', 'asc')
+    );
+    
+    const unsub = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setActiveMessages(msgs);
+    });
+    
+    return () => unsub();
+  }, [activeId]);
+
+  // Lắng nghe danh sách Tin nhắn nhanh từ Firestore
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'system', 'quick_replies'), (doc) => {
       if (doc.exists()) {
@@ -54,12 +76,11 @@ const ManageChat = () => {
     return () => unsub();
   }, []);
 
-  // 2. Tìm kiếm SĐT để chủ động nhắn tin (TÌM NGAY KHI GÕ)
+  // 3. TÌM KIẾM SĐT KHÁCH
   const handleInstantSearch = async (val) => {
     setSearchPhone(val);
     const cleanPhone = val.trim();
     
-    // Chỉ bắt đầu tìm khi nhập đủ 10 số
     if (cleanPhone.length >= 10) {
       setIsSearching(true);
       try {
@@ -73,21 +94,20 @@ const ManageChat = () => {
           const chatRef = doc(db, 'support_chats', chatId);
           const chatSnap = await getDoc(chatRef);
 
+          // Tạo mới phòng chat nếu chưa có (Lưu ý: Không tạo mảng messages nữa)
           if (!chatSnap.exists()) {
             await setDoc(chatRef, {
               userPhone: cleanPhone,
               userName: userData.fullName || 'Khách hàng',
               userAvatar: userData.avatarUrl || '',
-              messages: [],
               lastUpdated: serverTimestamp(),
               unreadAdmin: false,
               unreadUser: false
             });
           }
           setActiveId(chatId);
-          setSearchPhone(''); // Xóa ô tìm kiếm sau khi tìm thấy
+          setSearchPhone(''); 
         } else {
-          // Báo lỗi nhẹ (có thể bỏ qua alert để đỡ phiền nếu gõ sai số)
           console.warn("Không tìm thấy khách hàng.");
         }
       } catch (error) {
@@ -100,11 +120,12 @@ const ManageChat = () => {
 
   const activeChat = chats.find(c => c.id === activeId);
 
+  // Auto-scroll xuống cuối khi có tin nhắn mới
   useEffect(() => {
-    if (activeChat) {
+    if (activeMessages.length > 0) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [activeChat?.messages]);
+  }, [activeMessages]);
 
   const handleReply = async (e) => {
     e.preventDefault();
@@ -113,21 +134,42 @@ const ManageChat = () => {
     setReply('');
   };
 
-  // MỚI: Hàm gửi tin nhắn nhanh
   const handleSendQuickReply = async (text) => {
     if (!activeId) return;
     await sendMessage(activeId, 'ADMIN', text);
     setShowQuickMenu(false);
   };
 
+  // 4. HÀM ĐÓNG CHAT SỬ DỤNG BATCH (XÓA SẠCH SUBCOLLECTION)
   const handleCloseChat = async (id) => {
     if (window.confirm("Xóa hội thoại này khỏi danh sách quản lý?")) {
-      await closeChat(id);
-      setActiveId(null);
+      try {
+        const messagesRef = collection(db, "support_chats", id, "messages");
+        const snapshot = await getDocs(messagesRef);
+        
+        const batch = writeBatch(db);
+        
+        // Xóa tất cả tin nhắn trong thư mục con
+        snapshot.docs.forEach((messageDoc) => {
+          batch.delete(messageDoc.ref);
+        });
+        
+        // Reset trạng thái trên Document chính
+        const chatDocRef = doc(db, "support_chats", id);
+        batch.update(chatDocRef, {
+          unreadUser: false,
+          unreadAdmin: false
+        });
+        
+        await batch.commit();
+        setActiveId(null); // Quay về trạng thái trống
+        
+      } catch (error) {
+        console.error("Lỗi khi đóng chat:", error);
+      }
     }
   };
 
-  // Xử lý đóng menu tin nhanh khi click ra ngoài
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (showQuickMenu && !e.target.closest('.quick-reply-container')) {
@@ -144,7 +186,6 @@ const ManageChat = () => {
       {/* CỘT TRÁI: DANH SÁCH & TÌM KIẾM */}
       <div className="w-full md:w-1/3 border-r border-gray-100 dark:border-gray-700 flex flex-col bg-gray-50/30 dark:bg-gray-900/20">
         
-        {/* THANH TÌM KIẾM SĐT (Đã đổi thành Instant Search) */}
         <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
           <div className="relative">
             <input 
@@ -209,10 +250,10 @@ const ManageChat = () => {
               </button>
             </div>
             
-            {/* Tin nhắn */}
+            {/* Tin nhắn lấy từ Subcollection */}
             <div className="flex-1 p-8 overflow-y-auto space-y-6 bg-gray-50/20 dark:bg-gray-900/10 no-scrollbar">
-              {activeChat.messages.map((m, i) => {
-                const isAdmin = m.sender === 'ADMIN';
+              {activeMessages.map((m, i) => {
+                const isAdmin = m.sender?.toUpperCase() === 'ADMIN';
                 return (
                   <div key={i} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2`}>
                     <div className={`max-w-[70%] px-5 py-3 rounded-[1.5rem] text-sm font-medium leading-relaxed shadow-sm ${
@@ -222,7 +263,7 @@ const ManageChat = () => {
                     }`}>
                       {m.text}
                       <p className={`text-[8px] mt-1.5 font-bold uppercase opacity-50 ${isAdmin ? 'text-right' : 'text-left'}`}>
-                        {m.time || 'Vừa xong'}
+                        {m.createdAt ? new Date(m.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Vừa xong'}
                       </p>
                     </div>
                   </div>
@@ -234,7 +275,6 @@ const ManageChat = () => {
             {/* Form trả lời */}
             <form onSubmit={handleReply} className="p-6 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 flex gap-4">
               
-              {/* NÚT TIN NHẮN NHANH */}
               <div className="relative quick-reply-container flex items-center">
                 <button 
                   type="button"
@@ -245,7 +285,6 @@ const ManageChat = () => {
                   ⚡
                 </button>
                 
-                {/* Popup Menu Tin nhắn nhanh */}
                 {showQuickMenu && (
                   <div className="absolute bottom-full mb-4 left-0 w-80 bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden animate-in slide-in-from-bottom-2 z-50">
                     <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-700 text-[10px] font-black uppercase text-gray-400 tracking-widest">
@@ -271,7 +310,6 @@ const ManageChat = () => {
                 )}
               </div>
 
-              {/* Ô Nhập nội dung */}
               <input 
                 value={reply} 
                 onChange={e => setReply(e.target.value)} 
