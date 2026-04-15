@@ -28,9 +28,10 @@ import ManageChat from './pages/Admin/ManageChat';
 import AdminLogin from './pages/Admin/AdminLogin';
 import Statistics from './pages/Admin/Statistics'; 
 import AdminSettings from './pages/Admin/AdminSettings'; 
-
-// --- MỚI: Bổ sung trang Quản lý Truyền thông (Thông báo & Hòm thư) ---
 import ManageCommunication from './pages/Admin/ManageCommunication'; 
+
+// --- MỚI: Bổ sung trang Quản lý Sự kiện (Hộp quà, Điểm danh, Lucky Xu) ---
+import ManageEvents from './pages/Admin/ManageEvents'; 
 
 // CSS Toàn cục
 import './index.css';
@@ -78,8 +79,6 @@ function App() {
             <Route path="/order/:username" element={<Order />} />
             <Route path="/checkorder" element={<CheckOrder />} />
             <Route path="/settings" element={<UserSettings />} /> 
-            
-            {/* MỚI: Route trang Đổi quà tích điểm */}
             <Route path="/rewards" element={<RewardCenter />} />
 
             {/* --- Cấu trúc các trang dành cho Admin --- */}
@@ -100,9 +99,12 @@ function App() {
               <Route path="menu" element={<ManageMenu />} />
               <Route path="vouchers" element={<ManageVouchers />} />
               <Route path="chat" element={<ManageChat />} />
-              <Route path="settings" element={<AdminSettings />} /> 
-              {/* --- MỚI: Route cho Thông báo và Hòm thư --- */}
               <Route path="communication" element={<ManageCommunication />} />
+              
+              {/* --- KÍCH HOẠT ĐƯỜNG DẪN /admin/events TẠI ĐÂY --- */}
+              <Route path="events" element={<ManageEvents />} />
+              
+              <Route path="settings" element={<AdminSettings />} /> 
             </Route>
 
             {/* --- Route xử lý lỗi 404 --- */}
@@ -125,7 +127,6 @@ function App() {
             } />
           </Routes>
 
-          {/* CHÈN WIDGET CHAT TẠI ĐÂY */}
           <CustomerChat />
         </div>
       </Router>
