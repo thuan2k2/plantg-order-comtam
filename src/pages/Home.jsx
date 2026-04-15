@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, onSnapshot } from 'firebase/firestore'; 
+import { doc, onSnapshot, getDoc, updateDoc } from 'firebase/firestore'; 
 import { db } from '../firebase/config';
 import UsernamePopup from '../components/UsernamePopup';
 import { useSettings } from '../contexts/SettingsContext'; 
@@ -30,12 +30,18 @@ const Home = () => {
     sysNotice: ''
   });
 
+  // ====================================================
+  // MỚI: STATES CHO SỰ KIỆN LUCKY XU (LÌ XÌ RƠI)
+  // ====================================================
+  const [luckyConfig, setLuckyConfig] = useState(null);
+  const [showLuckyXu, setShowLuckyXu] = useState(false);
+  const [isOpeningLuckyXu, setIsOpeningLuckyXu] = useState(false);
+  const [luckyReward, setLuckyReward] = useState(null);
+
   useEffect(() => {
     // 1. Lắng nghe thay đổi Cấu hình hệ thống
     const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (doc) => {
       if (doc.exists()) setSysConfig(doc.data());
-    }, (error) => {
-      console.error("Lỗi lắng nghe cấu hình:", error);
     });
 
     // 2. Lắng nghe trạng thái Online của Admin
@@ -45,7 +51,14 @@ const Home = () => {
       }
     });
 
-    // 3. Logic đồng bộ thông tin khách hàng Real-time
+    // 3. Lắng nghe cấu hình Sự Kiện (Lucky Xu)
+    const unsubEvents = onSnapshot(doc(db, 'system', 'events'), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().luckyXu) {
+        setLuckyConfig(docSnap.data().luckyXu);
+      }
+    });
+
+    // 4. Logic đồng bộ thông tin khách hàng Real-time
     const syncWithFirebase = async () => {
       const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
       const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
@@ -58,26 +71,20 @@ const Home = () => {
         const cleanPhone = phone.trim();
         const userRef = doc(db, 'users', cleanPhone);
 
-        // Lắng nghe toàn bộ thay đổi của user
         const unsubUser = onSnapshot(userRef, (snap) => {
           if (snap.exists()) {
             const data = snap.data();
-            setTotalXu(data.totalXu || data.coins || 0); // Ưu tiên load Xu mới cập nhật
+            setTotalXu(data.totalXu || data.coins || 0); 
             setAvatarUrl(data.avatarUrl || ''); 
             
             if (data.fullName && data.fullName !== customerName) {
               setCustomerName(data.fullName);
-              
-              // Cập nhật local storage để dự phòng
               const updatedProfile = { ...userProfile, fullName: data.fullName, avatarUrl: data.avatarUrl || '' };
               localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
             }
           }
-        }, (err) => {
-          console.error("Lỗi đồng bộ dữ liệu User:", err);
         });
 
-        // Load dữ liệu nền (fallback)
         try {
           if (!userProfile.fullName) {
             const cloudData = await getUserByPhone(cleanPhone);
@@ -96,7 +103,6 @@ const Home = () => {
             setAvatarUrl(userProfile.avatarUrl || '');
           }
         } catch (error) {
-          alert(error.message);
           handleLogoutCustomer(false); 
         }
 
@@ -109,9 +115,102 @@ const Home = () => {
     return () => {
       unsubConfig();
       unsubAdminStatus();
+      unsubEvents();
       if (typeof cleanupUser === 'function') cleanupUser();
     };
   }, []);
+
+  // ====================================================
+  // MỚI: VÒNG LẶP KIỂM TRA GIỜ XUẤT HIỆN LUCKY XU
+  // ====================================================
+  useEffect(() => {
+    if (!luckyConfig || !savedPhone) return;
+
+    const checkTime = async () => {
+      // Đang hiển thị hoặc đang mở quà thì không check nữa tránh đè popup
+      if (showLuckyXu || isOpeningLuckyXu || luckyReward !== null) return;
+
+      const now = new Date();
+      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      
+      if (luckyConfig.activeTimes && luckyConfig.activeTimes.includes(currentTime)) {
+        // Kiểm tra xem khách đã nhận trong phút này chưa
+        const todayStr = now.toDateString();
+        const timeKey = `${todayStr} ${currentTime}`;
+        
+        const userSnap = await getDoc(doc(db, 'users', savedPhone));
+        if (userSnap.exists() && userSnap.data().lastLuckyReceived !== timeKey) {
+          setShowLuckyXu(true);
+          
+          // Tự động ẩn sau X giây nếu không click
+          window.luckyTimeout = setTimeout(() => {
+            setShowLuckyXu(false);
+          }, (luckyConfig.duration || 15) * 1000);
+        }
+      }
+    };
+
+    // Kiểm tra mỗi 10 giây để đảm bảo bắt đúng phút
+    const timer = setInterval(checkTime, 10000); 
+    return () => {
+      clearInterval(timer);
+      if (window.luckyTimeout) clearTimeout(window.luckyTimeout);
+    };
+  }, [luckyConfig, savedPhone, showLuckyXu, isOpeningLuckyXu, luckyReward]);
+
+  // ====================================================
+  // MỚI: HÀM XỬ LÝ KHUI LÌ XÌ
+  // ====================================================
+  const handleOpenLuckyXu = async () => {
+    if (!savedPhone || isOpeningLuckyXu) return;
+    
+    // Hủy lệnh tự động đóng phong bì khi người dùng đã bấm
+    if (window.luckyTimeout) clearTimeout(window.luckyTimeout);
+    
+    setIsOpeningLuckyXu(true);
+
+    const userRef = doc(db, 'users', savedPhone);
+    const userSnap = await getDoc(userRef);
+    const userData = userSnap.exists() ? userSnap.data() : {};
+
+    const now = new Date();
+    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const timeKey = `${now.toDateString()} ${currentTime}`;
+
+    // Chốt chặn cuối cùng để chống bug 2 thiết bị bấm cùng lúc
+    if (userData.lastLuckyReceived === timeKey) {
+      alert("Bạn đã nhận lì xì ở khung giờ này rồi!");
+      setIsOpeningLuckyXu(false);
+      setShowLuckyXu(false);
+      return;
+    }
+
+    // Delay 3 giây tạo cảm giác hồi hộp
+    setTimeout(async () => {
+      try {
+        const min = luckyConfig.min || 1;
+        const max = luckyConfig.max || 300;
+        const randomXu = Math.floor(Math.random() * (max - min + 1)) + min;
+
+        const currentXu = userData.totalXu || userData.coins || 0;
+
+        // Cập nhật Database
+        await updateDoc(userRef, {
+          totalXu: currentXu + randomXu,
+          coins: currentXu + randomXu,
+          lastLuckyReceived: timeKey
+        });
+
+        setLuckyReward(randomXu);
+      } catch (error) {
+        console.error("Lỗi khui quà:", error);
+        alert("Có lỗi xảy ra, vui lòng thử lại.");
+        setShowLuckyXu(false);
+      } finally {
+        setIsOpeningLuckyXu(false);
+      }
+    }, 3000);
+  };
 
   const handleLogoutCustomer = (confirm = true) => {
     if (!confirm || window.confirm("Bạn muốn đăng xuất khỏi tài khoản này?")) {
@@ -137,7 +236,7 @@ const Home = () => {
       )}
 
       {/* TOP BAR: THIẾT LẬP & AVATAR */}
-      <div className="absolute top-6 left-6 flex gap-3 z-50">
+      <div className="absolute top-6 left-6 flex gap-3 z-40">
         <div className="relative">
           <button 
             onClick={() => setShowThemeMenu(!showThemeMenu)}
@@ -166,15 +265,13 @@ const Home = () => {
         </div>
       </div>
 
-      <div className="absolute top-6 right-6 flex gap-3 z-50">
-        {/* COMPONENT: NOTIFICATION & MAILBOX */}
+      <div className="absolute top-6 right-6 flex gap-3 z-40">
         {hasOrderedBefore && <NotificationCenter />}
 
         {hasOrderedBefore && (
           <button 
             onClick={() => navigate('/settings')}
             className="w-12 h-12 flex items-center justify-center bg-white dark:bg-gray-800 rounded-full shadow-md border border-gray-100 dark:border-gray-700 hover:scale-105 transition-transform overflow-hidden"
-            title="Cài đặt tài khoản"
           >
             {avatarUrl ? (
               <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
@@ -234,7 +331,6 @@ const Home = () => {
               </button>
             </div>
 
-            {/* NÚT ĐỔI THƯỞNG XU */}
             <div className="w-full mt-4">
               <button 
                 onClick={() => navigate('/rewards')}
@@ -262,8 +358,6 @@ const Home = () => {
 
       {/* ACTION BUTTONS */}
       <div className="w-full max-w-xs space-y-4 z-10">
-        
-        {/* Nút 1: Đặt Cơm Ngay */}
         <button
           onClick={() => {
             if (!sysConfig.isOpen) return alert("Quán đóng cửa");
@@ -275,7 +369,6 @@ const Home = () => {
           {sysConfig.isOpen ? 'ĐẶT CƠM NGAY' : 'TẠM ĐÓNG CỬA'}
         </button>
 
-        {/* Nút 1.5: Đặt giao sau */}
         {sysConfig.isOpen && (
           <button
             onClick={() => hasOrderedBefore ? navigate(`/order?user=${savedPhone}&type=schedule`) : setIsPopupOpen(true)}
@@ -286,7 +379,6 @@ const Home = () => {
           </button>
         )}
 
-        {/* Nút 2: Kiểm Tra Đơn Hàng */}
         <button
           onClick={() => navigate(hasOrderedBefore ? `/checkorder?user=${savedPhone}` : '/checkorder')}
           className="w-full bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-orange-400 hover:bg-gray-50 dark:hover:bg-gray-700 font-black py-5 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest"
@@ -295,7 +387,6 @@ const Home = () => {
           KIỂM TRA ĐƠN HÀNG
         </button>
 
-        {/* Nút 3 & 4: Đăng Nhập & Đăng Ký */}
         {!hasOrderedBefore && (
           <div className="flex gap-4 pt-2">
             <button
@@ -314,10 +405,8 @@ const Home = () => {
         )}
       </div>
 
-      {/* COMPONENT: HỘP QUÀ VÀ ĐIỂM DANH (Góc trái dưới) */}
       {hasOrderedBefore && <Gamification />}
 
-      {/* TRẠNG THÁI ONLINE CỦA ADMIN VÀ FOOTER */}
       <div className="mt-auto pt-10 pb-6 text-center w-full flex flex-col items-center z-10">
         <div className="flex items-center justify-center gap-2 mb-4 bg-white/50 dark:bg-gray-800/50 px-4 py-2 rounded-full border border-gray-100 dark:border-gray-700 shadow-sm backdrop-blur-sm">
           <div className="relative flex h-2.5 w-2.5">
@@ -336,6 +425,53 @@ const Home = () => {
         </p>
         <div className="mt-2 text-gray-200 dark:text-gray-700 transition-colors">••••••••••••</div>
       </div>
+
+      {/* ========================================================= */}
+      {/* MỚI: OVERLAY GIAO DIỆN SỰ KIỆN LUCKY XU */}
+      {/* ========================================================= */}
+      {showLuckyXu && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          {luckyReward === null ? (
+            <div 
+              onClick={!isOpeningLuckyXu ? handleOpenLuckyXu : undefined}
+              className={`relative cursor-pointer transition-all duration-500 ${isOpeningLuckyXu ? 'animate-bounce scale-110' : 'hover:scale-105 animate-in zoom-in'}`}
+            >
+              <div className="w-48 h-64 bg-gradient-to-b from-red-500 to-red-700 rounded-2xl shadow-2xl border-4 border-yellow-400 flex flex-col items-center justify-center text-white overflow-hidden relative">
+                {/* Lớp mờ rải hạt trang trí */}
+                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-yellow-300 via-transparent to-transparent"></div>
+                
+                <div className="w-16 h-16 bg-yellow-400 rounded-full flex items-center justify-center text-red-600 text-3xl font-black mb-4 shadow-inner border-2 border-yellow-200 z-10">福</div>
+                <p className="font-black text-center px-4 uppercase tracking-tighter z-10 text-yellow-300 drop-shadow-md text-lg leading-tight">Lucky Xu<br/>Đang Rơi!</p>
+                <p className="text-[10px] mt-4 opacity-90 uppercase font-black tracking-widest bg-black/20 px-3 py-1 rounded-full z-10">Chạm để mở</p>
+              </div>
+              
+              {isOpeningLuckyXu && (
+                <div className="absolute -top-12 left-0 right-0 text-center text-yellow-400 font-black tracking-widest uppercase text-xs animate-pulse drop-shadow-lg">
+                  Đang khui quà...
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] text-center animate-in zoom-in duration-300 shadow-2xl border border-yellow-100 dark:border-gray-700 max-w-xs w-full mx-4 relative overflow-hidden">
+              <div className="absolute -top-10 -right-10 text-9xl opacity-10">🧧</div>
+              <h2 className="text-5xl mb-4 relative z-10">🎉</h2>
+              <p className="text-gray-500 dark:text-gray-400 font-black uppercase text-[10px] tracking-[0.2em] relative z-10">Bạn đã mở được</p>
+              <p className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-red-500 my-4 drop-shadow-sm relative z-10">
+                +{luckyReward} Xu
+              </p>
+              <button 
+                onClick={() => {
+                  setShowLuckyXu(false); 
+                  setLuckyReward(null);
+                }} 
+                className="w-full bg-gray-900 dark:bg-white text-white dark:text-gray-900 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl relative z-10"
+              >
+                Tuyệt vời
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <UsernamePopup 
         isOpen={isPopupOpen} 

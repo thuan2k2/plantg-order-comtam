@@ -3,7 +3,8 @@ import { doc, getDoc, updateDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth'; 
 import { db } from '../../firebase/config';
 import { updateAdminProfile } from '../../services/authService'; 
-import { resetTestingGamification } from '../../services/chatService'; // Thêm import hàm test
+// Import 2 hàm test từ chatService
+import { resetTestingGamification, resetTestingLuckyXu } from '../../services/chatService'; 
 
 const AdminSettings = () => {
   const auth = getAuth();
@@ -14,7 +15,7 @@ const AdminSettings = () => {
   const [adminAvatar, setAdminAvatar] = useState('');
   const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
 
-  // MỚI: State cho Tin nhắn nhanh
+  // State cho Tin nhắn nhanh
   const [quickReplies, setQuickReplies] = useState([]);
   const [newReply, setNewReply] = useState('');
 
@@ -26,7 +27,7 @@ const AdminSettings = () => {
     sysNotice: ''
   });
 
-  // State cho Test Reset Gamification
+  // State cho Test Reset (Gamification & Lucky Xu)
   const [testPhone, setTestPhone] = useState('');
 
   // Tải cấu hình từ Firebase khi vào trang
@@ -34,7 +35,6 @@ const AdminSettings = () => {
     const fetchConfig = async () => {
       setIsLoading(true);
       try {
-        // Lấy config hệ thống
         const snap = await getDoc(doc(db, 'system', 'config'));
         if (snap.exists()) {
           setConfig(snap.data());
@@ -42,7 +42,6 @@ const AdminSettings = () => {
           console.warn("Chưa có document system/config trên Firestore.");
         }
         
-        // Lấy ảnh đại diện Admin hiện tại
         if (auth.currentUser) {
           setAdminAvatar(auth.currentUser.photoURL || '');
         }
@@ -53,7 +52,6 @@ const AdminSettings = () => {
       }
     };
     
-    // Đợi Firebase Auth khởi tạo xong
     const unsubscribe = auth.onAuthStateChanged((user) => {
       if (user) {
         setAdminAvatar(user.photoURL || '');
@@ -106,7 +104,7 @@ const AdminSettings = () => {
 
   // --- CÁC HÀM QUẢN LÝ TIN NHẮN NHANH ---
   const handleAddReply = async (e) => {
-    e.preventDefault(); // Ngăn form reload trang
+    e.preventDefault(); 
     const text = newReply.trim();
     if (!text) return;
 
@@ -114,7 +112,6 @@ const AdminSettings = () => {
       const updatedList = [...quickReplies, text];
       const replyRef = doc(db, 'system', 'quick_replies');
       
-      // Dùng setDoc với { merge: true } để tạo document nếu chưa tồn tại
       await setDoc(replyRef, { list: updatedList }, { merge: true });
       
       setNewReply('');
@@ -136,7 +133,7 @@ const AdminSettings = () => {
     }
   };
 
-  // --- HÀM RESET GAMIFICATION (TESTING) ---
+  // --- HÀM RESET TESTING ---
   const handleResetGamification = async () => {
     if (!testPhone.trim() || testPhone.trim().length < 10) {
       return alert("Vui lòng nhập đúng Số điện thoại cần reset!");
@@ -144,7 +141,18 @@ const AdminSettings = () => {
     try {
       await resetTestingGamification(testPhone.trim());
       alert(`Đã reset thành công Hộp quà và Lịch điểm danh cho SĐT: ${testPhone}`);
-      setTestPhone('');
+    } catch (error) {
+      alert("Lỗi khi reset: " + error.message);
+    }
+  };
+
+  const handleResetLuckyXu = async () => {
+    if (!testPhone.trim() || testPhone.trim().length < 10) {
+      return alert("Vui lòng nhập đúng Số điện thoại cần reset!");
+    }
+    try {
+      await resetTestingLuckyXu(testPhone.trim());
+      alert(`Đã reset thành công cờ Lì xì rơi (Lucky Xu) cho SĐT: ${testPhone}\n(Hãy kiểm tra lại xem phút hiện tại có nằm trong Khung giờ sự kiện không nhé)`);
     } catch (error) {
       alert("Lỗi khi reset: " + error.message);
     }
@@ -266,7 +274,6 @@ const AdminSettings = () => {
       <section className="space-y-4">
         <h2 className="text-xl font-black uppercase tracking-tighter text-gray-800 dark:text-white">Cấu hình vận hành Quán</h2>
 
-        {/* Trạng thái cửa hàng */}
         <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-center shadow-sm gap-4 transition-colors">
           <div className="text-center sm:text-left">
             <p className="font-black uppercase text-sm text-gray-800 dark:text-gray-100">Trạng thái đóng/mở cửa</p>
@@ -284,7 +291,6 @@ const AdminSettings = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Thông báo hệ thống */}
           <div className="md:col-span-2 bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 shadow-sm transition-colors">
             <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase mb-3 tracking-widest ml-1">Thông báo nổi bật (Hiện ở Trang chủ)</label>
             <textarea 
@@ -295,7 +301,6 @@ const AdminSettings = () => {
             />
           </div>
 
-          {/* Giờ mở cửa */}
           <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 shadow-sm transition-colors">
             <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase mb-3 tracking-widest ml-1">Giờ hoạt động hiển thị</label>
             <input 
@@ -306,7 +311,6 @@ const AdminSettings = () => {
             />
           </div>
 
-          {/* Đơn hàng tối thiểu */}
           <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 shadow-sm transition-colors">
             <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase mb-3 tracking-widest ml-1">Giá trị đơn tối thiểu (đ)</label>
             <input 
@@ -337,28 +341,40 @@ const AdminSettings = () => {
 
       <hr className="border-dashed border-gray-200 dark:border-gray-700 transition-colors" />
 
-      {/* --- MỚI: 4. KHỐI CÔNG CỤ TEST (TẠM THỜI) --- */}
+      {/* --- 4. KHỐI CÔNG CỤ TEST (TẠM THỜI) --- */}
       <section className="space-y-4">
         <h2 className="text-xl font-black uppercase tracking-tighter text-red-600 dark:text-red-400">🛠 Công cụ Test (Tạm thời)</h2>
-        <div className="bg-red-50 dark:bg-red-900/10 p-6 sm:p-8 rounded-[2.5rem] border border-red-100 dark:border-red-900/30 shadow-sm flex flex-col sm:flex-row gap-4 items-end transition-colors">
-          <div className="flex-1 w-full">
+        <div className="bg-red-50 dark:bg-red-900/10 p-6 sm:p-8 rounded-[2.5rem] border border-red-100 dark:border-red-900/30 shadow-sm flex flex-col gap-4 transition-colors">
+          
+          <div className="w-full mb-2">
             <label className="block text-[10px] font-black text-red-400 dark:text-red-500 uppercase mb-2 tracking-widest ml-1">
-              SĐT cần reset Hộp quà & Điểm danh
+              SĐT khách hàng cần reset
             </label>
             <input
               type="tel"
               value={testPhone}
               onChange={(e) => setTestPhone(e.target.value)}
-              placeholder="Nhập SĐT khách hàng..."
+              placeholder="Nhập SĐT..."
               className="w-full p-4 bg-white dark:bg-gray-800 dark:text-white rounded-2xl border border-red-200 dark:border-red-800 outline-none font-bold text-sm focus:ring-2 focus:ring-red-500 transition-all placeholder:text-gray-300 dark:placeholder:text-gray-600"
             />
           </div>
-          <button
-            onClick={handleResetGamification}
-            className="w-full sm:w-auto px-8 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg shadow-red-200 dark:shadow-none active:scale-95"
-          >
-            Reset Ngay
-          </button>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <button
+              onClick={handleResetGamification}
+              className="w-full px-6 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg shadow-red-200 dark:shadow-none active:scale-95"
+            >
+              Reset Hộp Quà & Điểm Danh
+            </button>
+
+            <button
+              onClick={handleResetLuckyXu}
+              className="w-full px-6 py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all shadow-lg shadow-orange-200 dark:shadow-none active:scale-95 flex items-center justify-center gap-2"
+            >
+              <span>🧧</span> Reset Lì Xì (Lucky Xu)
+            </button>
+          </div>
+          
         </div>
       </section>
 

@@ -51,13 +51,12 @@ const Gamification = () => {
     
     try {
       const result = await claimDailyReward(phone);
-      // Hiển thị thông báo
+      // Hiển thị thông báo với số xu Backend trả về
       setRewardMessage(`🎉 Chúc mừng! Bạn nhận được ${result.reward} xu từ hộp quà bí ẩn.`);
       
       // Tự động tắt thông báo sau 3 giây
       setTimeout(() => setRewardMessage(null), 3000);
     } catch (error) {
-      // Bắt lỗi từ Cloud Functions (ví dụ: đã nhận rồi do spam click)
       alert(error.message || "Có lỗi xảy ra, vui lòng thử lại.");
     } finally {
       setIsGiftLoading(false);
@@ -74,7 +73,6 @@ const Gamification = () => {
       setRewardMessage(`📅 Điểm danh ngày ${result.streak} thành công! Nhận ${result.reward} xu.`);
       setTimeout(() => setRewardMessage(null), 3000);
       
-      // Có thể đóng lịch sau khi điểm danh thành công
       // setShowCalendar(false); 
     } catch (error) {
       alert(error.message || "Có lỗi xảy ra, vui lòng thử lại.");
@@ -148,7 +146,7 @@ const Gamification = () => {
             
             <div className="text-center mb-6">
               <h2 className="text-xl font-black text-gray-800 dark:text-white uppercase tracking-wide">Điểm danh 7 ngày</h2>
-              <p className="text-xs font-bold text-gray-500 mt-1">Duy trì chuỗi để nhận 100 xu vào ngày 7!</p>
+              <p className="text-xs font-bold text-gray-500 mt-1">Duy trì chuỗi để nhận thưởng lớn vào ngày 7!</p>
             </div>
 
             {/* Grid hiển thị 7 ngày */}
@@ -157,8 +155,8 @@ const Gamification = () => {
                 const isClaimed = day <= currentStreak;
                 const isToday = day === currentStreak + 1;
                 const isLastDay = day === 7;
-                const reward = isLastDay ? 100 : 10;
-
+                
+                // Loại bỏ fix cứng 100/10 xu, chỉ hiện icon quà hoặc check
                 return (
                   <div key={day} className={`relative flex flex-col items-center justify-center py-3 rounded-2xl border-2 transition-all ${
                     isClaimed ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' :
@@ -168,10 +166,8 @@ const Gamification = () => {
                     
                     <span className="text-[10px] font-black text-gray-400 uppercase">Ngày {day}</span>
                     <span className="font-bold text-gray-800 dark:text-white my-1 text-lg">
-                      {isClaimed ? '✅' : `+${reward}`}
+                      {isClaimed ? '✅' : isLastDay ? '🎁' : '🪙'}
                     </span>
-                    <span className="text-[8px] font-bold text-yellow-500 uppercase tracking-widest">Xu</span>
-                    
                   </div>
                 );
               })}

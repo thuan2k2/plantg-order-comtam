@@ -3,7 +3,7 @@ import {
   collection, doc, setDoc, updateDoc, getDoc,
   onSnapshot, query, orderBy, serverTimestamp, addDoc, getDocs, writeBatch 
 } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions'; // THÊM THƯ VIỆN NÀY
+import { getFunctions, httpsCallable } from 'firebase/functions'; 
 
 const CHAT_COLLECTION = 'support_chats';
 
@@ -78,7 +78,6 @@ export const markRead = async (chatId, role) => {
 };
 
 // 4. Đóng Chat: Xóa sạch dữ liệu tin nhắn trên Firebase
-// Khi hàm này chạy, onSnapshot ở cả Admin và Khách sẽ nhận mảng rỗng và tự xóa giao diện
 export const closeChat = async (chatId) => {
   try {
     const messagesRef = collection(db, CHAT_COLLECTION, chatId, "messages");
@@ -100,7 +99,6 @@ export const closeChat = async (chatId) => {
     });
     
     await batch.commit();
-    // Sau khi batch hoàn tất, Firebase sẽ phát tín hiệu xóa tới tất cả các bên đang lắng nghe
   } catch (error) {
     console.error("Lỗi khi dọn dẹp dữ liệu chat:", error);
   }
@@ -155,22 +153,36 @@ export const claimDailyCheckIn = async (phone) => {
 };
 
 // ============================================================================
-// HÀM TESTING (Dùng để reset giả lập qua ngày mới)
+// HÀM TESTING (Dùng để reset giả lập qua ngày mới / test sự kiện)
 // ============================================================================
 
-// 9. Xóa thời gian nhận quà để test lại
+// 9. Xóa thời gian nhận quà để test lại Hộp Quà & Điểm Danh
 export const resetTestingGamification = async (phone) => {
   try {
     const userRef = doc(db, 'users', phone);
-    // Ghi đè các trường thời gian thành null để Frontend và Backend hiểu là chưa nhận
     await updateDoc(userRef, {
       lastDailyGift: null,
       lastCheckIn: null
     });
-    console.log("Đã reset thời gian nhận thưởng! Bạn có thể mở lại Hộp quà và Điểm danh.");
+    console.log("Đã reset thời gian nhận thưởng hàng ngày!");
     return true;
   } catch (error) {
     console.error("Lỗi khi reset test:", error);
+    throw error;
+  }
+};
+
+// 10. Xóa cờ đã nhận Lucky Xu để test lại sự kiện Lì Xì Rơi
+export const resetTestingLuckyXu = async (phone) => {
+  try {
+    const userRef = doc(db, 'users', phone);
+    await updateDoc(userRef, {
+      lastLuckyReceived: null
+    });
+    console.log("Đã reset cờ nhận Lucky Xu!");
+    return true;
+  } catch (error) {
+    console.error("Lỗi khi reset Lucky Xu:", error);
     throw error;
   }
 };
