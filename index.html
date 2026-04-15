@@ -59,12 +59,12 @@
 
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.unregister('/sw.js').catch(err => {
-            console.log('ServiceWorker unregistration failed: ', err);
-          });
-        });
-      }
+  navigator.serviceWorker.getRegistrations().then(function(registrations) {
+    for(let registration of registrations) {
+      registration.unregister();
+    }
+  });
+}
     </script>
   </body>
 </html>
