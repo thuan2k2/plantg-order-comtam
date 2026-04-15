@@ -1,7 +1,7 @@
 import { db } from '../firebase/config';
 import { 
   collection, doc, setDoc, updateDoc, deleteDoc, 
-  onSnapshot, query, orderBy, serverTimestamp, addDoc, getDocs, writeBatch
+  onSnapshot, query, orderBy, serverTimestamp, addDoc, getDocs, writeBatch 
 } from 'firebase/firestore';
 
 const CHAT_COLLECTION = 'support_chats';
@@ -10,7 +10,6 @@ const CHAT_COLLECTION = 'support_chats';
 export const startChat = async (phone, name, avatarUrl = '', orderId = null) => {
   const chatRef = doc(db, CHAT_COLLECTION, phone);
   
-  // Chúng ta không lưu mảng messages ở đây nữa
   await setDoc(chatRef, {
     userPhone: phone,
     userName: name || 'Khách hàng',
@@ -18,32 +17,39 @@ export const startChat = async (phone, name, avatarUrl = '', orderId = null) => 
     orderId: orderId,
     unreadAdmin: true,
     unreadUser: false,
-    lastUpdated: serverTimestamp()
+    lastUpdated: serverTimestamp() // Trường quan trọng để sắp xếp danh sách Admin
   }, { merge: true }); 
 };
 
-// 2. Gửi tin nhắn mới (Cập nhật lưu vào Subcollection)
+// 2. Gửi tin nhắn mới (Đã tối ưu hóa đồng bộ Web-Telegram)
 export const sendMessage = async (chatId, sender, text) => {
   const chatRef = doc(db, CHAT_COLLECTION, chatId);
   const messagesRef = collection(db, CHAT_COLLECTION, chatId, 'messages');
 
   try {
-    // Bước 1: Thêm tin nhắn mới vào Subcollection 'messages'
-    // Lưu ý: Dùng serverTimestamp cho đồng bộ
+    // Bước 1: Thêm tin nhắn vào Subcollection
+    // Sử dụng toUpperCase để đồng nhất dữ liệu ('USER' hoặc 'ADMIN')
+    const senderUpper = sender.toUpperCase();
+    
     await addDoc(messagesRef, {
-      sender: sender.toUpperCase(), // 'USER' hoặc 'ADMIN'
+      sender: senderUpper,
       text: text,
       createdAt: serverTimestamp()
     });
 
-    // Bước 2: Cập nhật trạng thái chưa đọc ở Document chính
+    // Bước 2: Cập nhật Document chính để thông báo & sắp xếp lại danh sách
     await updateDoc(chatRef, {
-      unreadAdmin: sender.toUpperCase() === 'USER',
-      unreadUser: sender.toUpperCase() === 'ADMIN',
-      lastUpdated: serverTimestamp()
+      unreadAdmin: senderUpper === 'USER',
+      unreadUser: senderUpper === 'ADMIN',
+      lastUpdated: serverTimestamp() // Cập nhật để hội thoại nhảy lên đầu cột trái Admin
     });
   } catch (error) {
     console.error("Lỗi khi gửi tin nhắn:", error);
+    // Nếu lỗi do Document chính không tồn tại (trường hợp admin search SĐT lạ), hãy tạo nó
+    if (error.code === 'not-found') {
+        await startChat(chatId, 'Khách hàng');
+        return sendMessage(chatId, sender, text);
+    }
   }
 };
 
@@ -51,17 +57,18 @@ export const sendMessage = async (chatId, sender, text) => {
 export const markRead = async (chatId, role) => {
   const chatRef = doc(db, CHAT_COLLECTION, chatId);
   try {
-    if (role === 'ADMIN') {
+    const roleUpper = role.toUpperCase();
+    if (roleUpper === 'ADMIN') {
       await updateDoc(chatRef, { unreadAdmin: false });
     } else {
       await updateDoc(chatRef, { unreadUser: false });
     }
   } catch (error) {
-    console.warn("Lỗi đánh dấu đã đọc (có thể do document chưa tạo):", error);
+    console.warn("Lỗi đánh dấu đã đọc:", error.message);
   }
 };
 
-// 4. Kết thúc và Xóa sạch dữ liệu (Sử dụng WriteBatch để xóa Subcollection)
+// 4. Kết thúc và Xóa sạch dữ liệu (Sử dụng WriteBatch)
 export const closeChat = async (chatId) => {
   try {
     const messagesRef = collection(db, CHAT_COLLECTION, chatId, "messages");
@@ -69,13 +76,12 @@ export const closeChat = async (chatId) => {
     
     const batch = writeBatch(db);
     
-    // Xóa sạch lịch sử tin nhắn
+    // Xóa sạch subcollection messages
     snapshot.docs.forEach((messageDoc) => {
       batch.delete(messageDoc.ref);
     });
     
-    // Đặt lại trạng thái phòng chat thay vì xóa hoàn toàn document 
-    // để giữ lại avatar/tên cho lần chat sau
+    // Reset trạng thái ở document chính
     const chatDocRef = doc(db, CHAT_COLLECTION, chatId);
     batch.update(chatDocRef, {
       unreadUser: false,
@@ -89,7 +95,7 @@ export const closeChat = async (chatId) => {
   }
 };
 
-// 5. Lắng nghe toàn bộ chat cho Admin (Chỉ lấy meta data)
+// 5. Lắng nghe toàn bộ chat cho Admin
 export const subscribeToAdminChats = (callback) => {
   const q = query(collection(db, CHAT_COLLECTION), orderBy('lastUpdated', 'desc'));
   return onSnapshot(q, (snapshot) => {

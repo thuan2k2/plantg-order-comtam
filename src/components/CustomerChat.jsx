@@ -80,7 +80,7 @@ const CustomerChat = () => {
         customerName: userProfile.fullName || 'Khách hàng',
         avatarUrl: userProfile.avatarUrl || '',
         unreadAdmin: true,
-        updatedAt: serverTimestamp()
+        lastUpdated: serverTimestamp() // FIX: Sử dụng lastUpdated để đồng bộ với bộ lọc của trang Admin
       }, { merge: true });
 
       // 2. Lưu tin nhắn vào Subcollection để KÍCH HOẠT Cloud Functions (Telegram Bot)
