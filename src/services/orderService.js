@@ -12,7 +12,8 @@ import {
   serverTimestamp, 
   onSnapshot,
   increment,
-  runTransaction // Dùng transaction để đảm bảo an toàn ví
+  runTransaction,
+  setDoc // MỚI: Thêm setDoc để tạo User
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -27,7 +28,7 @@ let isSubmittingOrder = false;
  * ==========================================
  */
 
-// FIX LỖI: Tạo đơn hàng kèm thanh toán Ví an toàn tuyệt đối
+// Tạo đơn hàng kèm thanh toán Ví an toàn tuyệt đối
 export const createOrderSecure = async (orderData) => {
   if (isSubmittingOrder) {
     return { success: false, error: "Hệ thống đang xử lý đơn hàng, vui lòng không ấn liên tiếp!" };
@@ -95,6 +96,68 @@ export const createOrderSecure = async (orderData) => {
   }
 };
 
+// ==========================================
+// MỚI: HÀM ADMIN TẠO ĐƠN & TỰ TẠO TÀI KHOẢN
+// ==========================================
+export const adminCreateOrder = async (orderData) => {
+  try {
+    const cleanPhone = orderData.phone.trim();
+    
+    // 1. Tạo dữ liệu đơn hàng
+    const newOrder = {
+      phone: cleanPhone,
+      customer: orderData.customer.trim(),
+      address: orderData.address.trim() || 'Tại quán / Mua mang về',
+      items: orderData.items.trim(),
+      total: orderData.total.trim(),
+      note: orderData.note.trim() || '',
+      paymentMethod: 'CASH', // Mặc định tiền mặt
+      paymentStatus: 'UNPAID', // Mặc định chưa thanh toán
+      status: 'PENDING', // Đẩy vào luồng Bếp mới nhất
+      deliveryType: 'NOW', // Giao ngay
+      time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      createdByAdmin: true // Đánh dấu đơn này do admin tạo
+    };
+
+    // 2. Lưu Đơn Hàng vào Firestore
+    const orderRef = await addDoc(collection(db, COLLECTION_NAME), newOrder);
+
+    // 3. Kiểm tra và tự động tạo Tài khoản User (Nếu chưa có)
+    const userRef = doc(db, 'users', cleanPhone);
+    const userSnap = await getDoc(userRef);
+
+    if (!userSnap.exists()) {
+      // User chưa tồn tại -> Khởi tạo tài khoản với pass mặc định
+      await setDoc(userRef, {
+        fullName: orderData.customer.trim(),
+        phone: cleanPhone,
+        address: orderData.address.trim(),
+        username: cleanPhone,
+        passcode: '123456', // Passcode mặc định
+        coins: 0,
+        totalXu: 0,
+        walletBalance: 0,
+        createdAt: serverTimestamp(),
+        autoCreatedByAdmin: true // Đánh dấu tài khoản tự động tạo
+      });
+    } else {
+      // User đã tồn tại -> Chỉ cập nhật tên/địa chỉ nếu họ điền mới
+      await updateDoc(userRef, {
+        fullName: orderData.customer.trim(),
+        address: orderData.address.trim() || userSnap.data().address || '',
+        updatedAt: serverTimestamp()
+      });
+    }
+
+    return { success: true, id: orderRef.id };
+  } catch (error) {
+    console.error("Lỗi adminCreateOrder:", error);
+    return { success: false, error: error.message };
+  }
+};
+
 export const updatePaymentMethod = async (orderId, method, isTransferred = false) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
@@ -122,11 +185,10 @@ export const updatePaymentMethod = async (orderId, method, isTransferred = false
  * ==========================================
  */
 
-// Hàm trừ tiền ví khi đặt hàng (Đã được chuyển vào trong hàm createOrderSecure)
 export const processWalletPayment = async (phone, amount) => {
   try {
     const cleanPhone = phone.trim();
-    const userRef = doc(db, 'users', cleanPhone); // ID là SĐT
+    const userRef = doc(db, 'users', cleanPhone); 
 
     await runTransaction(db, async (transaction) => {
       const userSnap = await transaction.get(userRef);
@@ -147,7 +209,6 @@ export const processWalletPayment = async (phone, amount) => {
   }
 };
 
-// FIX LỖI ĐỒNG BỘ: Hoàn thành đơn hàng & Tích Xu (1,000đ = 10 Xu)
 export const completeOrderWithBonus = async (order) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, order.id);
@@ -164,7 +225,7 @@ export const completeOrderWithBonus = async (order) => {
     const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
     const earnedXu = Math.floor(totalAmount / 1000) * 10;
 
-    // 3. Tìm và cập nhật Xu vào User (Sử dụng trực tiếp ID Document là SĐT)
+    // 3. Tìm và cập nhật Xu vào User
     if (earnedXu > 0) {
       const cleanPhone = order.phone.trim();
       const userDocRef = doc(db, 'users', cleanPhone);
@@ -174,13 +235,13 @@ export const completeOrderWithBonus = async (order) => {
       if (userSnap.exists()) {
         await updateDoc(userDocRef, {
           totalXu: increment(earnedXu),
-          totalSpend: increment(totalAmount), // Ghi nhận tổng chi tiêu để tính Rank
+          totalSpend: increment(totalAmount), 
           updatedAt: serverTimestamp()
         });
       }
     }
 
-    // Logic kiểm tra đơn trễ (Cho tính năng Voucher trễ)
+    // Logic kiểm tra đơn trễ (Cho Voucher)
     if (order.confirmedAt) {
       const confirmTime = order.confirmedAt.toDate();
       const diffInMinutes = Math.floor((now - confirmTime) / (1000 * 60));
@@ -331,7 +392,7 @@ export const confirmPaymentStatus = async (orderId, isPaid) => {
   } catch (error) { return { success: false, error: error.message }; }
 };
 
-// CƠ CHẾ HOÀN TIỀN VÍ (ĐỒNG BỘ THEO ID SĐT)
+// CƠ CHẾ HOÀN TIỀN VÍ VÀ CẬP NHẬT TRẠNG THÁI (ĐỒNG BỘ THEO ID SĐT)
 export const updateOrderStatus = async (orderId, newStatus) => {
   try {
     const orderRef = doc(db, COLLECTION_NAME, orderId);

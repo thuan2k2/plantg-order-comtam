@@ -12,7 +12,7 @@ import NotificationCenter from '../components/NotificationCenter';
 
 // --- HÀM KIỂM TRA GIỜ MỞ CỬA ---
 const checkIfOpen = (openTimeStr) => {
-  if (!openTimeStr || !openTimeStr.includes('-')) return true; // Mặc định mở nếu không parse được
+  if (!openTimeStr || !openTimeStr.includes('-')) return true; 
   
   try {
     const now = new Date();
@@ -46,7 +46,6 @@ const Home = () => {
 
   const [isAdminOnline, setIsAdminOnline] = useState(false);
 
-  // MỚI: Thêm canPreOrder vào cấu trúc state
   const [sysConfig, setSysConfig] = useState({
     isOpen: true,
     isActuallyOpen: true, 
@@ -56,16 +55,13 @@ const Home = () => {
     preOrderEnabled: false
   });
 
-  // ====================================================
-  // STATES CHO SỰ KIỆN LUCKY XU (LÌ XÌ RƠI)
-  // ====================================================
+  // STATES CHO SỰ KIỆN LUCKY XU
   const [luckyConfig, setLuckyConfig] = useState(null);
   const [showLuckyXu, setShowLuckyXu] = useState(false);
   const [isOpeningLuckyXu, setIsOpeningLuckyXu] = useState(false);
   const [luckyReward, setLuckyReward] = useState(null);
 
   useEffect(() => {
-    // 1. Lắng nghe thay đổi Cấu hình hệ thống & Cập nhật logic 2 nút
     const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -80,13 +76,11 @@ const Home = () => {
       }
     });
 
-    // 1.5 Tạo timer để check giờ mở cửa tự động mỗi phút
     const openStatusTimer = setInterval(() => {
       setSysConfig(prev => {
         const actuallyOpen = prev.isOpen && checkIfOpen(prev.openTime);
         const preOrder = prev.isOpen && prev.preOrderEnabled;
         
-        // Chỉ cập nhật state nếu có sự thay đổi để tránh re-render liên tục
         if (prev.isActuallyOpen !== actuallyOpen || prev.canPreOrder !== preOrder) {
           return { ...prev, isActuallyOpen: actuallyOpen, canPreOrder: preOrder };
         }
@@ -94,21 +88,18 @@ const Home = () => {
       });
     }, 60000);
 
-    // 2. Lắng nghe trạng thái Online của Admin
     const unsubAdminStatus = onSnapshot(doc(db, 'system', 'admin_status'), (docSnap) => {
       if (docSnap.exists()) {
         setIsAdminOnline(docSnap.data().isOnline || false);
       }
     });
 
-    // 3. Lắng nghe cấu hình Sự Kiện (Lucky Xu)
     const unsubEvents = onSnapshot(doc(db, 'system', 'events'), (docSnap) => {
       if (docSnap.exists() && docSnap.data().luckyXu) {
         setLuckyConfig(docSnap.data().luckyXu);
       }
     });
 
-    // 4. Logic đồng bộ thông tin khách hàng Real-time
     const syncWithFirebase = async () => {
       const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
       const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
@@ -171,9 +162,7 @@ const Home = () => {
     };
   }, []);
 
-  // ====================================================
-  // VÒNG LẶP KIỂM TRA GIỜ XUẤT HIỆN LUCKY XU
-  // ====================================================
+  // VÒNG LẶP LUCKY XU
   useEffect(() => {
     if (!luckyConfig || !savedPhone) return;
 
@@ -205,9 +194,6 @@ const Home = () => {
     };
   }, [luckyConfig, savedPhone, showLuckyXu, isOpeningLuckyXu, luckyReward]);
 
-  // ====================================================
-  // HÀM XỬ LÝ KHUI LÌ XÌ
-  // ====================================================
   const handleOpenLuckyXu = async () => {
     if (!savedPhone || isOpeningLuckyXu) return;
     
@@ -268,19 +254,11 @@ const Home = () => {
     }
   };
 
-  // Biến để xác định UI tổng thể của Quán (Nếu 1 trong 2 chế độ đang mở thì Quán được coi là Active)
   const isShopActive = sysConfig.isActuallyOpen || sysConfig.canPreOrder;
 
   return (
     <div className="min-h-screen bg-orange-50/30 dark:bg-gray-900 flex flex-col items-center p-6 font-sans transition-colors duration-300 relative">
       
-      {/* THÔNG BÁO TỪ ADMIN */}
-      {sysConfig.sysNotice && (
-        <div className="w-full max-w-md bg-yellow-100 text-yellow-800 text-[10px] font-bold p-3 rounded-2xl mb-4 text-center shadow-sm animate-in fade-in slide-in-from-top-4">
-          <span className="mr-2">📢</span>{sysConfig.sysNotice}
-        </div>
-      )}
-
       {/* TOP BAR: THIẾT LẬP & AVATAR */}
       <div className="absolute top-6 left-6 flex gap-3 z-40">
         <div className="relative">
@@ -328,8 +306,29 @@ const Home = () => {
         )}
       </div>
 
+      {/* ======================================================= */}
+      {/* THÔNG BÁO TỪ ADMIN (UI HIỆN ĐẠI, KHÔNG ĐÈ NÚT) */}
+      {/* ======================================================= */}
+      {sysConfig.sysNotice && (
+        <div className="w-full max-w-md mt-24 mb-2 px-1 z-30">
+          <div className="relative overflow-hidden bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border border-orange-200 dark:border-orange-900/50 rounded-[2rem] p-5 shadow-2xl shadow-orange-500/10 flex items-center gap-4 animate-in fade-in slide-in-from-top-4 group">
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-orange-400 to-red-500"></div>
+            <div className="w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-2xl flex-shrink-0 group-hover:scale-110 transition-transform">
+              📢
+            </div>
+            <div className="flex-1">
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400 mb-1">Tin từ Bếp Trưởng</h3>
+              <p className="text-sm font-bold text-gray-800 dark:text-gray-100 leading-snug">
+                {sysConfig.sysNotice}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER LOGO */}
-      <div className={`w-full max-w-md mt-24 mb-8 text-center transition-all duration-500 ${isShopActive ? '' : 'grayscale opacity-70'}`}>
+      {/* NẾU CÓ THÔNG BÁO THÌ MT-4, NẾU KHÔNG CÓ THÌ MT-24 ĐỂ CÂN ĐỐI */}
+      <div className={`w-full max-w-md ${sysConfig.sysNotice ? 'mt-6' : 'mt-24'} mb-8 text-center transition-all duration-500 ${isShopActive ? '' : 'grayscale opacity-70'}`}>
         <div className="relative inline-block">
           <div className={`w-28 h-28 ${isShopActive ? 'bg-orange-500' : 'bg-gray-500'} rounded-full flex items-center justify-center shadow-2xl shadow-orange-200 dark:shadow-none border-4 border-white dark:border-gray-800 transition-colors`}>
             <span className="text-5xl">🍱</span>
@@ -479,9 +478,7 @@ const Home = () => {
         <div className="mt-2 text-gray-200 dark:text-gray-700 transition-colors">••••••••••••</div>
       </div>
 
-      {/* ========================================================= */}
       {/* OVERLAY GIAO DIỆN SỰ KIỆN LUCKY XU */}
-      {/* ========================================================= */}
       {showLuckyXu && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           {luckyReward === null ? (
@@ -490,14 +487,11 @@ const Home = () => {
               className={`relative cursor-pointer transition-all duration-500 ${isOpeningLuckyXu ? 'animate-bounce scale-110' : 'hover:scale-105 animate-in zoom-in'}`}
             >
               <div className="w-48 h-64 bg-gradient-to-b from-red-500 to-red-700 rounded-2xl shadow-2xl border-4 border-yellow-400 flex flex-col items-center justify-center text-white overflow-hidden relative">
-                {/* Lớp mờ rải hạt trang trí */}
                 <div className="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-yellow-300 via-transparent to-transparent"></div>
-                
                 <div className="w-16 h-16 bg-yellow-400 rounded-full flex items-center justify-center text-red-600 text-3xl font-black mb-4 shadow-inner border-2 border-yellow-200 z-10">福</div>
                 <p className="font-black text-center px-4 uppercase tracking-tighter z-10 text-yellow-300 drop-shadow-md text-lg leading-tight">Lucky Xu<br/>Đang Rơi!</p>
                 <p className="text-[10px] mt-4 opacity-90 uppercase font-black tracking-widest bg-black/20 px-3 py-1 rounded-full z-10">Chạm để mở</p>
               </div>
-              
               {isOpeningLuckyXu && (
                 <div className="absolute -top-12 left-0 right-0 text-center text-yellow-400 font-black tracking-widest uppercase text-xs animate-pulse drop-shadow-lg">
                   Đang khui quà...

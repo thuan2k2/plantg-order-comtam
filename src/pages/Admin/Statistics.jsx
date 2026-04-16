@@ -95,10 +95,28 @@ const Statistics = () => {
       );
     }
 
+    // FIX LỖI: Cập nhật cơ chế lọc theo ngày chính xác tuyệt đối qua Timestamp
     if (dateFilter) {
-      const [year, month, day] = dateFilter.split('-');
-      const formattedDate = `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
-      result = result.filter(o => o.time && o.time.includes(formattedDate));
+      const filterDateObj = new Date(dateFilter);
+      const filterYear = filterDateObj.getFullYear();
+      const filterMonth = filterDateObj.getMonth();
+      const filterDate = filterDateObj.getDate();
+
+      result = result.filter(o => {
+        // Ưu tiên so sánh bằng timestamp chuẩn
+        if (o.createdAt) {
+          const orderD = o.createdAt.toDate();
+          return orderD.getFullYear() === filterYear && 
+                 orderD.getMonth() === filterMonth && 
+                 orderD.getDate() === filterDate;
+        }
+        
+        // Fallback linh hoạt nếu đơn cũ không có createdAt
+        const [year, month, day] = dateFilter.split('-');
+        const formatted1 = `${day}/${month}/${year}`;
+        const formatted2 = `${parseInt(day, 10)}/${parseInt(month, 10)}/${year}`;
+        return o.time && (o.time.includes(formatted1) || o.time.includes(formatted2) || o.time.includes(dateFilter));
+      });
     }
 
     setFilteredOrders(result);
@@ -126,7 +144,7 @@ const Statistics = () => {
     }
   };
 
-  // MỚI: HÀM TÍNH TỔNG THỜI GIAN HOÀN THÀNH
+  // HÀM TÍNH TỔNG THỜI GIAN HOÀN THÀNH
   const calculateTotalTime = (logArray) => {
     if (!logArray || logArray.length < 2) return null;
     
@@ -314,7 +332,7 @@ const Statistics = () => {
       )}
 
       {/* ======================================= */}
-      {/* MỚI: MODAL XEM LOG THỜI GIAN */}
+      {/* MODAL XEM LOG THỜI GIAN */}
       {/* ======================================= */}
       {logModalOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
@@ -428,7 +446,6 @@ const Statistics = () => {
                  </button>
                </div>
             </form>
-
           </div>
         </div>
       )}

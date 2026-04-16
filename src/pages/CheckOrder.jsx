@@ -54,7 +54,7 @@ const ORDER_TABS = [
 ];
 
 // --- COMPONENT CARD ĐƠN HÀNG ---
-const OrderCard = ({ order }) => {
+const OrderCard = ({ order, isHighlighted }) => {
   const navigate = useNavigate();
   const [timeLeft, setTimeLeft] = useState(0);
   const [showCancelReason, setShowCancelReason] = useState(false);
@@ -143,8 +143,17 @@ const OrderCard = ({ order }) => {
   const isWalletPayment = order.paymentMethod === 'WALLET';
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-xl shadow-gray-200/50 dark:shadow-none border border-gray-100 dark:border-gray-700 p-6 overflow-hidden transition-all animate-in slide-in-from-bottom-4 relative group flex flex-col h-full">
+    <div className={`bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-xl dark:shadow-none border p-6 overflow-hidden transition-all duration-700 animate-in slide-in-from-bottom-4 relative group flex flex-col h-full
+      ${isHighlighted ? 'border-blue-400 dark:border-blue-500 shadow-blue-200/50 ring-4 ring-blue-100 dark:ring-blue-900/30' : 'border-gray-100 dark:border-gray-700 shadow-gray-200/50'}
+    `}>
       
+      {/* NẾU LÀ ĐƠN VỪA TẠO NHANH TỪ ADMIN SẼ CÓ BADGE MỚI */}
+      {isHighlighted && (
+        <div className="absolute top-0 right-0 bg-blue-500 text-white text-[9px] font-black uppercase px-3 py-1 rounded-bl-2xl shadow-sm z-20 animate-pulse">
+          Đơn mới nhất
+        </div>
+      )}
+
       {/* VÒNG ĐẾM NGƯỢC */}
       <CountdownBorder 
         startTime={order.confirmedAt} 
@@ -164,7 +173,16 @@ const OrderCard = ({ order }) => {
 
         <div className="space-y-3 mb-6 flex-1">
           <p className="text-[15px] text-gray-800 dark:text-gray-100 font-black leading-tight transition-colors">{order.items}</p>
-          <div className="flex justify-between items-end border-t border-dashed dark:border-gray-700 pt-3 transition-colors">
+          
+          {/* MỚI: Hiển thị Ghi chú và Địa chỉ nếu có */}
+          {order.note && (
+             <p className="text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 p-2 rounded-xl font-bold">Ghi chú: <span className="font-medium italic">{order.note}</span></p>
+          )}
+          {order.address && (
+             <p className="text-xs text-gray-600 dark:text-gray-300 font-medium">📍 {order.address}</p>
+          )}
+
+          <div className="flex justify-between items-end border-t border-dashed dark:border-gray-700 pt-3 mt-3 transition-colors">
             <span className="text-[10px] text-gray-400 dark:text-gray-500 font-black uppercase">Thành tiền:</span>
             <div className="text-right">
                <p className={`text-xl font-black tracking-tighter transition-colors ${isWalletPayment ? 'text-gray-400 line-through' : 'text-red-500 dark:text-red-400'}`}>
@@ -214,7 +232,7 @@ const OrderCard = ({ order }) => {
         )}
 
         {/* ======================================= */}
-        {/* MỚI: KHU VỰC ĐÁNH GIÁ (CHỈ HIỆN KHI COMPLETED) */}
+        {/* KHU VỰC ĐÁNH GIÁ (CHỈ HIỆN KHI COMPLETED) */}
         {/* ======================================= */}
         {order.status === 'COMPLETED' && (
           <div className="mb-4">
@@ -328,12 +346,13 @@ const CheckOrder = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [visibleCount, setVisibleCount] = useState(5);
   
-  // STATE MỚI: Tab trạng thái hoạt động
   const [activeTab, setActiveTab] = useState('ALL');
 
-  // Refs để quản lý logic phát âm thanh đồng bộ Telegram
   const prevStatuses = useRef({});
   const isInitialLoad = useRef(true);
+
+  // MỚI: State lưu ID đơn hàng mới nhất để làm nổi bật
+  const [highlightOrderId, setHighlightOrderId] = useState(null);
 
   useEffect(() => {
     if (userPhoneParam) setPhoneInput(userPhoneParam);
@@ -345,12 +364,11 @@ const CheckOrder = () => {
       setIsSearching(true);
       unsubscribe = subscribeToOrdersByPhone(userPhoneParam, (updatedOrders) => {
         
-        // ĐỒNG BỘ REAL-TIME VỚI TELEGRAM: Quét qua các đơn hàng để tìm sự thay đổi
+        // ĐỒNG BỘ REAL-TIME VỚI TELEGRAM
         updatedOrders.forEach(order => {
           const oldStatus = prevStatuses.current[order.id];
           
           if (oldStatus && oldStatus !== order.status) {
-            // Chỉ phát âm thanh nếu không phải lần load đầu
             if (!isInitialLoad.current) {
               try {
                 let audioPath = '/status-update.mp3';
@@ -364,13 +382,19 @@ const CheckOrder = () => {
               }
             }
           }
-          
-          // Cập nhật trạng thái mới nhất vào bộ nhớ tạm
           prevStatuses.current[order.id] = order.status;
         });
 
-        // Đánh dấu đã qua lần tải dữ liệu đầu tiên
-        if (isInitialLoad.current) {
+        if (isInitialLoad.current && updatedOrders.length > 0) {
+          // Lần đầu tải data (do click từ link), tìm đơn mới nhất và highlight nó lên
+          const newestOrder = updatedOrders[0];
+          
+          // Chỉ highlight nếu đơn này vừa tạo trong 5 phút gần đây
+          if (newestOrder.createdAt && (new Date().getTime() - newestOrder.createdAt.toDate().getTime()) < 5 * 60 * 1000) {
+            setHighlightOrderId(newestOrder.id);
+            // Tự tắt highlight sau 5 giây
+            setTimeout(() => setHighlightOrderId(null), 5000);
+          }
           isInitialLoad.current = false;
         }
 
@@ -401,7 +425,6 @@ const CheckOrder = () => {
     navigate(`/checkorder?user=${phoneInput.trim()}`);
   };
 
-  // LOGIC LỌC ĐƠN THEO TAB MƯỢT MÀ
   const filteredOrders = useMemo(() => {
     if (activeTab === 'ALL') return orders;
     return orders.filter(o => o.status === activeTab);
@@ -486,10 +509,14 @@ const CheckOrder = () => {
           </div>
         </form>
 
-        {/* DANH SÁCH ĐƠN HÀNG ĐÃ LỌC (GRID RESPONSIVE) */}
+        {/* DANH SÁCH ĐƠN HÀNG (GRID RESPONSIVE) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredOrders.slice(0, visibleCount).map((order) => (
-            <OrderCard key={order.id} order={order} />
+            <OrderCard 
+              key={order.id} 
+              order={order} 
+              isHighlighted={order.id === highlightOrderId} // Truyền prop highlight vào card
+            />
           ))}
         </div>
 
