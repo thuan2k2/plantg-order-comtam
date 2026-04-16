@@ -16,7 +16,7 @@ const checkIfOpen = (openTimeStr) => {
   
   try {
     const now = new Date();
-    const currentTime = now.getHours() * 60 + now.getMinutes(); 
+    const currentMin = now.getHours() * 60 + now.getMinutes(); 
 
     const [startStr, endStr] = openTimeStr.split('-');
     
@@ -26,7 +26,7 @@ const checkIfOpen = (openTimeStr) => {
     const [endH, endM] = endStr.trim().split(':').map(Number);
     const end = (endH || 0) * 60 + (endM || 0);
 
-    return currentTime >= start && currentTime <= end;
+    return currentMin >= start && currentMin <= end;
   } catch (e) {
     return true;
   }
@@ -46,11 +46,14 @@ const Home = () => {
 
   const [isAdminOnline, setIsAdminOnline] = useState(false);
 
+  // MỚI: Thêm canPreOrder vào cấu trúc state
   const [sysConfig, setSysConfig] = useState({
     isOpen: true,
-    isActuallyOpen: true, // MỚI: Trạng thái thực tế sau khi tính toán giờ
+    isActuallyOpen: true, 
+    canPreOrder: false,
     openTime: '11:00 - 21:00',
-    sysNotice: ''
+    sysNotice: '',
+    preOrderEnabled: false
   });
 
   // ====================================================
@@ -62,21 +65,33 @@ const Home = () => {
   const [luckyReward, setLuckyReward] = useState(null);
 
   useEffect(() => {
-    // 1. Lắng nghe thay đổi Cấu hình hệ thống & Cập nhật tự động theo giờ
+    // 1. Lắng nghe thay đổi Cấu hình hệ thống & Cập nhật logic 2 nút
     const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         const actuallyOpen = data.isOpen && checkIfOpen(data.openTime);
-        setSysConfig({ ...data, isActuallyOpen: actuallyOpen });
+        const preOrder = data.isOpen && data.preOrderEnabled;
+        
+        setSysConfig({ 
+          ...data, 
+          isActuallyOpen: actuallyOpen,
+          canPreOrder: preOrder
+        });
       }
     });
 
     // 1.5 Tạo timer để check giờ mở cửa tự động mỗi phút
     const openStatusTimer = setInterval(() => {
-      setSysConfig(prev => ({
-        ...prev,
-        isActuallyOpen: prev.isOpen && checkIfOpen(prev.openTime)
-      }));
+      setSysConfig(prev => {
+        const actuallyOpen = prev.isOpen && checkIfOpen(prev.openTime);
+        const preOrder = prev.isOpen && prev.preOrderEnabled;
+        
+        // Chỉ cập nhật state nếu có sự thay đổi để tránh re-render liên tục
+        if (prev.isActuallyOpen !== actuallyOpen || prev.canPreOrder !== preOrder) {
+          return { ...prev, isActuallyOpen: actuallyOpen, canPreOrder: preOrder };
+        }
+        return prev;
+      });
     }, 60000);
 
     // 2. Lắng nghe trạng thái Online của Admin
@@ -253,6 +268,9 @@ const Home = () => {
     }
   };
 
+  // Biến để xác định UI tổng thể của Quán (Nếu 1 trong 2 chế độ đang mở thì Quán được coi là Active)
+  const isShopActive = sysConfig.isActuallyOpen || sysConfig.canPreOrder;
+
   return (
     <div className="min-h-screen bg-orange-50/30 dark:bg-gray-900 flex flex-col items-center p-6 font-sans transition-colors duration-300 relative">
       
@@ -311,14 +329,18 @@ const Home = () => {
       </div>
 
       {/* HEADER LOGO */}
-      <div className={`w-full max-w-md mt-24 mb-8 text-center transition-all duration-500 ${sysConfig.isActuallyOpen ? '' : 'grayscale opacity-70'}`}>
+      <div className={`w-full max-w-md mt-24 mb-8 text-center transition-all duration-500 ${isShopActive ? '' : 'grayscale opacity-70'}`}>
         <div className="relative inline-block">
-          <div className={`w-28 h-28 ${sysConfig.isActuallyOpen ? 'bg-orange-500' : 'bg-gray-500'} rounded-full flex items-center justify-center shadow-2xl shadow-orange-200 dark:shadow-none border-4 border-white dark:border-gray-800 transition-colors`}>
+          <div className={`w-28 h-28 ${isShopActive ? 'bg-orange-500' : 'bg-gray-500'} rounded-full flex items-center justify-center shadow-2xl shadow-orange-200 dark:shadow-none border-4 border-white dark:border-gray-800 transition-colors`}>
             <span className="text-5xl">🍱</span>
           </div>
           {sysConfig.isActuallyOpen ? (
             <div className="absolute -top-2 -right-4 bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-lg rotate-12 shadow-md">
               HOT!
+            </div>
+          ) : sysConfig.canPreOrder ? (
+            <div className="absolute -top-2 -right-6 bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-lg rotate-12 shadow-md">
+              ĐẶT TRƯỚC
             </div>
           ) : (
              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] bg-gray-900 text-white text-xs font-black px-3 py-2 rounded-lg -rotate-12 shadow-md border-2 border-white uppercase tracking-widest whitespace-nowrap animate-pulse">
@@ -330,7 +352,7 @@ const Home = () => {
         <div className="mt-6">
           <h1 className="text-4xl font-black text-gray-800 dark:text-gray-100 tracking-tighter leading-none transition-colors">
             CƠM TẤM VINHOMES <br/>
-            <span className={`${sysConfig.isActuallyOpen ? 'text-orange-600' : 'text-gray-500'} text-2xl uppercase italic`}>Kitchen House</span>
+            <span className={`${isShopActive ? 'text-orange-600' : 'text-gray-500'} text-2xl uppercase italic`}>Kitchen House</span>
           </h1>
           <div className="flex justify-center gap-1 mt-3">
             {[1,2,3,4,5].map(i => <span key={i} className="text-yellow-500 text-sm">⭐</span>)}
@@ -386,18 +408,21 @@ const Home = () => {
 
       {/* ACTION BUTTONS */}
       <div className="w-full max-w-xs space-y-4 z-10">
+        
+        {/* NÚT 1: ĐẶT CƠM NGAY */}
         <button
           onClick={() => {
-            if (!sysConfig.isActuallyOpen) return alert(`Quán đang đóng cửa.\nGiờ mở cửa: ${sysConfig.openTime || '11:00 - 21:00'}`);
+            if (!sysConfig.isActuallyOpen) return alert(`Quán hiện chưa tới giờ nhận đơn giao ngay.\nGiờ mở cửa: ${sysConfig.openTime || '11:00 - 21:00'}`);
             hasOrderedBefore ? navigate(`/order?user=${savedPhone}`) : setIsPopupOpen(true);
           }}
           className={`w-full ${sysConfig.isActuallyOpen ? 'bg-gray-800 dark:bg-orange-600 hover:bg-black dark:hover:bg-orange-700 shadow-xl shadow-gray-200 dark:shadow-none' : 'bg-gray-400 cursor-not-allowed'} text-white font-black py-5 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest`}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" /></svg>
-          {sysConfig.isActuallyOpen ? 'ĐẶT CƠM NGAY' : 'TẠM ĐÓNG CỬA'}
+          {sysConfig.isActuallyOpen ? 'ĐẶT CƠM NGAY' : 'CHƯA TỚI GIỜ MỞ CỬA'}
         </button>
 
-        {sysConfig.isActuallyOpen && (
+        {/* NÚT 2: ĐẶT GIAO SAU */}
+        {sysConfig.canPreOrder && (
           <button
             onClick={() => hasOrderedBefore ? navigate(`/order?user=${savedPhone}&type=schedule`) : setIsPopupOpen(true)}
             className="w-full bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 font-black py-4 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-xs tracking-widest border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/50"

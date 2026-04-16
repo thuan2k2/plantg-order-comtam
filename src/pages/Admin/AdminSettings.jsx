@@ -24,7 +24,9 @@ const AdminSettings = () => {
     isOpen: true,
     minOrder: 0,
     openTime: '',
-    sysNotice: ''
+    sysNotice: '',
+    // MỚI: Thêm trường cho phép đặt đơn trước
+    preOrderEnabled: false 
   });
 
   // State cho Test Reset (Gamification & Lucky Xu)
@@ -37,7 +39,11 @@ const AdminSettings = () => {
       try {
         const snap = await getDoc(doc(db, 'system', 'config'));
         if (snap.exists()) {
-          setConfig(snap.data());
+          setConfig({
+            // Khởi tạo các giá trị mặc định để tránh lỗi nếu db chưa có
+            preOrderEnabled: false, 
+            ...snap.data()
+          });
         } else {
           console.warn("Chưa có document system/config trên Firestore.");
         }
@@ -287,6 +293,25 @@ const AdminSettings = () => {
                 : 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-500 shadow-red-100 dark:shadow-none hover:bg-red-100'}`}
           >
             {config.isOpen ? '● Đang mở cửa' : '○ Đang đóng cửa'}
+          </button>
+        </div>
+
+        {/* ========================================================= */}
+        {/* MỚI: NÚT BẬT TẮT CHẾ ĐỘ ĐẶT TRƯỚC */}
+        {/* ========================================================= */}
+        <div className="bg-blue-50 dark:bg-blue-900/20 p-6 sm:p-8 rounded-[2.5rem] border border-blue-100 dark:border-blue-800 flex flex-col sm:flex-row justify-between items-center shadow-sm gap-4 transition-colors">
+          <div className="text-center sm:text-left">
+            <p className="font-black uppercase text-sm text-blue-700 dark:text-blue-400">Chế độ "Đặt đơn trước" (Hẹn giờ)</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500 dark:text-blue-300 mt-2">Bật: Cho phép khách đặt đơn giao sau bất kể giờ giấc.</p>
+          </div>
+          <button 
+            onClick={() => setConfig({...config, preOrderEnabled: !config.preOrderEnabled})}
+            className={`w-full sm:w-auto px-8 py-4 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] transition-all duration-300 shadow-lg active:scale-95 border-2
+              ${config.preOrderEnabled 
+                ? 'bg-blue-600 text-white border-blue-600 shadow-blue-200 dark:shadow-none hover:bg-blue-700' 
+                : 'bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 shadow-none'}`}
+          >
+            {config.preOrderEnabled ? '✅ ĐANG MỞ ĐẶT TRƯỚC' : '❌ ĐANG TẮT ĐẶT TRƯỚC'}
           </button>
         </div>
 

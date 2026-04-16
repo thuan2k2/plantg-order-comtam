@@ -30,9 +30,10 @@ import Statistics from './pages/Admin/Statistics';
 import AdminSettings from './pages/Admin/AdminSettings'; 
 import ManageCommunication from './pages/Admin/ManageCommunication'; 
 import ManageEvents from './pages/Admin/ManageEvents'; 
-
-// --- MỚI: Bổ sung trang Quản lý Đánh giá Đơn hàng ---
 import ManageRatings from './pages/Admin/ManageRatings'; 
+
+// --- MỚI: Bổ sung trang Quản lý Đơn hàng (Toàn hệ thống) ---
+import ManageAllOrders from './pages/Admin/ManageAllOrders'; 
 
 // CSS Toàn cục
 import './index.css';
@@ -102,9 +103,10 @@ function App() {
               <Route path="chat" element={<ManageChat />} />
               <Route path="communication" element={<ManageCommunication />} />
               <Route path="events" element={<ManageEvents />} />
-              
-              {/* --- KÍCH HOẠT ĐƯỜNG DẪN /admin/ratings TẠI ĐÂY --- */}
               <Route path="ratings" element={<ManageRatings />} />
+              
+              {/* --- KÍCH HOẠT ĐƯỜNG DẪN /admin/all-orders TẠI ĐÂY --- */}
+              <Route path="all-orders" element={<ManageAllOrders />} />
               
               <Route path="settings" element={<AdminSettings />} /> 
             </Route>
