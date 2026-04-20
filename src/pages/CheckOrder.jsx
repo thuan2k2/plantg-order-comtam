@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'; 
+import { doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore'; 
 import { db } from '../firebase/config';
 import StatusBadge from '../components/StatusBadge'; 
 import CountdownBorder from '../components/CountdownBorder'; 
@@ -11,36 +11,8 @@ import {
   requestCancelOrder 
 } from '../services/orderService'; 
 
-// --- CẤU HÌNH HỆ THỐNG XẾP HẠNG ---
-const RANK_TIERS = [
-  { name: 'Đồng', min: 0, color: 'from-amber-700 to-amber-500', icon: '🥉' },
-  { name: 'Bạc', min: 300000, color: 'from-slate-400 to-slate-200', icon: '🥈' },
-  { name: 'Vàng', min: 600000, color: 'from-yellow-600 to-yellow-300', icon: '🥇' },
-  { name: 'Bạch Kim', min: 900000, color: 'from-cyan-400 to-blue-300', icon: '💎' },
-  { name: 'Kim Cương', min: 1200000, color: 'from-blue-600 to-indigo-400', icon: '💠' },
-  { name: 'Tinh Anh', min: 1500000, color: 'from-purple-600 to-pink-400', icon: '🔮' },
-  { name: 'Cao Thủ', min: 1800000, color: 'from-red-600 to-orange-500', icon: '🔥' },
-  { name: 'Chiến Tướng', min: 2100000, color: 'from-red-800 to-red-600', icon: '👑' },
-  { name: 'Thách Đấu', min: 2400000, color: 'from-gray-900 via-purple-900 to-violet-600', icon: '🌌' }
-];
-
-const getRankInfo = (totalSpend) => {
-  let current = RANK_TIERS[0];
-  let next = RANK_TIERS[1];
-  for (let i = 0; i < RANK_TIERS.length; i++) {
-    if (totalSpend >= RANK_TIERS[i].min) {
-      current = RANK_TIERS[i];
-      next = RANK_TIERS[i + 1] || null;
-    }
-  }
-  let progress = 100;
-  if (next) {
-    const range = next.min - current.min;
-    const earned = totalSpend - current.min;
-    progress = Math.min(Math.floor((earned / range) * 100), 100);
-  }
-  return { current, next, progress };
-};
+// --- GỌI HÀM RANK TỪ UTILS THAY VÌ CODE CỨNG TẠI ĐÂY ---
+import { getRankInfo } from '../utils/rankUtils';
 
 // --- CẤU HÌNH TABS TRẠNG THÁI ---
 const ORDER_TABS = [
@@ -61,7 +33,6 @@ const OrderCard = ({ order, isHighlighted }) => {
   const [cancelReason, setCancelReason] = useState('');
   const [showPaymentSelection, setShowPaymentSelection] = useState(false);
 
-  // MỚI: State cho Đánh giá (Rating)
   const [ratingStars, setRatingStars] = useState(5);
   const [ratingComment, setRatingComment] = useState('');
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
@@ -115,7 +86,6 @@ const OrderCard = ({ order, isHighlighted }) => {
     }
   };
 
-  // --- MỚI: HÀM GỬI ĐÁNH GIÁ ---
   const handleSubmitRating = async (e) => {
     e.preventDefault();
     if (isSubmittingRating) return;
@@ -127,7 +97,7 @@ const OrderCard = ({ order, isHighlighted }) => {
           stars: ratingStars,
           comment: ratingComment.trim(),
           createdAt: serverTimestamp(),
-          adminReply: "" // Khởi tạo trống để Admin phản hồi sau
+          adminReply: "" 
         }
       });
       alert("Cảm ơn bạn đã đánh giá món ăn!");
@@ -147,14 +117,12 @@ const OrderCard = ({ order, isHighlighted }) => {
       ${isHighlighted ? 'border-blue-400 dark:border-blue-500 shadow-blue-200/50 ring-4 ring-blue-100 dark:ring-blue-900/30' : 'border-gray-100 dark:border-gray-700 shadow-gray-200/50'}
     `}>
       
-      {/* NẾU LÀ ĐƠN VỪA TẠO NHANH TỪ ADMIN SẼ CÓ BADGE MỚI */}
       {isHighlighted && (
         <div className="absolute top-0 right-0 bg-blue-500 text-white text-[9px] font-black uppercase px-3 py-1 rounded-bl-2xl shadow-sm z-20 animate-pulse">
           Đơn mới nhất
         </div>
       )}
 
-      {/* VÒNG ĐẾM NGƯỢC */}
       <CountdownBorder 
         startTime={order.confirmedAt} 
         isActive={isProcessing} 
@@ -174,7 +142,6 @@ const OrderCard = ({ order, isHighlighted }) => {
         <div className="space-y-3 mb-6 flex-1">
           <p className="text-[15px] text-gray-800 dark:text-gray-100 font-black leading-tight transition-colors">{order.items}</p>
           
-          {/* MỚI: Hiển thị Ghi chú và Địa chỉ nếu có */}
           {order.note && (
              <p className="text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 p-2 rounded-xl font-bold">Ghi chú: <span className="font-medium italic">{order.note}</span></p>
           )}
@@ -231,9 +198,7 @@ const OrderCard = ({ order, isHighlighted }) => {
           </div>
         )}
 
-        {/* ======================================= */}
-        {/* KHU VỰC ĐÁNH GIÁ (CHỈ HIỆN KHI COMPLETED) */}
-        {/* ======================================= */}
+        {/* KHU VỰC ĐÁNH GIÁ */}
         {order.status === 'COMPLETED' && (
           <div className="mb-4">
             {!order.rating ? (
@@ -351,7 +316,9 @@ const CheckOrder = () => {
   const prevStatuses = useRef({});
   const isInitialLoad = useRef(true);
 
-  // MỚI: State lưu ID đơn hàng mới nhất để làm nổi bật
+  // MỚI: Dữ liệu rank sẽ được gọi từ DB
+  const [userRankInfo, setUserRankInfo] = useState(null);
+
   const [highlightOrderId, setHighlightOrderId] = useState(null);
 
   useEffect(() => {
@@ -362,6 +329,16 @@ const CheckOrder = () => {
     let unsubscribe = () => {};
     if (userPhoneParam && userPhoneParam.length >= 10) {
       setIsSearching(true);
+      
+      // MỚI: Lấy thông tin Rank từ database
+      const fetchUserData = async () => {
+        const userDoc = await getDoc(doc(db, 'users', userPhoneParam.trim()));
+        if (userDoc.exists()) {
+           setUserRankInfo(getRankInfo(userDoc.data().totalSpend || 0, userDoc.data().manualRankId));
+        }
+      };
+      fetchUserData();
+
       unsubscribe = subscribeToOrdersByPhone(userPhoneParam, (updatedOrders) => {
         
         // ĐỒNG BỘ REAL-TIME VỚI TELEGRAM
@@ -386,13 +363,10 @@ const CheckOrder = () => {
         });
 
         if (isInitialLoad.current && updatedOrders.length > 0) {
-          // Lần đầu tải data (do click từ link), tìm đơn mới nhất và highlight nó lên
           const newestOrder = updatedOrders[0];
           
-          // Chỉ highlight nếu đơn này vừa tạo trong 5 phút gần đây
           if (newestOrder.createdAt && (new Date().getTime() - newestOrder.createdAt.toDate().getTime()) < 5 * 60 * 1000) {
             setHighlightOrderId(newestOrder.id);
-            // Tự tắt highlight sau 5 giây
             setTimeout(() => setHighlightOrderId(null), 5000);
           }
           isInitialLoad.current = false;
@@ -407,14 +381,6 @@ const CheckOrder = () => {
     }
     return () => unsubscribe();
   }, [userPhoneParam]);
-
-  // TÍNH RANK
-  const rankData = useMemo(() => {
-    const totalSpend = orders
-      .filter(o => o.status === 'COMPLETED')
-      .reduce((sum, o) => sum + parseInt(o.total?.replace(/\D/g, '') || 0), 0);
-    return getRankInfo(totalSpend);
-  }, [orders]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -446,17 +412,17 @@ const CheckOrder = () => {
           </h1>
         </div>
 
-        {/* WIDGET RANK */}
-        {userPhoneParam && orders.length > 0 && (
+        {/* WIDGET RANK (SỬ DỤNG DỮ LIỆU TỪ DB THAY VÌ TÍNH TẠI ĐÂY) */}
+        {userPhoneParam && userRankInfo && (
           <div className="flex flex-col items-end">
-            <div className={`bg-gradient-to-r ${rankData.current.color} px-4 py-1.5 rounded-2xl shadow-lg border-2 border-white dark:border-gray-700 flex items-center gap-2 animate-in slide-in-from-right-4 duration-500`}>
-              <span className="text-sm">{rankData.current.icon}</span>
-              <span className="text-[10px] font-black text-white uppercase tracking-widest">{rankData.current.name}</span>
+            <div className={`bg-gradient-to-r ${userRankInfo.current.color} px-4 py-1.5 rounded-2xl shadow-lg border-2 border-white dark:border-gray-700 flex items-center gap-2 animate-in slide-in-from-right-4 duration-500`}>
+              <span className="text-sm">{userRankInfo.current.icon}</span>
+              <span className="text-[10px] font-black text-white uppercase tracking-widest">{userRankInfo.current.name}</span>
             </div>
             <div className="w-24 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full mt-2 overflow-hidden border border-white dark:border-gray-800 transition-colors">
               <div 
-                className={`h-full bg-gradient-to-r ${rankData.current.color} transition-all duration-1000`} 
-                style={{ width: `${rankData.progress}%` }}
+                className={`h-full bg-gradient-to-r ${userRankInfo.current.color} transition-all duration-1000`} 
+                style={{ width: `${userRankInfo.progress}%` }}
               ></div>
             </div>
           </div>

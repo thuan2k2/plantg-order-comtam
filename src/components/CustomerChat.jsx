@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { sendMessage, markRead } from '../services/chatService';
 import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import UserAvatar from './UserAvatar'; // <-- NHÚNG COMPONENT AVATAR CÓ KHUNG VIỀN
 
 const CustomerChat = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -9,6 +10,9 @@ const CustomerChat = () => {
   const [messages, setMessages] = useState([]); 
   const [input, setInput] = useState('');
   
+  // MỚI: State lưu dữ liệu User để lấy Rank
+  const [userData, setUserData] = useState(null);
+
   const audioRef = useRef(new Audio('/status-update.mp3'));
   const messagesEndRef = useRef(null);
   const msgCountRef = useRef(0);
@@ -16,6 +20,17 @@ const CustomerChat = () => {
   const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
   const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
   const phone = savedPhones[0];
+
+  // 0. LẮNG NGHE DỮ LIỆU USER ĐỂ TÍNH RANK
+  useEffect(() => {
+    if (!phone) return;
+    const unsubUser = onSnapshot(doc(db, 'users', phone), (snap) => {
+      if (snap.exists()) {
+        setUserData(snap.data());
+      }
+    });
+    return () => unsubUser();
+  }, [phone]);
 
   // 1. LẮNG NGHE TRẠNG THÁI PHÒNG CHAT
   useEffect(() => {
@@ -109,17 +124,26 @@ const CustomerChat = () => {
               const isUser = m.sender?.toUpperCase() === 'USER';
               return (
                 <div key={i} className={`flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-                  {/* Avatar cạnh tin nhắn */}
-                  <div className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 border border-white dark:border-gray-700 shadow-sm">
-                    <img 
-                      src={isUser 
-                        ? (userProfile.avatarUrl || `https://ui-avatars.com/api/?name=${userProfile.fullName || 'Khách'}&background=random`) 
-                        : '/logo-admin.png'
-                      } 
-                      onError={(e) => { e.target.src = 'https://ui-avatars.com/api/?name=Admin&background=000'; }}
-                      className="w-full h-full object-cover"
-                      alt="avt"
-                    />
+                  
+                  {/* Avatar cạnh tin nhắn - Thay thế bằng UserAvatar cho User */}
+                  <div className="flex-shrink-0 mb-1">
+                    {isUser ? (
+                      <UserAvatar 
+                        avatarUrl={userProfile.avatarUrl || `https://ui-avatars.com/api/?name=${userProfile.fullName || 'Khách'}&background=random`}
+                        totalSpend={userData?.totalSpend || 0}
+                        manualRankId={userData?.manualRankId}
+                        size="w-7 h-7"
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full overflow-hidden border border-white dark:border-gray-700 shadow-sm">
+                        <img 
+                          src='/logo-admin.png' 
+                          onError={(e) => { e.target.src = 'https://ui-avatars.com/api/?name=Admin&background=000'; }}
+                          className="w-full h-full object-cover"
+                          alt="admin-avt"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Bubble tin nhắn */}
@@ -137,7 +161,7 @@ const CustomerChat = () => {
           </div>
 
           {/* FORM NHẬP TIN */}
-          <form onSubmit={handleSend} className="p-4 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 flex gap-2">
+          <form onSubmit={handleSend} className="p-4 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 flex gap-2 z-20">
             <input 
               value={input} 
               onChange={e => setInput(e.target.value)} 

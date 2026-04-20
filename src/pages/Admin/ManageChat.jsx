@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, getDoc, setDoc, serverTimestamp, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { sendMessage, markRead } from '../../services/chatService'; 
+import UserAvatar from '../../components/UserAvatar'; // <-- Nhúng Component Avatar Mới
+import { getRankInfo } from '../../utils/rankUtils';
 
 const ManageChat = () => {
   const [chats, setChats] = useState([]);
@@ -13,6 +15,9 @@ const ManageChat = () => {
 
   const [quickReplies, setQuickReplies] = useState([]);
   const [showQuickMenu, setShowQuickMenu] = useState(false);
+
+  // MỚI: State lưu thông tin rank của tất cả users đang chat
+  const [usersRankData, setUsersRankData] = useState({});
 
   const audioRef = useRef(new Audio('/status-update.mp3'));
   const messagesEndRef = useRef(null);
@@ -38,11 +43,31 @@ const ManageChat = () => {
         }
       });
 
+      // Tự động tải thông tin Rank của các User mới trong danh sách chat
+      newChats.forEach(async (chat) => {
+        if (!usersRankData[chat.id]) {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', chat.id)); // ID chat chính là phone
+            if (userDoc.exists()) {
+              setUsersRankData(prev => ({
+                ...prev,
+                [chat.id]: {
+                  totalSpend: userDoc.data().totalSpend || 0,
+                  manualRankId: userDoc.data().manualRankId || null
+                }
+              }));
+            }
+          } catch (err) {
+            console.error("Lỗi lấy thông tin Rank user:", err);
+          }
+        }
+      });
+
       prevChatsRef.current = newChats;
       setChats(newChats);
     });
     return () => unsubscribe();
-  }, []);
+  }, [usersRankData]);
 
   // 2. LẮNG NGHE TIN NHẮN TỪ SUBCOLLECTION
   useEffect(() => {
@@ -113,6 +138,7 @@ const ManageChat = () => {
   };
 
   const activeChat = chats.find(c => c.id === activeId);
+  const activeChatRankInfo = activeChat ? getRankInfo(usersRankData[activeChat.id]?.totalSpend || 0, usersRankData[activeChat.id]?.manualRankId) : null;
 
   // Auto-scroll xuống cuối
   useEffect(() => {
@@ -197,25 +223,37 @@ const ManageChat = () => {
             <div className="p-10 text-center opacity-30 italic text-xs font-bold dark:text-white">Không có hội thoại</div>
           )}
 
-          {chats.map(c => (
-            <div 
-              key={c.id} 
-              onClick={() => { setActiveId(c.id); markRead(c.id, 'ADMIN'); }}
-              className={`p-5 cursor-pointer border-b border-gray-50 dark:border-gray-700/50 transition-all flex items-center gap-4 ${activeId === c.id ? 'bg-blue-600 text-white' : 'hover:bg-white dark:hover:bg-gray-800 bg-transparent'}`}
-            >
-              <div className="w-12 h-12 rounded-2xl overflow-hidden border-2 border-white shadow-sm flex-shrink-0 bg-white">
-                <img src={c.userAvatar || `https://ui-avatars.com/api/?name=${c.userName}&background=random`} className="w-full h-full object-cover" alt="avt" />
-              </div>
+          {chats.map(c => {
+            const rankData = usersRankData[c.id];
 
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-center">
-                  <p className={`font-black text-xs uppercase truncate ${activeId === c.id ? 'text-white' : 'text-gray-800 dark:text-gray-200'}`}>{c.userName}</p>
-                  {c.unreadAdmin && <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border-2 border-white"></span>}
+            return (
+              <div 
+                key={c.id} 
+                onClick={() => { setActiveId(c.id); markRead(c.id, 'ADMIN'); }}
+                className={`p-5 cursor-pointer border-b border-gray-50 dark:border-gray-700/50 transition-all flex items-center gap-4 ${activeId === c.id ? 'bg-blue-600 text-white' : 'hover:bg-white dark:hover:bg-gray-800 bg-transparent'}`}
+              >
+                <div className="flex-shrink-0 relative mt-2">
+                  {/* SỬ DỤNG COMPONENT USERAVATAR Ở ĐÂY */}
+                  <UserAvatar 
+                    avatarUrl={c.userAvatar || `https://ui-avatars.com/api/?name=${c.userName}&background=random`}
+                    totalSpend={rankData?.totalSpend || 0}
+                    manualRankId={rankData?.manualRankId}
+                    size="w-12 h-12"
+                  />
+                  {c.unreadAdmin && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse border-2 border-white dark:border-gray-800 z-20"></span>
+                  )}
                 </div>
-                <p className={`text-[10px] font-bold mt-1 ${activeId === c.id ? 'text-blue-100' : 'text-gray-400'}`}>{c.userPhone}</p>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-center">
+                    <p className={`font-black text-xs uppercase truncate ${activeId === c.id ? 'text-white' : 'text-gray-800 dark:text-gray-200'}`}>{c.userName}</p>
+                  </div>
+                  <p className={`text-[10px] font-bold mt-1 ${activeId === c.id ? 'text-blue-100' : 'text-gray-400'}`}>{c.userPhone}</p>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -226,12 +264,26 @@ const ManageChat = () => {
             {/* Header phòng chat */}
             <div className="p-4 px-8 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-white/80 dark:bg-gray-800/80 backdrop-blur-md sticky top-0 z-10">
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-200">
-                  <img src={activeChat.userAvatar || `https://ui-avatars.com/api/?name=${activeChat.userName}&background=random`} alt="avt" />
+                <div className="mt-2">
+                  <UserAvatar 
+                    avatarUrl={activeChat.userAvatar || `https://ui-avatars.com/api/?name=${activeChat.userName}&background=random`}
+                    totalSpend={usersRankData[activeChat.id]?.totalSpend || 0}
+                    manualRankId={usersRankData[activeChat.id]?.manualRankId}
+                    size="w-12 h-12"
+                  />
                 </div>
                 <div>
                    <p className="font-black uppercase text-xs text-gray-800 dark:text-white leading-none">{activeChat.userName}</p>
-                   <p className="text-[9px] font-bold text-green-500 mt-1.5 uppercase tracking-widest">Đang trực tuyến</p>
+                   <div className="flex items-center gap-2 mt-1.5">
+                     <p className="text-[9px] font-bold text-green-500 uppercase tracking-widest">Đang trực tuyến</p>
+                     
+                     {/* Hiện thông tin hạng chi tiết trên Header */}
+                     {activeChatRankInfo && (
+                        <span className={`text-[8px] font-black text-white px-2 py-0.5 rounded-full uppercase tracking-widest bg-gradient-to-r ${activeChatRankInfo.current.color} shadow-sm`}>
+                          {activeChatRankInfo.current.icon} {activeChatRankInfo.current.name}
+                        </span>
+                     )}
+                   </div>
                 </div>
               </div>
               <button 

@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, getDoc, updateDoc } from 'firebase/firestore'; 
+import { doc, onSnapshot, getDoc, updateDoc, increment } from 'firebase/firestore'; 
 import { db } from '../firebase/config';
 import UsernamePopup from '../components/UsernamePopup';
 import { useSettings } from '../contexts/SettingsContext'; 
 import { getUserByPhone } from '../services/authService'; 
 
-// IMPORT 2 COMPONENT MỚI
+// IMPORT COMPONENT & UTILS MỚI
 import Gamification from '../components/Gamification';
 import NotificationCenter from '../components/NotificationCenter';
+import UserAvatar from '../components/UserAvatar';
+import { getRankInfo } from '../utils/rankUtils';
 
 // --- HÀM KIỂM TRA GIỜ MỞ CỬA ---
 const checkIfOpen = (openTimeStr) => {
@@ -45,6 +47,9 @@ const Home = () => {
   const [totalXu, setTotalXu] = useState(0);
 
   const [isAdminOnline, setIsAdminOnline] = useState(false);
+  
+  // State lưu toàn bộ dữ liệu User để xử lý Gamification
+  const [userData, setUserData] = useState(null);
 
   const [sysConfig, setSysConfig] = useState({
     isOpen: true,
@@ -115,6 +120,7 @@ const Home = () => {
         const unsubUser = onSnapshot(userRef, (snap) => {
           if (snap.exists()) {
             const data = snap.data();
+            setUserData(data); // Lưu lại để dùng cho Auto Perks
             setTotalXu(data.totalXu || data.coins || 0); 
             setAvatarUrl(data.avatarUrl || ''); 
             
@@ -162,7 +168,76 @@ const Home = () => {
     };
   }, []);
 
-  // VÒNG LẶP LUCKY XU
+  // ====================================================
+  // HỆ THỐNG XỬ LÝ ĐẶC QUYỀN AUTO (GAMIFICATION)
+  // ====================================================
+  useEffect(() => {
+    if (!userData || !savedPhone) return;
+
+    const processAutoPerks = async () => {
+      const { activeAutoPerk, totalSpend, manualRankId } = userData;
+      if (!activeAutoPerk || activeAutoPerk === 'NONE') return;
+
+      const rankInfo = getRankInfo(totalSpend || 0, manualRankId);
+      const allowedPerks = rankInfo.current.autoPerks;
+
+      // Bảo mật: Nếu Rank bị rớt và không còn quyền xài tính năng đó nữa
+      if (!allowedPerks.includes(activeAutoPerk) && activeAutoPerk !== 'ALL') return;
+
+      const limit = rankInfo.current.limit || Infinity;
+      const todayStr = new Date().toDateString();
+      let totalClaimed = 0;
+      let updates = {};
+      let messages = [];
+
+      // 1. Auto nhận Hộp Quà (Max 50 Xu)
+      if ((activeAutoPerk === 'GIFT' || activeAutoPerk === 'ALL') && userData.lastGiftReceived !== todayStr) {
+        const amount = Math.min(50, limit);
+        updates.lastGiftReceived = todayStr;
+        totalClaimed += amount;
+        messages.push(`🎁 Hộp Quà (+${amount} Xu)`);
+      }
+
+      // 2. Auto Điểm danh (Max 250 Xu)
+      if ((activeAutoPerk === 'CHECKIN' || activeAutoPerk === 'ALL') && userData.lastCheckInDate !== todayStr) {
+        const amount = Math.min(250, limit);
+        updates.lastCheckInDate = todayStr;
+        totalClaimed += amount;
+        messages.push(`📅 Điểm Danh (+${amount} Xu)`);
+      }
+
+      // 3. Auto Lì Xì Không Cần Canh Giờ (Max 400 Xu)
+      if ((activeAutoPerk === 'LUCKY' || activeAutoPerk === 'ALL') && userData.lastAutoLuckyDate !== todayStr) {
+        const amount = Math.min(400, limit);
+        updates.lastAutoLuckyDate = todayStr;
+        totalClaimed += amount;
+        messages.push(`🧧 Săn Lì Xì Tự Động (+${amount} Xu)`);
+      }
+
+      // Nếu có nhận thưởng, tiến hành cộng vào Database
+      if (totalClaimed > 0) {
+        try {
+          const userRef = doc(db, 'users', savedPhone);
+          await updateDoc(userRef, {
+            ...updates,
+            totalXu: increment(totalClaimed),
+            coins: increment(totalClaimed) // Hỗ trợ tương thích biến cũ
+          });
+
+          setTimeout(() => {
+            alert(`⚡ ĐẶC QUYỀN AUTO KÍCH HOẠT!\n\nHệ thống đã tự động thu thập cho bạn:\n- ${messages.join('\n- ')}\n\nTổng nhận: +${totalClaimed} Xu!`);
+          }, 1500); // Trì hoãn 1.5s để UI Load xong mới báo
+        } catch (error) {
+          console.error("Lỗi Auto Claim:", error);
+        }
+      }
+    };
+
+    processAutoPerks();
+  }, [userData, savedPhone]);
+
+
+  // VÒNG LẶP LUCKY XU THỦ CÔNG
   useEffect(() => {
     if (!luckyConfig || !savedPhone) return;
 
@@ -177,7 +252,7 @@ const Home = () => {
         const timeKey = `${todayStr} ${currentTime}`;
         
         const userSnap = await getDoc(doc(db, 'users', savedPhone));
-        if (userSnap.exists() && userSnap.data().lastLuckyReceived !== timeKey) {
+        if (userSnap.exists() && userSnap.data().lastLuckyReceived !== timeKey && userSnap.data().lastAutoLuckyDate !== todayStr) {
           setShowLuckyXu(true);
           
           window.luckyTimeout = setTimeout(() => {
@@ -203,13 +278,13 @@ const Home = () => {
 
     const userRef = doc(db, 'users', savedPhone);
     const userSnap = await getDoc(userRef);
-    const userData = userSnap.exists() ? userSnap.data() : {};
+    const userDbData = userSnap.exists() ? userSnap.data() : {};
 
     const now = new Date();
     const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     const timeKey = `${now.toDateString()} ${currentTime}`;
 
-    if (userData.lastLuckyReceived === timeKey) {
+    if (userDbData.lastLuckyReceived === timeKey || userDbData.lastAutoLuckyDate === now.toDateString()) {
       alert("Bạn đã nhận lì xì ở khung giờ này rồi!");
       setIsOpeningLuckyXu(false);
       setShowLuckyXu(false);
@@ -222,7 +297,7 @@ const Home = () => {
         const max = luckyConfig.max || 300;
         const randomXu = Math.floor(Math.random() * (max - min + 1)) + min;
 
-        const currentXu = userData.totalXu || userData.coins || 0;
+        const currentXu = userDbData.totalXu || userDbData.coins || 0;
 
         await updateDoc(userRef, {
           totalXu: currentXu + randomXu,
@@ -293,21 +368,23 @@ const Home = () => {
         {hasOrderedBefore && <NotificationCenter />}
 
         {hasOrderedBefore && (
-          <button 
+          <div 
             onClick={() => navigate('/settings')}
-            className="w-12 h-12 flex items-center justify-center bg-white dark:bg-gray-800 rounded-full shadow-md border border-gray-100 dark:border-gray-700 hover:scale-105 transition-transform overflow-hidden"
+            className="relative cursor-pointer hover:scale-105 transition-transform"
+            title="Xem hồ sơ"
           >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-            )}
-          </button>
+            <UserAvatar 
+              avatarUrl={avatarUrl}
+              totalSpend={userData?.totalSpend || 0}
+              manualRankId={userData?.manualRankId}
+              size="w-12 h-12"
+            />
+          </div>
         )}
       </div>
 
       {/* ======================================================= */}
-      {/* THÔNG BÁO TỪ ADMIN (UI HIỆN ĐẠI, KHÔNG ĐÈ NÚT) */}
+      {/* THÔNG BÁO TỪ ADMIN */}
       {/* ======================================================= */}
       {sysConfig.sysNotice && (
         <div className="w-full max-w-md mt-24 mb-2 px-1 z-30">
@@ -327,7 +404,6 @@ const Home = () => {
       )}
 
       {/* HEADER LOGO */}
-      {/* NẾU CÓ THÔNG BÁO THÌ MT-4, NẾU KHÔNG CÓ THÌ MT-24 ĐỂ CÂN ĐỐI */}
       <div className={`w-full max-w-md ${sysConfig.sysNotice ? 'mt-6' : 'mt-24'} mb-8 text-center transition-all duration-500 ${isShopActive ? '' : 'grayscale opacity-70'}`}>
         <div className="relative inline-block">
           <div className={`w-28 h-28 ${isShopActive ? 'bg-orange-500' : 'bg-gray-500'} rounded-full flex items-center justify-center shadow-2xl shadow-orange-200 dark:shadow-none border-4 border-white dark:border-gray-800 transition-colors`}>
@@ -407,8 +483,6 @@ const Home = () => {
 
       {/* ACTION BUTTONS */}
       <div className="w-full max-w-xs space-y-4 z-10">
-        
-        {/* NÚT 1: ĐẶT CƠM NGAY */}
         <button
           onClick={() => {
             if (!sysConfig.isActuallyOpen) return alert(`Quán hiện chưa tới giờ nhận đơn giao ngay.\nGiờ mở cửa: ${sysConfig.openTime || '11:00 - 21:00'}`);
@@ -420,7 +494,6 @@ const Home = () => {
           {sysConfig.isActuallyOpen ? 'ĐẶT CƠM NGAY' : 'CHƯA TỚI GIỜ MỞ CỬA'}
         </button>
 
-        {/* NÚT 2: ĐẶT GIAO SAU */}
         {sysConfig.canPreOrder && (
           <button
             onClick={() => hasOrderedBefore ? navigate(`/order?user=${savedPhone}&type=schedule`) : setIsPopupOpen(true)}

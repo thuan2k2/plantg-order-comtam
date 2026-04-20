@@ -34,6 +34,8 @@ import ManageRatings from './pages/Admin/ManageRatings';
 
 // --- MỚI: Bổ sung trang Quản lý Đơn hàng (Toàn hệ thống) ---
 import ManageAllOrders from './pages/Admin/ManageAllOrders'; 
+// --- MỚI: Bổ sung trang Quản lý Xếp hạng (Rank) ---
+import ManageRanks from './pages/Admin/ManageRanks';
 
 // CSS Toàn cục
 import './index.css';
@@ -105,8 +107,9 @@ function App() {
               <Route path="events" element={<ManageEvents />} />
               <Route path="ratings" element={<ManageRatings />} />
               
-              {/* --- KÍCH HOẠT ĐƯỜNG DẪN /admin/all-orders TẠI ĐÂY --- */}
+              {/* --- KÍCH HOẠT ĐƯỜNG DẪN MỚI TẠI ĐÂY --- */}
               <Route path="all-orders" element={<ManageAllOrders />} />
+              <Route path="ranks" element={<ManageRanks />} />
               
               <Route path="settings" element={<AdminSettings />} /> 
             </Route>
