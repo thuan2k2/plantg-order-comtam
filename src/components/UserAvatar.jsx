@@ -29,13 +29,15 @@ const UserAvatar = ({ avatarUrl, totalSpend = 0, manualRankId = null, size = 'w-
         />
       )}
 
-      {/* MỚI: Icon VIP cấp độ nằm ở góc trên bên phải */}
+      {/* ĐÃ FIX: Icon VIP chuyển xuống góc dưới bên phải */}
       {current && current.vipIcon && (
-        <img 
-          src={current.vipIcon} 
-          alt={`VIP Level ${current.vipLevel}`} 
-          className="absolute -top-1 -right-1 w-[35%] h-[35%] object-contain z-20 pointer-events-none drop-shadow-md transition-transform duration-300 hover:scale-110" 
-        />
+        <div className="absolute -bottom-1 -right-1 w-[40%] h-[40%] z-20 flex items-center justify-center bg-white/30 dark:bg-black/30 rounded-full backdrop-blur-sm shadow-sm pointer-events-none">
+          <img 
+            src={current.vipIcon} 
+            alt={`VIP Level ${current.vipLevel}`} 
+            className="w-full h-full object-contain drop-shadow-md transition-transform duration-300 hover:scale-110" 
+          />
+        </div>
       )}
     </div>
   );

@@ -402,34 +402,32 @@ const CheckOrder = () => {
   return (
     <div className="min-h-screen pb-20 font-sans transition-colors duration-300 relative">
       
-      {/* MỚI: BACKGROUND IMAGE LỚP DƯỚI CÙNG */}
-      <div 
-        className="absolute inset-0 z-0 bg-cover bg-center bg-fixed" 
-        style={{ backgroundImage: "url('/background/background.jpg')" }}
-      >
+      {/* ĐÃ FIX BACKGROUND IMAGE */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <img src="/background/background.jpg" alt="bg" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-orange-50/80 dark:bg-gray-900/90 backdrop-blur-[2px]"></div>
       </div>
 
       {/* HEADER & RANK */}
       <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md px-6 py-5 border-b dark:border-gray-700 flex items-center justify-between transition-colors relative z-40">
-        <div className="flex items-center">
-          <button onClick={() => navigate(-1)} className="text-gray-800 dark:text-gray-100 p-2 mr-2 bg-gray-50/50 dark:bg-gray-700/50 rounded-2xl active:scale-90 transition-all shadow-sm">
+        
+        {/* ĐÃ FIX LAYOUT HEADER VIP BADGE ĐỂ KHÔNG BỊ XUỐNG DÒNG LỖI */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => navigate(-1)} className="flex-shrink-0 text-gray-800 dark:text-gray-100 p-2 mr-1 bg-gray-50/50 dark:bg-gray-700/50 rounded-2xl active:scale-90 transition-all shadow-sm">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-black text-gray-800 dark:text-white uppercase tracking-tighter transition-colors">
-              LỊCH SỬ ĐƠN
-            </h1>
-            {/* HIỂN THỊ VIP BADGE NẾU CÓ */}
-            {userRankInfo && <VipBadge rankInfo={userRankInfo} size="w-5 h-5" />}
-          </div>
+          
+          <h1 className="text-lg font-black text-gray-800 dark:text-white uppercase tracking-tighter transition-colors whitespace-nowrap">
+            LỊCH SỬ ĐƠN
+          </h1>
+          {userRankInfo && <VipBadge rankInfo={userRankInfo} size="w-5 h-5 flex-shrink-0" />}
         </div>
 
         {/* WIDGET RANK */}
         {userPhoneParam && userRankInfo && (
-          <div className="flex flex-col items-end">
+          <div className="flex flex-col items-end flex-shrink-0 ml-2">
             <div className={`bg-gradient-to-r ${userRankInfo.current.color} px-4 py-1.5 rounded-2xl shadow-lg border-2 border-white dark:border-gray-700 flex items-center gap-2 animate-in slide-in-from-right-4 duration-500`}>
               <span className="text-sm">{userRankInfo.current.icon}</span>
               <span className="text-[10px] font-black text-white uppercase tracking-widest">{userRankInfo.current.name}</span>

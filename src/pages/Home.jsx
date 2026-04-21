@@ -6,30 +6,23 @@ import UsernamePopup from '../components/UsernamePopup';
 import { useSettings } from '../contexts/SettingsContext'; 
 import { getUserByPhone } from '../services/authService'; 
 
-// IMPORT COMPONENT & UTILS MỚI
 import Gamification from '../components/Gamification';
 import NotificationCenter from '../components/NotificationCenter';
 import UserAvatar from '../components/UserAvatar';
-import VipBadge from '../components/VipBadge'; // <-- Thêm VipBadge
-import PetEntity from '../components/PetEntity'; // <-- Thêm PetEntity
+import VipBadge from '../components/VipBadge'; 
+import PetEntity from '../components/PetEntity'; 
 import { getRankInfo } from '../utils/rankUtils';
 
-// --- HÀM KIỂM TRA GIỜ MỞ CỬA ---
 const checkIfOpen = (openTimeStr) => {
   if (!openTimeStr || !openTimeStr.includes('-')) return true; 
-  
   try {
     const now = new Date();
     const currentMin = now.getHours() * 60 + now.getMinutes(); 
-
     const [startStr, endStr] = openTimeStr.split('-');
-    
     const [startH, startM] = startStr.trim().split(':').map(Number);
     const start = (startH || 0) * 60 + (startM || 0);
-
     const [endH, endM] = endStr.trim().split(':').map(Number);
     const end = (endH || 0) * 60 + (endM || 0);
-
     return currentMin >= start && currentMin <= end;
   } catch (e) {
     return true;
@@ -49,11 +42,8 @@ const Home = () => {
   const [totalXu, setTotalXu] = useState(0);
 
   const [isAdminOnline, setIsAdminOnline] = useState(false);
-  
-  // State lưu toàn bộ dữ liệu User để xử lý Gamification
   const [userData, setUserData] = useState(null);
 
-  // Tính Rank Info để hiển thị VIP Badge và Pet
   const rankInfo = userData ? getRankInfo(userData.totalSpend || 0, userData.manualRankId) : null;
 
   const [sysConfig, setSysConfig] = useState({
@@ -65,7 +55,6 @@ const Home = () => {
     preOrderEnabled: false
   });
 
-  // STATES CHO SỰ KIỆN LUCKY XU
   const [luckyConfig, setLuckyConfig] = useState(null);
   const [showLuckyXu, setShowLuckyXu] = useState(false);
   const [isOpeningLuckyXu, setIsOpeningLuckyXu] = useState(false);
@@ -77,12 +66,7 @@ const Home = () => {
         const data = docSnap.data();
         const actuallyOpen = data.isOpen && checkIfOpen(data.openTime);
         const preOrder = data.isOpen && data.preOrderEnabled;
-        
-        setSysConfig({ 
-          ...data, 
-          isActuallyOpen: actuallyOpen,
-          canPreOrder: preOrder
-        });
+        setSysConfig({ ...data, isActuallyOpen: actuallyOpen, canPreOrder: preOrder });
       }
     });
 
@@ -90,7 +74,6 @@ const Home = () => {
       setSysConfig(prev => {
         const actuallyOpen = prev.isOpen && checkIfOpen(prev.openTime);
         const preOrder = prev.isOpen && prev.preOrderEnabled;
-        
         if (prev.isActuallyOpen !== actuallyOpen || prev.canPreOrder !== preOrder) {
           return { ...prev, isActuallyOpen: actuallyOpen, canPreOrder: preOrder };
         }
@@ -99,15 +82,11 @@ const Home = () => {
     }, 60000);
 
     const unsubAdminStatus = onSnapshot(doc(db, 'system', 'admin_status'), (docSnap) => {
-      if (docSnap.exists()) {
-        setIsAdminOnline(docSnap.data().isOnline || false);
-      }
+      if (docSnap.exists()) setIsAdminOnline(docSnap.data().isOnline || false);
     });
 
     const unsubEvents = onSnapshot(doc(db, 'system', 'events'), (docSnap) => {
-      if (docSnap.exists() && docSnap.data().luckyXu) {
-        setLuckyConfig(docSnap.data().luckyXu);
-      }
+      if (docSnap.exists() && docSnap.data().luckyXu) setLuckyConfig(docSnap.data().luckyXu);
     });
 
     const syncWithFirebase = async () => {
@@ -125,7 +104,7 @@ const Home = () => {
         const unsubUser = onSnapshot(userRef, (snap) => {
           if (snap.exists()) {
             const data = snap.data();
-            setUserData(data); // Lưu lại để dùng cho Auto Perks
+            setUserData(data); 
             setTotalXu(data.totalXu || data.coins || 0); 
             setAvatarUrl(data.avatarUrl || ''); 
             
@@ -157,7 +136,6 @@ const Home = () => {
         } catch (error) {
           handleLogoutCustomer(false); 
         }
-
         return unsubUser;
       }
     };
@@ -173,9 +151,6 @@ const Home = () => {
     };
   }, []);
 
-  // ====================================================
-  // HỆ THỐNG XỬ LÝ ĐẶC QUYỀN AUTO (GAMIFICATION)
-  // ====================================================
   useEffect(() => {
     if (!userData || !savedPhone) return;
 
@@ -186,7 +161,6 @@ const Home = () => {
       const rankInfo = getRankInfo(totalSpend || 0, manualRankId);
       const allowedPerks = rankInfo.current.autoPerks;
 
-      // Bảo mật: Nếu Rank bị rớt và không còn quyền xài tính năng đó nữa
       if (!allowedPerks.includes(activeAutoPerk) && activeAutoPerk !== 'ALL') return;
 
       const limit = rankInfo.current.limit || Infinity;
@@ -195,7 +169,6 @@ const Home = () => {
       let updates = {};
       let messages = [];
 
-      // 1. Auto nhận Hộp Quà (Max 50 Xu)
       if ((activeAutoPerk === 'GIFT' || activeAutoPerk === 'ALL') && userData.lastGiftReceived !== todayStr) {
         const amount = Math.min(50, limit);
         updates.lastGiftReceived = todayStr;
@@ -203,7 +176,6 @@ const Home = () => {
         messages.push(`🎁 Hộp Quà (+${amount} Xu)`);
       }
 
-      // 2. Auto Điểm danh (Max 250 Xu)
       if ((activeAutoPerk === 'CHECKIN' || activeAutoPerk === 'ALL') && userData.lastCheckInDate !== todayStr) {
         const amount = Math.min(250, limit);
         updates.lastCheckInDate = todayStr;
@@ -211,7 +183,6 @@ const Home = () => {
         messages.push(`📅 Điểm Danh (+${amount} Xu)`);
       }
 
-      // 3. Auto Lì Xì Không Cần Canh Giờ (Max 400 Xu)
       if ((activeAutoPerk === 'LUCKY' || activeAutoPerk === 'ALL') && userData.lastAutoLuckyDate !== todayStr) {
         const amount = Math.min(400, limit);
         updates.lastAutoLuckyDate = todayStr;
@@ -219,30 +190,27 @@ const Home = () => {
         messages.push(`🧧 Săn Lì Xì Tự Động (+${amount} Xu)`);
       }
 
-      // Nếu có nhận thưởng, tiến hành cộng vào Database
       if (totalClaimed > 0) {
         try {
           const userRef = doc(db, 'users', savedPhone);
           await updateDoc(userRef, {
             ...updates,
             totalXu: increment(totalClaimed),
-            coins: increment(totalClaimed) // Hỗ trợ tương thích biến cũ
+            coins: increment(totalClaimed) 
           });
 
           setTimeout(() => {
             alert(`⚡ ĐẶC QUYỀN AUTO KÍCH HOẠT!\n\nHệ thống đã tự động thu thập cho bạn:\n- ${messages.join('\n- ')}\n\nTổng nhận: +${totalClaimed} Xu!`);
-          }, 1500); // Trì hoãn 1.5s để UI Load xong mới báo
+          }, 1500); 
         } catch (error) {
           console.error("Lỗi Auto Claim:", error);
         }
       }
     };
-
     processAutoPerks();
   }, [userData, savedPhone]);
 
 
-  // VÒNG LẶP LUCKY XU THỦ CÔNG
   useEffect(() => {
     if (!luckyConfig || !savedPhone) return;
 
@@ -259,10 +227,7 @@ const Home = () => {
         const userSnap = await getDoc(doc(db, 'users', savedPhone));
         if (userSnap.exists() && userSnap.data().lastLuckyReceived !== timeKey && userSnap.data().lastAutoLuckyDate !== todayStr) {
           setShowLuckyXu(true);
-          
-          window.luckyTimeout = setTimeout(() => {
-            setShowLuckyXu(false);
-          }, (luckyConfig.duration || 15) * 1000);
+          window.luckyTimeout = setTimeout(() => setShowLuckyXu(false), (luckyConfig.duration || 15) * 1000);
         }
       }
     };
@@ -276,9 +241,7 @@ const Home = () => {
 
   const handleOpenLuckyXu = async () => {
     if (!savedPhone || isOpeningLuckyXu) return;
-    
     if (window.luckyTimeout) clearTimeout(window.luckyTimeout);
-    
     setIsOpeningLuckyXu(true);
 
     const userRef = doc(db, 'users', savedPhone);
@@ -301,7 +264,6 @@ const Home = () => {
         const min = luckyConfig.min || 1;
         const max = luckyConfig.max || 300;
         const randomXu = Math.floor(Math.random() * (max - min + 1)) + min;
-
         const currentXu = userDbData.totalXu || userDbData.coins || 0;
 
         await updateDoc(userRef, {
@@ -339,16 +301,12 @@ const Home = () => {
   return (
     <div className="min-h-screen flex flex-col items-center p-6 font-sans transition-colors duration-300 relative">
       
-      {/* MỚI: BACKGROUND IMAGE LỚP DƯỚI CÙNG */}
-      <div 
-        className="absolute inset-0 z-0 bg-cover bg-center bg-fixed" 
-        style={{ backgroundImage: "url('/background/background.jpg')" }}
-      >
-        {/* Overlay mờ để chữ vẫn dễ đọc khi đổi Dark/Light mode */}
+      {/* ĐÃ FIX BACKGROUND */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <img src="/background/background.jpg" alt="bg" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-orange-50/80 dark:bg-gray-900/90 backdrop-blur-[2px]"></div>
       </div>
 
-      {/* TOP BAR: THIẾT LẬP & AVATAR */}
       <div className="absolute top-6 left-6 flex gap-3 z-40">
         <div className="relative">
           <button 
@@ -397,9 +355,6 @@ const Home = () => {
         )}
       </div>
 
-      {/* ======================================================= */}
-      {/* THÔNG BÁO TỪ ADMIN */}
-      {/* ======================================================= */}
       {sysConfig.sysNotice && (
         <div className="w-full max-w-md mt-24 mb-2 px-1 z-30">
           <div className="relative overflow-hidden bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border border-orange-200 dark:border-orange-900/50 rounded-[2rem] p-5 shadow-2xl shadow-orange-500/10 flex items-center gap-4 animate-in fade-in slide-in-from-top-4 group">
@@ -449,22 +404,21 @@ const Home = () => {
         </div>
       </div>
 
-      {/* CUSTOMER GREETING & XU REWARDS */}
       <div className="w-full max-w-xs mb-8 flex flex-col items-center z-10">
         {hasOrderedBefore ? (
           <>
-            <div className="w-full bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-orange-100 dark:border-gray-700 text-center relative overflow-hidden transition-colors group">
+            <div className="w-full bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-orange-100 dark:border-gray-700 text-center relative overflow-hidden transition-colors group flex flex-col items-center">
               <div className="absolute top-0 right-0 w-12 h-12 bg-orange-50 dark:bg-gray-700 rounded-bl-full opacity-50 transition-all group-hover:scale-150"></div>
-              
               <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.2em] mb-1">Thành viên thân thiết</p>
               
-              {/* MỚI: TÍCH HỢP VIP BADGE */}
-              <h2 className="text-lg font-black text-gray-800 dark:text-white truncate transition-colors flex items-center justify-center gap-2">
+              <h2 className="w-full font-black text-gray-800 dark:text-white transition-colors flex flex-wrap items-center justify-center gap-1.5 mt-1">
+                <span className="text-base sm:text-lg leading-tight line-clamp-2 break-words text-center">
                   Chào mừng {customerName || 'Bạn'}!
-                  {rankInfo && <VipBadge rankInfo={rankInfo} size="w-5 h-5" />}
+                </span>
+                {rankInfo && <VipBadge rankInfo={rankInfo} size="w-5 h-5 flex-shrink-0" />}
               </h2>
               
-              <p className="text-xs text-gray-400 font-bold mb-4">{savedPhone}</p>
+              <p className="text-xs text-gray-400 font-bold mb-4 mt-2">{savedPhone}</p>
               
               <button 
                 onClick={() => handleLogoutCustomer()}
@@ -499,7 +453,6 @@ const Home = () => {
         )}
       </div>
 
-      {/* ACTION BUTTONS */}
       <div className="w-full max-w-xs space-y-4 z-10">
         <button
           onClick={() => {
@@ -569,7 +522,6 @@ const Home = () => {
         <div className="mt-2 text-gray-200 dark:text-gray-700 transition-colors">••••••••••••</div>
       </div>
 
-      {/* OVERLAY GIAO DIỆN SỰ KIỆN LUCKY XU */}
       {showLuckyXu && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           {luckyReward === null ? (
@@ -611,7 +563,6 @@ const Home = () => {
         </div>
       )}
 
-      {/* MỚI: HỆ THỐNG THÚ CƯNG (PET) */}
       {rankInfo && rankInfo.current.id === 'CHALLENGER' && userData?.showPet && (
         <PetEntity phone={savedPhone} />
       )}

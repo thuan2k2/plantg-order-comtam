@@ -21,15 +21,34 @@ const THANK_YOU_PHRASES = [
 ];
 
 const PetEntity = ({ phone }) => {
-  const [position, setPosition] = useState({ x: -100, y: -100 }); // Vị trí (x, y)
-  const [isFlipped, setIsFlipped] = useState(false); // Xoay chiều Pet khi bay
-  const [message, setMessage] = useState(''); // Lời nói hiện tại của Pet
-  const [floatingReward, setFloatingReward] = useState(null); // Hiển thị +Xu bay lên
+  const [position, setPosition] = useState({ x: -100, y: -100 }); 
+  const [isFlipped, setIsFlipped] = useState(false); 
+  const [message, setMessage] = useState(''); 
+  const [floatingReward, setFloatingReward] = useState(null); 
   const [isCooldown, setIsCooldown] = useState(false); 
 
+  const [isDragging, setIsDragging] = useState(false);
+  const [transitionStyle, setTransitionStyle] = useState('none'); 
+
   const [config, setConfig] = useState({ petMinReward: 1, petMaxReward: 10 });
-  const isInteracting = useRef(false); // Chặn hội thoại idle khi đang tương tác
+  const isInteracting = useRef(false); 
   const storyTimeoutRef = useRef(null);
+  const dragStartPos = useRef({ x: 0, y: 0 });
+  const moveTimerRef = useRef(null);
+
+  // 0. FIX LỖI F5 SPAM XU: Phục hồi Cooldown từ localStorage
+  useEffect(() => {
+    const savedCooldown = localStorage.getItem(`pet_cooldown_${phone}`);
+    if (savedCooldown) {
+      const timeLeft = parseInt(savedCooldown) - Date.now();
+      if (timeLeft > 0) {
+        setIsCooldown(true);
+        setTimeout(() => setIsCooldown(false), timeLeft);
+      } else {
+        localStorage.removeItem(`pet_cooldown_${phone}`);
+      }
+    }
+  }, [phone]);
 
   // 1. Lắng nghe cấu hình số Xu phần thưởng từ Admin
   useEffect(() => {
@@ -47,51 +66,54 @@ const PetEntity = ({ phone }) => {
 
   // 2. Logic Bay Lượn Ngẫu Nhiên
   const movePet = useCallback(() => {
+    if (isDragging) return;
+
     const paddingX = 80;
-    const paddingY = 150; // Tránh bay đụng Header/Footer
+    const paddingY = 150; 
     const maxX = window.innerWidth - paddingX;
     const maxY = window.innerHeight - paddingY;
 
     const nextX = Math.random() * (maxX - paddingX) + paddingX;
     const nextY = Math.random() * (maxY - paddingY) + paddingY;
 
+    setTransitionStyle('all 8000ms ease-in-out'); // Mở lại CSS bay mượt mà
+
     setPosition(prev => {
-      // Nếu tọa độ X mới nhỏ hơn tọa độ cũ -> Đang bay sang trái -> Không lật
-      // (Giả sử ảnh gốc của Pet đang hướng sang trái)
+      // FIX LỖI HƯỚNG MẶT: Ảnh gốc mặt quay sang TRÁI. 
+      // Bay sang PHẢI (nextX > prev.x) thì lật ảnh (scale-x-[-1])
       setIsFlipped(nextX > prev.x); 
       return { x: nextX, y: nextY };
     });
-  }, []);
+  }, [isDragging]);
+
+  const startAutoMove = useCallback(() => {
+    if (moveTimerRef.current) clearInterval(moveTimerRef.current);
+    movePet(); 
+    moveTimerRef.current = setInterval(movePet, 8000); // Đổi hướng mỗi 8s
+  }, [movePet]);
 
   useEffect(() => {
-    // Khởi tạo vị trí ban đầu giữa màn hình
     setPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-    
-    const moveTimer = setInterval(() => {
-      movePet();
-    }, 8000); // Đổi hướng mỗi 8 giây
-
-    return () => clearInterval(moveTimer);
-  }, [movePet]);
+    startAutoMove();
+    return () => clearInterval(moveTimerRef.current);
+  }, [startAutoMove]);
 
   // 3. Logic Kể chuyện vặt (Idle Chatter)
   useEffect(() => {
     const playStory = async () => {
-      if (isInteracting.current) return;
+      if (isInteracting.current || isDragging) return;
 
       const randomStory = PET_STORIES[Math.floor(Math.random() * PET_STORIES.length)];
       
       for (const phrase of randomStory) {
-        if (isInteracting.current) break; // Nếu khách bấm vào pet thì dừng ngay
+        if (isInteracting.current || isDragging) break; 
         
         setMessage(phrase);
-        // Chờ 4 giây cho mỗi câu thoại
         await new Promise(resolve => {
           storyTimeoutRef.current = setTimeout(resolve, 4000);
         });
         setMessage('');
         
-        // Ngắt quãng nhỏ giữa 2 câu
         await new Promise(resolve => {
           storyTimeoutRef.current = setTimeout(resolve, 1000);
         });
@@ -99,8 +121,7 @@ const PetEntity = ({ phone }) => {
     };
 
     const chatterTimer = setInterval(() => {
-      // 30% tỷ lệ bắt đầu kể 1 câu chuyện mỗi 15 giây
-      if (Math.random() > 0.7 && !isInteracting.current && !message) {
+      if (Math.random() > 0.7 && !isInteracting.current && !isDragging && !message) {
         playStory();
       }
     }, 15000);
@@ -109,11 +130,10 @@ const PetEntity = ({ phone }) => {
       clearInterval(chatterTimer);
       if (storyTimeoutRef.current) clearTimeout(storyTimeoutRef.current);
     };
-  }, [message]);
+  }, [message, isDragging]);
 
-  // 4. Logic Tương tác (Click)
-  const handleInteract = async () => {
-    // Nếu đang trong thời gian chờ
+  // 4. Logic Tương tác (Click nhận thưởng)
+  const handleInteract = useCallback(async () => {
     if (isCooldown) {
       isInteracting.current = true;
       if (storyTimeoutRef.current) clearTimeout(storyTimeoutRef.current);
@@ -126,7 +146,6 @@ const PetEntity = ({ phone }) => {
       return;
     }
 
-    // Bắt đầu nhận thưởng
     isInteracting.current = true;
     if (storyTimeoutRef.current) clearTimeout(storyTimeoutRef.current);
     setMessage("Đợi xíu, có quà cho bạn nè! ✨");
@@ -138,15 +157,16 @@ const PetEntity = ({ phone }) => {
       const thankPhrase = THANK_YOU_PHRASES[Math.floor(Math.random() * THANK_YOU_PHRASES.length)];
       setMessage(thankPhrase);
 
-      // Kích hoạt Cooldown (Random từ 60s đến 120s)
       setIsCooldown(true);
       const randomCooldownSeconds = Math.floor(Math.random() * (120 - 60 + 1)) + 60;
       
+      // Lưu Cooldown vào localStorage để tránh F5
+      localStorage.setItem(`pet_cooldown_${phone}`, Date.now() + (randomCooldownSeconds * 1000));
+
       setTimeout(() => {
         setIsCooldown(false);
       }, randomCooldownSeconds * 1000);
 
-      // Dọn dẹp UI sau khi tặng
       setTimeout(() => {
         setFloatingReward(null);
         setMessage('');
@@ -159,48 +179,114 @@ const PetEntity = ({ phone }) => {
         isInteracting.current = false;
       }, 4000);
     }
+  }, [isCooldown, phone, config]);
+
+  // 5. LOGIC KÉO THẢ (DRAG & DROP)
+  const handlePointerDown = (e) => {
+    e.preventDefault();
+    if (moveTimerRef.current) clearInterval(moveTimerRef.current);
+    
+    setTransitionStyle('none'); // Tắt CSS bay lượn để bám theo con trỏ ngay lập tức
+    setIsDragging(true);
+    isInteracting.current = true; 
+    
+    dragStartPos.current = { 
+      x: e.clientX || (e.touches && e.touches[0].clientX), 
+      y: e.clientY || (e.touches && e.touches[0].clientY) 
+    };
   };
+
+  useEffect(() => {
+    const handlePointerMove = (e) => {
+      if (isDragging) {
+        const currentX = e.clientX || (e.touches && e.touches[0].clientX);
+        const currentY = e.clientY || (e.touches && e.touches[0].clientY);
+        
+        setPosition(prev => {
+          setIsFlipped(currentX > prev.x); // Xoay mặt theo hướng kéo
+          return { x: currentX, y: currentY };
+        });
+      }
+    };
+
+    const handlePointerUp = (e) => {
+      if (isDragging) {
+        setIsDragging(false);
+        isInteracting.current = false;
+
+        const currentX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
+        const currentY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY);
+        const dx = Math.abs(currentX - dragStartPos.current.x);
+        const dy = Math.abs(currentY - dragStartPos.current.y);
+
+        // Nếu di chuyển rất nhỏ (< 10px) thì coi như là Click nhận Xu
+        if (dx < 10 && dy < 10) {
+          handleInteract();
+        }
+
+        // Đứng im 1 giây rồi mới tự động bay đi chỗ khác
+        setTimeout(() => {
+          startAutoMove();
+        }, 1000);
+      }
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handlePointerMove);
+      window.addEventListener('mouseup', handlePointerUp);
+      window.addEventListener('touchmove', handlePointerMove, { passive: false });
+      window.addEventListener('touchend', handlePointerUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handlePointerMove);
+      window.removeEventListener('touchend', handlePointerUp);
+    };
+  }, [isDragging, startAutoMove, handleInteract]);
 
   return (
     <div 
-      className="fixed z-[9900] pointer-events-none"
+      className="fixed z-[9900]"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
-        transition: 'all 8000ms ease-in-out', // Bay mượt mà trong 8 giây
+        transition: transitionStyle, 
+        transform: 'translate(-50%, -50%)' // Căn chỉnh tọa độ vào chính giữa ảnh
       }}
     >
-      <div className="relative flex flex-col items-center justify-center pointer-events-auto">
+      <div 
+        className="relative flex flex-col items-center justify-center cursor-grab active:cursor-grabbing pointer-events-auto"
+        onMouseDown={handlePointerDown}
+        onTouchStart={handlePointerDown}
+      >
         
-        {/* Floating Reward Animation (+ Xu) */}
         {floatingReward !== null && (
-          <div className="absolute -top-16 text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500 drop-shadow-md animate-out fade-out slide-out-to-top-8 duration-1000 z-20">
+          <div className="absolute -top-16 text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500 drop-shadow-md animate-out fade-out slide-out-to-top-8 duration-1000 z-20 pointer-events-none">
             +{floatingReward} Xu
           </div>
         )}
 
-        {/* Khung Chat Bubble */}
-        <div className={`absolute bottom-full mb-4 w-max max-w-[160px] bg-white dark:bg-gray-800 p-3 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 transition-all duration-300 transform origin-bottom z-10
+        <div className={`absolute bottom-full mb-4 w-max max-w-[160px] bg-white dark:bg-gray-800 p-3 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 transition-all duration-300 transform origin-bottom z-10 pointer-events-none
           ${message ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}`}
         >
           <p className="text-[11px] font-bold text-gray-700 dark:text-gray-200 text-center leading-snug">
             {message}
           </p>
-          {/* Mũi tên trỏ xuống của Chat Bubble */}
           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white dark:bg-gray-800 rotate-45 border-b border-r border-gray-100 dark:border-gray-700"></div>
         </div>
 
-        {/* Hình ảnh Thú cưng (Pet) */}
+        {/* Khóa sự kiện kéo mặc định của trình duyệt ảnh bằng draggable="false" */}
         <img 
           src="/pet/Pet.gif" 
           alt="Pet" 
-          onClick={handleInteract}
-          className={`w-20 h-20 object-contain cursor-pointer drop-shadow-xl transition-transform duration-500 hover:scale-110 active:scale-95
+          draggable="false"
+          className={`w-20 h-20 object-contain drop-shadow-xl transition-transform duration-300 select-none
             ${isFlipped ? 'scale-x-[-1]' : 'scale-x-100'} 
-            ${isInteracting.current ? 'animate-pulse' : ''}
+            ${isInteracting.current && !isDragging ? 'animate-pulse' : ''}
           `}
           onError={(e) => {
-            // Ẩn nếu không tìm thấy file
             e.target.style.display = 'none';
           }}
         />
