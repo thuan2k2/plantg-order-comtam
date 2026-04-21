@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { sendMessage, markRead } from '../services/chatService';
 import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import UserAvatar from './UserAvatar'; // <-- NHÚNG COMPONENT AVATAR CÓ KHUNG VIỀN
+import UserAvatar from './UserAvatar'; 
+import VipBadge from './VipBadge'; // <-- NHÚNG COMPONENT VIP BADGE
+import { getRankInfo } from '../utils/rankUtils'; // <-- NHÚNG HÀM TÍNH RANK
 
 const CustomerChat = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -10,7 +12,7 @@ const CustomerChat = () => {
   const [messages, setMessages] = useState([]); 
   const [input, setInput] = useState('');
   
-  // MỚI: State lưu dữ liệu User để lấy Rank
+  // State lưu dữ liệu User để lấy Rank
   const [userData, setUserData] = useState(null);
 
   const audioRef = useRef(new Audio('/status-update.mp3'));
@@ -20,6 +22,9 @@ const CustomerChat = () => {
   const savedPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
   const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
   const phone = savedPhones[0];
+
+  // Tính toán Rank Info
+  const rankInfo = userData ? getRankInfo(userData.totalSpend || 0, userData.manualRankId) : null;
 
   // 0. LẮNG NGHE DỮ LIỆU USER ĐỂ TÍNH RANK
   useEffect(() => {
@@ -81,7 +86,7 @@ const CustomerChat = () => {
     }
   }, [messages, isOpen]);
 
-  // 4. GỬI TIN NHẮN (Tối ưu hóa: Dùng chung chatService)
+  // 4. GỬI TIN NHẮN 
   const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -90,8 +95,6 @@ const CustomerChat = () => {
     setInput(''); 
     
     try {
-      // Gọi thẳng hàm từ chatService. 
-      // Hàm này sẽ tự động chọc vào collection 'users' để lấy đúng Tên và Avatar của khách.
       await sendMessage(phone, 'USER', messageText);
     } catch (error) {
       console.error("Lỗi gửi tin nhắn:", error);
@@ -120,6 +123,19 @@ const CustomerChat = () => {
           
           {/* NỘI DUNG TIN NHẮN */}
           <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-gray-50 dark:bg-gray-900/50 no-scrollbar">
+            
+            {/* MỚI: THÔNG BÁO CẤP BẬC KHÁCH HÀNG VIP ĐẦU TRANG CHAT */}
+            {rankInfo && (
+               <div className="flex flex-col items-center justify-center pt-2 pb-4 opacity-80 animate-in fade-in">
+                  <div className="flex items-center gap-1.5 bg-white dark:bg-gray-800 px-4 py-1.5 rounded-full shadow-sm border border-gray-200 dark:border-gray-700">
+                     <VipBadge rankInfo={rankInfo} size="w-4 h-4" />
+                     <span className="text-[9px] font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                       Khách hàng {rankInfo.current.name}
+                     </span>
+                  </div>
+               </div>
+            )}
+
             {messages.map((m, i) => {
               const isUser = m.sender?.toUpperCase() === 'USER';
               return (

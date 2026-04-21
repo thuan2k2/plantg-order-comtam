@@ -2,7 +2,7 @@ import React from 'react';
 import { getRankInfo } from '../utils/rankUtils';
 
 const UserAvatar = ({ avatarUrl, totalSpend = 0, manualRankId = null, size = 'w-12 h-12' }) => {
-  const { activeFrame } = getRankInfo(totalSpend, manualRankId);
+  const { current, activeFrame } = getRankInfo(totalSpend, manualRankId);
   
   // Tính toán kích thước khung viền lớn hơn avatar gốc khoảng 35% để bọc vừa khít
   const frameScale = 'scale-[1.35]'; 
@@ -26,6 +26,15 @@ const UserAvatar = ({ avatarUrl, totalSpend = 0, manualRankId = null, size = 'w-
           src={activeFrame} 
           alt="Rank Frame" 
           className={`absolute inset-0 w-full h-full object-contain z-10 pointer-events-none transition-transform duration-300 ${frameScale}`} 
+        />
+      )}
+
+      {/* MỚI: Icon VIP cấp độ nằm ở góc trên bên phải */}
+      {current && current.vipIcon && (
+        <img 
+          src={current.vipIcon} 
+          alt={`VIP Level ${current.vipLevel}`} 
+          className="absolute -top-1 -right-1 w-[35%] h-[35%] object-contain z-20 pointer-events-none drop-shadow-md transition-transform duration-300 hover:scale-110" 
         />
       )}
     </div>

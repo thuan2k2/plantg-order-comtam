@@ -11,8 +11,10 @@ import {
   requestCancelOrder 
 } from '../services/orderService'; 
 
-// --- GỌI HÀM RANK TỪ UTILS THAY VÌ CODE CỨNG TẠI ĐÂY ---
+// IMPORT COMPONENT & UTILS MỚI
 import { getRankInfo } from '../utils/rankUtils';
+import VipBadge from '../components/VipBadge';
+import PetEntity from '../components/PetEntity';
 
 // --- CẤU HÌNH TABS TRẠNG THÁI ---
 const ORDER_TABS = [
@@ -316,7 +318,7 @@ const CheckOrder = () => {
   const prevStatuses = useRef({});
   const isInitialLoad = useRef(true);
 
-  // MỚI: Dữ liệu rank sẽ được gọi từ DB
+  const [userData, setUserData] = useState(null); // MỚI LƯU USER DATA
   const [userRankInfo, setUserRankInfo] = useState(null);
 
   const [highlightOrderId, setHighlightOrderId] = useState(null);
@@ -330,11 +332,12 @@ const CheckOrder = () => {
     if (userPhoneParam && userPhoneParam.length >= 10) {
       setIsSearching(true);
       
-      // MỚI: Lấy thông tin Rank từ database
       const fetchUserData = async () => {
         const userDoc = await getDoc(doc(db, 'users', userPhoneParam.trim()));
         if (userDoc.exists()) {
-           setUserRankInfo(getRankInfo(userDoc.data().totalSpend || 0, userDoc.data().manualRankId));
+           const data = userDoc.data();
+           setUserData(data);
+           setUserRankInfo(getRankInfo(data.totalSpend || 0, data.manualRankId));
         }
       };
       fetchUserData();
@@ -397,22 +400,34 @@ const CheckOrder = () => {
   }, [orders, activeTab]);
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] dark:bg-gray-900 pb-20 font-sans transition-colors duration-300">
+    <div className="min-h-screen pb-20 font-sans transition-colors duration-300 relative">
       
+      {/* MỚI: BACKGROUND IMAGE LỚP DƯỚI CÙNG */}
+      <div 
+        className="absolute inset-0 z-0 bg-cover bg-center bg-fixed" 
+        style={{ backgroundImage: "url('/background/background.jpg')" }}
+      >
+        <div className="absolute inset-0 bg-orange-50/80 dark:bg-gray-900/90 backdrop-blur-[2px]"></div>
+      </div>
+
       {/* HEADER & RANK */}
-      <div className="bg-white dark:bg-gray-800 px-6 py-5 border-b dark:border-gray-700 flex items-center justify-between transition-colors relative z-40">
+      <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md px-6 py-5 border-b dark:border-gray-700 flex items-center justify-between transition-colors relative z-40">
         <div className="flex items-center">
-          <button onClick={() => navigate(-1)} className="text-gray-800 dark:text-gray-100 p-2 mr-2 bg-gray-50 dark:bg-gray-700 rounded-2xl active:scale-90 transition-all">
+          <button onClick={() => navigate(-1)} className="text-gray-800 dark:text-gray-100 p-2 mr-2 bg-gray-50/50 dark:bg-gray-700/50 rounded-2xl active:scale-90 transition-all shadow-sm">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h1 className="text-lg font-black text-gray-800 dark:text-white uppercase tracking-tighter transition-colors">
-            LỊCH SỬ ĐƠN
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-black text-gray-800 dark:text-white uppercase tracking-tighter transition-colors">
+              LỊCH SỬ ĐƠN
+            </h1>
+            {/* HIỂN THỊ VIP BADGE NẾU CÓ */}
+            {userRankInfo && <VipBadge rankInfo={userRankInfo} size="w-5 h-5" />}
+          </div>
         </div>
 
-        {/* WIDGET RANK (SỬ DỤNG DỮ LIỆU TỪ DB THAY VÌ TÍNH TẠI ĐÂY) */}
+        {/* WIDGET RANK */}
         {userPhoneParam && userRankInfo && (
           <div className="flex flex-col items-end">
             <div className={`bg-gradient-to-r ${userRankInfo.current.color} px-4 py-1.5 rounded-2xl shadow-lg border-2 border-white dark:border-gray-700 flex items-center gap-2 animate-in slide-in-from-right-4 duration-500`}>
@@ -431,7 +446,7 @@ const CheckOrder = () => {
 
       {/* STICKY TAB BAR (BỘ LỌC TRẠNG THÁI) */}
       {userPhoneParam && orders.length > 0 && (
-        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-b dark:border-gray-700 shadow-sm sticky top-0 z-30 transition-colors">
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-md border-b dark:border-gray-700 shadow-sm sticky top-0 z-30 transition-colors">
           <div className="max-w-2xl mx-auto flex px-4 py-3 gap-2 overflow-x-auto no-scrollbar scroll-smooth">
             {ORDER_TABS.map(tab => {
               const count = orders.filter(o => tab.id === 'ALL' ? true : o.status === tab.id).length;
@@ -444,7 +459,7 @@ const CheckOrder = () => {
                   className={`flex-shrink-0 px-5 py-2.5 text-[10px] font-black uppercase rounded-2xl transition-all whitespace-nowrap flex items-center gap-2 border-2 
                     ${isActive 
                       ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200 dark:shadow-none' 
-                      : 'text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600'}`}
+                      : 'text-gray-500 dark:text-gray-400 bg-white/50 dark:bg-gray-700/50 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600'}`}
                 >
                   {tab.label}
                   {count > 0 && tab.id !== 'ALL' && (
@@ -459,9 +474,9 @@ const CheckOrder = () => {
         </div>
       )}
 
-      <div className="p-4 sm:p-6 max-w-7xl mx-auto mt-2">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto mt-2 relative z-10">
         {/* SEARCH FORM */}
-        <form onSubmit={handleSearch} className="mb-8 max-w-lg mx-auto bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
+        <form onSubmit={handleSearch} className="mb-8 max-w-lg mx-auto bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
           <label className="block text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-3 ml-1 text-center transition-colors">Nhập SĐT của bạn</label>
           <div className="flex gap-2">
             <input
@@ -491,21 +506,21 @@ const CheckOrder = () => {
           {filteredOrders.length > visibleCount && visibleCount < 30 && (
             <button 
               onClick={() => setVisibleCount(prev => Math.min(prev + 10, 30))}
-              className="w-full py-4 bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 rounded-[2rem] text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.3em] hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm active:scale-95"
+              className="w-full py-4 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-2 border-gray-100 dark:border-gray-700 rounded-[2rem] text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.3em] hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm active:scale-95"
             >
               Xem thêm đơn cũ ({filteredOrders.length - visibleCount})
             </button>
           )}
 
           {visibleCount >= 30 && filteredOrders.length > 30 && (
-            <p className="text-center text-[9px] font-bold text-gray-300 dark:text-gray-600 uppercase tracking-widest italic animate-pulse transition-colors">
+            <p className="text-center text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest italic animate-pulse transition-colors drop-shadow-sm">
               * Hệ thống chỉ hiển thị 30 đơn gần nhất
             </p>
           )}
 
           {/* TRẠNG THÁI TRỐNG */}
           {userPhoneParam && filteredOrders.length === 0 && !isSearching && (
-            <div className="text-center py-20 bg-white dark:bg-gray-800 rounded-[2.5rem] border border-dashed border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in-95">
+            <div className="text-center py-20 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md rounded-[2.5rem] border border-dashed border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in-95">
                <p className="text-5xl mb-4 grayscale opacity-50">🏜️</p>
                <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest transition-colors">
                  {activeTab === 'ALL' ? 'Chưa có đơn hàng nào' : `Không có đơn ở trạng thái này`}
@@ -514,6 +529,11 @@ const CheckOrder = () => {
           )}
         </div>
       </div>
+
+      {/* MỚI: HỆ THỐNG THÚ CƯNG (PET) CHỈ HIỆN KHI ĐÃ TÌM THẤY USER */}
+      {userRankInfo && userRankInfo.current.id === 'CHALLENGER' && userData?.showPet && (
+        <PetEntity phone={userPhoneParam} />
+      )}
     </div>
   );
 };

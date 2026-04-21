@@ -37,9 +37,12 @@ const UserSettings = () => {
   const [passcode, setPasscode] = useState('');
   const [showAvatarInput, setShowAvatarInput] = useState(false); 
 
-  // MỚI: Dữ liệu hạng và đặc quyền Auto
+  // Dữ liệu hạng và đặc quyền Auto
   const [rankInfo, setRankInfo] = useState(null);
   const [activeAutoPerk, setActiveAutoPerk] = useState('NONE');
+  
+  // MỚI: State cho tính năng Bật/Tắt Pet (Thú cưng)
+  const [showPet, setShowPet] = useState(false);
 
   // Lấy dữ liệu Real-time từ Firestore để tính Rank và lấy đặc quyền đang bật
   useEffect(() => {
@@ -57,6 +60,8 @@ const UserSettings = () => {
           const info = getRankInfo(data.totalSpend || 0, data.manualRankId);
           setRankInfo(info);
           setActiveAutoPerk(data.activeAutoPerk || 'NONE');
+          // Khởi tạo state Pet từ database
+          setShowPet(data.showPet || false);
         }
       } catch (error) {
         console.error("Lỗi lấy dữ liệu hạng:", error);
@@ -121,13 +126,14 @@ const UserSettings = () => {
       return;
     }
 
-    // 3. Lưu Đặc quyền Auto (Lưu trực tiếp vào Firestore)
+    // 3. Lưu Đặc quyền Auto & Trạng thái Pet (Lưu trực tiếp vào Firestore)
     try {
       await updateDoc(doc(db, 'users', user.username), {
-        activeAutoPerk: activeAutoPerk
+        activeAutoPerk: activeAutoPerk,
+        showPet: showPet // Bổ sung lưu Pet
       });
     } catch (e) {
-      console.error("Lỗi lưu đặc quyền:", e);
+      console.error("Lỗi lưu đặc quyền/pet:", e);
     }
     
     // Thành công -> Cập nhật lại bộ nhớ cục bộ
@@ -135,7 +141,8 @@ const UserSettings = () => {
       ...user, 
       ...formData, 
       addresses, 
-      address: addresses.find(a => a.isDefault)?.detail || '' 
+      address: addresses.find(a => a.isDefault)?.detail || '',
+      showPet: showPet // Bổ sung update Pet vào local
     };
     
     localStorage.setItem('userProfile', JSON.stringify(updatedUser));
@@ -307,6 +314,36 @@ const UserSettings = () => {
                   </div>
                 )}
               </div>
+              
+              {/* MỚI: TÙY CHỌN BẬT/TẮT PET CHO HẠNG THÁCH ĐẤU */}
+              {rankInfo.current.id === 'CHALLENGER' && (
+                <div className="mt-6 pt-6 border-t border-dashed border-gray-200 dark:border-gray-600">
+                  <h4 className="font-black uppercase text-xs text-gray-800 dark:text-white mb-2 flex items-center gap-2">
+                    <span className="text-lg">🐉</span> Thú Cưng Trợ Lý
+                  </h4>
+                  <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-4">
+                    Độc quyền Thách Đấu: Bật để thú cưng bay lượn và nhặt xu giúp bạn
+                  </p>
+                  
+                  <label className={`flex items-center p-4 rounded-2xl border-2 transition-all cursor-pointer select-none ${showPet ? 'border-green-500 bg-green-50 dark:bg-green-900/30 shadow-md' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}>
+                    <div className={`w-10 h-6 rounded-full transition-colors relative mr-3 flex-shrink-0 ${showPet ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${showPet ? 'left-5' : 'left-1'}`}></div>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      className="hidden" 
+                      checked={showPet} 
+                      onChange={(e) => setShowPet(e.target.checked)} 
+                    />
+                    <div className="flex-1">
+                      <span className={`font-bold text-sm ${showPet ? 'text-green-700 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                        {showPet ? 'Đang bật Thú cưng' : 'Đang tắt Thú cưng'}
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              )}
+
             </div>
           )}
 

@@ -25,8 +25,10 @@ const AdminSettings = () => {
     minOrder: 0,
     openTime: '',
     sysNotice: '',
-    // MỚI: Thêm trường cho phép đặt đơn trước
-    preOrderEnabled: false 
+    preOrderEnabled: false,
+    // MỚI: Thêm cấu hình thưởng từ Pet
+    petMinReward: 1,
+    petMaxReward: 10
   });
 
   // State cho Test Reset (Gamification & Lucky Xu)
@@ -40,8 +42,9 @@ const AdminSettings = () => {
         const snap = await getDoc(doc(db, 'system', 'config'));
         if (snap.exists()) {
           setConfig({
-            // Khởi tạo các giá trị mặc định để tránh lỗi nếu db chưa có
             preOrderEnabled: false, 
+            petMinReward: 1, // Default fallback
+            petMaxReward: 10, // Default fallback
             ...snap.data()
           });
         } else {
@@ -96,6 +99,12 @@ const AdminSettings = () => {
   // HÀM LƯU CẤU HÌNH VẬN HÀNH
   const handleSaveConfig = async () => {
     if (isSaving) return;
+    
+    // Validate Pet Reward
+    if (config.petMinReward < 1 || config.petMaxReward < config.petMinReward) {
+      return alert("❌ Lỗi cấu hình xu Pet: Mức tối đa phải lớn hơn mức tối thiểu và không được nhỏ hơn 1.");
+    }
+
     setIsSaving(true);
     try {
       await updateDoc(doc(db, 'system', 'config'), config);
@@ -296,9 +305,6 @@ const AdminSettings = () => {
           </button>
         </div>
 
-        {/* ========================================================= */}
-        {/* MỚI: NÚT BẬT TẮT CHẾ ĐỘ ĐẶT TRƯỚC */}
-        {/* ========================================================= */}
         <div className="bg-blue-50 dark:bg-blue-900/20 p-6 sm:p-8 rounded-[2.5rem] border border-blue-100 dark:border-blue-800 flex flex-col sm:flex-row justify-between items-center shadow-sm gap-4 transition-colors">
           <div className="text-center sm:text-left">
             <p className="font-black uppercase text-sm text-blue-700 dark:text-blue-400">Chế độ "Đặt đơn trước" (Hẹn giờ)</p>
@@ -313,6 +319,46 @@ const AdminSettings = () => {
           >
             {config.preOrderEnabled ? '✅ ĐANG MỞ ĐẶT TRƯỚC' : '❌ ĐANG TẮT ĐẶT TRƯỚC'}
           </button>
+        </div>
+
+        {/* MỚI: Cấu hình thưởng Xu từ Pet */}
+        <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 sm:p-8 rounded-[2.5rem] border border-emerald-200 dark:border-emerald-800 shadow-sm transition-colors">
+          <div className="mb-4 text-center sm:text-left">
+            <p className="font-black uppercase text-sm text-emerald-700 dark:text-emerald-400 flex items-center justify-center sm:justify-start gap-2">
+              <span>🐉</span> Quà tặng tương tác Thú cưng (Pet)
+            </p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/70 dark:text-emerald-400/70 mt-2">
+              Khách VIP tương tác Pet sẽ ngẫu nhiên nhận được số Xu trong khoảng này.
+            </p>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row items-center gap-4 mt-4">
+            <div className="w-full sm:w-1/2">
+              <label className="block text-[10px] font-black text-emerald-600/70 dark:text-emerald-500/70 uppercase mb-2 tracking-widest ml-1">
+                Tối thiểu (Xu)
+              </label>
+              <input 
+                type="number"
+                min="1"
+                value={config.petMinReward || 1} 
+                onChange={e => setConfig({...config, petMinReward: parseInt(e.target.value) || 1})}
+                className="w-full p-4 bg-white dark:bg-gray-700 dark:text-white rounded-2xl border-none outline-none font-black text-emerald-600 dark:text-emerald-400 focus:ring-2 focus:ring-emerald-500 transition-all text-center"
+              />
+            </div>
+            <div className="hidden sm:block text-2xl text-emerald-300 font-black mt-4">-</div>
+            <div className="w-full sm:w-1/2">
+              <label className="block text-[10px] font-black text-emerald-600/70 dark:text-emerald-500/70 uppercase mb-2 tracking-widest ml-1">
+                Tối đa (Xu)
+              </label>
+              <input 
+                type="number"
+                min={config.petMinReward || 1}
+                value={config.petMaxReward || 10} 
+                onChange={e => setConfig({...config, petMaxReward: parseInt(e.target.value) || 1})}
+                className="w-full p-4 bg-white dark:bg-gray-700 dark:text-white rounded-2xl border-none outline-none font-black text-emerald-600 dark:text-emerald-400 focus:ring-2 focus:ring-emerald-500 transition-all text-center"
+              />
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

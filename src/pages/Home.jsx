@@ -10,6 +10,8 @@ import { getUserByPhone } from '../services/authService';
 import Gamification from '../components/Gamification';
 import NotificationCenter from '../components/NotificationCenter';
 import UserAvatar from '../components/UserAvatar';
+import VipBadge from '../components/VipBadge'; // <-- Thêm VipBadge
+import PetEntity from '../components/PetEntity'; // <-- Thêm PetEntity
 import { getRankInfo } from '../utils/rankUtils';
 
 // --- HÀM KIỂM TRA GIỜ MỞ CỬA ---
@@ -50,6 +52,9 @@ const Home = () => {
   
   // State lưu toàn bộ dữ liệu User để xử lý Gamification
   const [userData, setUserData] = useState(null);
+
+  // Tính Rank Info để hiển thị VIP Badge và Pet
+  const rankInfo = userData ? getRankInfo(userData.totalSpend || 0, userData.manualRankId) : null;
 
   const [sysConfig, setSysConfig] = useState({
     isOpen: true,
@@ -332,8 +337,17 @@ const Home = () => {
   const isShopActive = sysConfig.isActuallyOpen || sysConfig.canPreOrder;
 
   return (
-    <div className="min-h-screen bg-orange-50/30 dark:bg-gray-900 flex flex-col items-center p-6 font-sans transition-colors duration-300 relative">
+    <div className="min-h-screen flex flex-col items-center p-6 font-sans transition-colors duration-300 relative">
       
+      {/* MỚI: BACKGROUND IMAGE LỚP DƯỚI CÙNG */}
+      <div 
+        className="absolute inset-0 z-0 bg-cover bg-center bg-fixed" 
+        style={{ backgroundImage: "url('/background/background.jpg')" }}
+      >
+        {/* Overlay mờ để chữ vẫn dễ đọc khi đổi Dark/Light mode */}
+        <div className="absolute inset-0 bg-orange-50/80 dark:bg-gray-900/90 backdrop-blur-[2px]"></div>
+      </div>
+
       {/* TOP BAR: THIẾT LẬP & AVATAR */}
       <div className="absolute top-6 left-6 flex gap-3 z-40">
         <div className="relative">
@@ -404,7 +418,7 @@ const Home = () => {
       )}
 
       {/* HEADER LOGO */}
-      <div className={`w-full max-w-md ${sysConfig.sysNotice ? 'mt-6' : 'mt-24'} mb-8 text-center transition-all duration-500 ${isShopActive ? '' : 'grayscale opacity-70'}`}>
+      <div className={`w-full max-w-md relative z-10 ${sysConfig.sysNotice ? 'mt-6' : 'mt-24'} mb-8 text-center transition-all duration-500 ${isShopActive ? '' : 'grayscale opacity-70'}`}>
         <div className="relative inline-block">
           <div className={`w-28 h-28 ${isShopActive ? 'bg-orange-500' : 'bg-gray-500'} rounded-full flex items-center justify-center shadow-2xl shadow-orange-200 dark:shadow-none border-4 border-white dark:border-gray-800 transition-colors`}>
             <span className="text-5xl">🍱</span>
@@ -443,9 +457,13 @@ const Home = () => {
               <div className="absolute top-0 right-0 w-12 h-12 bg-orange-50 dark:bg-gray-700 rounded-bl-full opacity-50 transition-all group-hover:scale-150"></div>
               
               <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.2em] mb-1">Thành viên thân thiết</p>
-              <h2 className="text-lg font-black text-gray-800 dark:text-white truncate transition-colors">
+              
+              {/* MỚI: TÍCH HỢP VIP BADGE */}
+              <h2 className="text-lg font-black text-gray-800 dark:text-white truncate transition-colors flex items-center justify-center gap-2">
                   Chào mừng {customerName || 'Bạn'}!
+                  {rankInfo && <VipBadge rankInfo={rankInfo} size="w-5 h-5" />}
               </h2>
+              
               <p className="text-xs text-gray-400 font-bold mb-4">{savedPhone}</p>
               
               <button 
@@ -591,6 +609,11 @@ const Home = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* MỚI: HỆ THỐNG THÚ CƯNG (PET) */}
+      {rankInfo && rankInfo.current.id === 'CHALLENGER' && userData?.showPet && (
+        <PetEntity phone={savedPhone} />
       )}
 
       <UsernamePopup 

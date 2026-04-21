@@ -3,6 +3,7 @@ import { collection, query, orderBy, onSnapshot, doc, getDoc, setDoc, serverTime
 import { db } from '../../firebase/config';
 import { sendMessage, markRead } from '../../services/chatService'; 
 import UserAvatar from '../../components/UserAvatar'; // <-- Nhúng Component Avatar Mới
+import VipBadge from '../../components/VipBadge'; // <-- Nhúng Component VipBadge
 import { getRankInfo } from '../../utils/rankUtils';
 
 const ManageChat = () => {
@@ -224,7 +225,7 @@ const ManageChat = () => {
           )}
 
           {chats.map(c => {
-            const rankData = usersRankData[c.id];
+            const rankData = usersRankData[c.id] ? getRankInfo(usersRankData[c.id].totalSpend || 0, usersRankData[c.id].manualRankId) : null;
 
             return (
               <div 
@@ -233,11 +234,10 @@ const ManageChat = () => {
                 className={`p-5 cursor-pointer border-b border-gray-50 dark:border-gray-700/50 transition-all flex items-center gap-4 ${activeId === c.id ? 'bg-blue-600 text-white' : 'hover:bg-white dark:hover:bg-gray-800 bg-transparent'}`}
               >
                 <div className="flex-shrink-0 relative mt-2">
-                  {/* SỬ DỤNG COMPONENT USERAVATAR Ở ĐÂY */}
                   <UserAvatar 
                     avatarUrl={c.userAvatar || `https://ui-avatars.com/api/?name=${c.userName}&background=random`}
-                    totalSpend={rankData?.totalSpend || 0}
-                    manualRankId={rankData?.manualRankId}
+                    totalSpend={usersRankData[c.id]?.totalSpend || 0}
+                    manualRankId={usersRankData[c.id]?.manualRankId}
                     size="w-12 h-12"
                   />
                   {c.unreadAdmin && (
@@ -247,7 +247,13 @@ const ManageChat = () => {
 
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-center">
-                    <p className={`font-black text-xs uppercase truncate ${activeId === c.id ? 'text-white' : 'text-gray-800 dark:text-gray-200'}`}>{c.userName}</p>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className={`font-black text-xs uppercase truncate ${activeId === c.id ? 'text-white' : 'text-gray-800 dark:text-gray-200'}`}>
+                        {c.userName}
+                      </p>
+                      {/* HIỂN THỊ VIP BADGE Ở SIDEBAR */}
+                      {rankData && <VipBadge rankInfo={rankData} size="w-3.5 h-3.5" />}
+                    </div>
                   </div>
                   <p className={`text-[10px] font-bold mt-1 ${activeId === c.id ? 'text-blue-100' : 'text-gray-400'}`}>{c.userPhone}</p>
                 </div>
@@ -273,7 +279,12 @@ const ManageChat = () => {
                   />
                 </div>
                 <div>
-                   <p className="font-black uppercase text-xs text-gray-800 dark:text-white leading-none">{activeChat.userName}</p>
+                   <div className="flex items-center gap-2">
+                     <p className="font-black uppercase text-xs text-gray-800 dark:text-white leading-none">{activeChat.userName}</p>
+                     {/* HIỂN THỊ VIP BADGE TRÊN HEADER */}
+                     {activeChatRankInfo && <VipBadge rankInfo={activeChatRankInfo} size="w-4 h-4" />}
+                   </div>
+                   
                    <div className="flex items-center gap-2 mt-1.5">
                      <p className="text-[9px] font-bold text-green-500 uppercase tracking-widest">Đang trực tuyến</p>
                      
