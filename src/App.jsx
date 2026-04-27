@@ -37,6 +37,9 @@ import ManageRatings from './pages/Admin/ManageRatings';
 import ManageAllOrders from './pages/Admin/ManageAllOrders'; 
 import ManageRanks from './pages/Admin/ManageRanks';
 
+// MỚI: Import trang AdminLogs
+import AdminLogs from './pages/Admin/AdminLogs';
+
 // CSS Toàn cục
 import './index.css';
 
@@ -132,6 +135,9 @@ function App() {
               
               <Route path="all-orders" element={<ManageAllOrders />} />
               <Route path="ranks" element={<ManageRanks />} />
+              
+              {/* ĐÃ THÊM: Route cho trang Nhật ký Bảo mật */}
+              <Route path="security-logs" element={<AdminLogs />} />
               
               <Route path="settings" element={<AdminSettings />} /> 
             </Route>

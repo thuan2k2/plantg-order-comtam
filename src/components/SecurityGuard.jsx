@@ -14,11 +14,11 @@ const SecurityGuard = ({ phone }) => {
 
   // 1. LẮNG NGHE TRẠNG THÁI BAN TỪ FIREBASE
   useEffect(() => {
-    // Nếu là Admin hoặc ở trang Admin thì không bao giờ hiện Popup cấm
-    if (!phone || isExempted) {
+    // ĐÃ SỬA: Bỏ qua nếu chưa đăng nhập hoặc đang là admin
+    if (!phone || phone === "" || isExempted) {
       setBanData(null);
       return;
-    };
+    }
 
     const unsub = onSnapshot(doc(db, 'users', phone), (snap) => {
       if (snap.exists()) {
@@ -39,10 +39,10 @@ const SecurityGuard = ({ phone }) => {
     return () => unsub();
   }, [phone, isExempted]);
 
-  // 2. CHỐNG F12 / DEVTOOLS & GỌI LỆNH CẤM (CHỈ DÀNH CHO KHÁCH HÀNG)
+  // 2. CHỐNG F12 / DEVTOOLS & GỌI LỆNH CẤM (CHỈ DÀNH CHO KHÁCH HÀNG ĐÃ ĐĂNG NHẬP)
   useEffect(() => {
-    // ADMIN ĐƯỢC PHÉP MỞ F12 ĐỂ DEBUG - KHÔNG CẤM
-    if (!phone || isExempted) return;
+    // ĐÃ SỬA: Chỉ kích hoạt bảo vệ khi khách hàng đã đăng nhập SĐT
+    if (!phone || phone === "" || isExempted) return;
 
     let hasTriggered = false;
 
