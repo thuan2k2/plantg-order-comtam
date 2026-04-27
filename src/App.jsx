@@ -12,10 +12,13 @@ import Register from './pages/Register';
 import Order from './pages/Order';
 import CheckOrder from './pages/CheckOrder';
 import UserSettings from './pages/UserSettings'; 
-import RewardCenter from './pages/RewardCenter'; // Import trang đổi thưởng mới
+import RewardCenter from './pages/RewardCenter'; 
 
 // Import Widget Chat dành cho Khách hàng
 import CustomerChat from './components/CustomerChat';
+
+// --- MỚI: Import Vệ sĩ Bảo mật ---
+import SecurityGuard from './components/SecurityGuard';
 
 // Admin Pages
 import AdminLayout from './pages/Admin/AdminLayout';
@@ -31,10 +34,7 @@ import AdminSettings from './pages/Admin/AdminSettings';
 import ManageCommunication from './pages/Admin/ManageCommunication'; 
 import ManageEvents from './pages/Admin/ManageEvents'; 
 import ManageRatings from './pages/Admin/ManageRatings'; 
-
-// --- MỚI: Bổ sung trang Quản lý Đơn hàng (Toàn hệ thống) ---
 import ManageAllOrders from './pages/Admin/ManageAllOrders'; 
-// --- MỚI: Bổ sung trang Quản lý Xếp hạng (Rank) ---
 import ManageRanks from './pages/Admin/ManageRanks';
 
 // CSS Toàn cục
@@ -71,6 +71,29 @@ const ProtectedAdminRoute = ({ children }) => {
 };
 
 function App() {
+  // --- MỚI: State lưu SĐT để truyền cho Security Guard ---
+  const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    // Liên tục kiểm tra SĐT đăng nhập để cập nhật cho hệ thống giám sát
+    const checkPhone = () => {
+      try {
+        const recentPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
+        const currentPhone = recentPhones.length > 0 ? recentPhones[0] : '';
+        if (currentPhone !== phone) {
+          setPhone(currentPhone);
+        }
+      } catch(e) {
+        console.error("Lỗi đọc SĐT:", e);
+      }
+    };
+    
+    checkPhone(); // Check ngay khi load
+    const timer = setInterval(checkPhone, 2000); // Check mỗi 2 giây
+    
+    return () => clearInterval(timer);
+  }, [phone]);
+
   return (
     <SettingsProvider>
       <Router>
@@ -107,7 +130,6 @@ function App() {
               <Route path="events" element={<ManageEvents />} />
               <Route path="ratings" element={<ManageRatings />} />
               
-              {/* --- KÍCH HOẠT ĐƯỜNG DẪN MỚI TẠI ĐÂY --- */}
               <Route path="all-orders" element={<ManageAllOrders />} />
               <Route path="ranks" element={<ManageRanks />} />
               
@@ -135,6 +157,10 @@ function App() {
           </Routes>
 
           <CustomerChat />
+
+          {/* --- MỚI: Tích hợp Vệ sĩ Bảo vệ Toàn hệ thống --- */}
+          <SecurityGuard phone={phone} />
+          
         </div>
       </Router>
     </SettingsProvider>

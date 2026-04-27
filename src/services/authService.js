@@ -13,14 +13,17 @@ import {
   updateDoc, 
   doc, 
   getDoc,
-  setDoc, // SỬ DỤNG setDoc THAY VÌ addDoc
+  setDoc, 
   deleteDoc, 
   serverTimestamp, 
   orderBy,
   onSnapshot,
   increment 
 } from 'firebase/firestore';
-import { db, app } from '../firebase/config'; 
+
+// MỚI: Thêm import để gọi Cloud Functions
+import { httpsCallable } from 'firebase/functions'; 
+import { db, app, functions } from '../firebase/config'; 
 
 const auth = getAuth(app);
 const COLLECTION_NAME = 'users';
@@ -31,13 +34,11 @@ const COLLECTION_NAME = 'users';
  * ==========================================
  */
 
-// FIX ĐỒNG BỘ: Sử dụng Số điện thoại làm ID Document để dễ dàng map dữ liệu
 export const registerUser = async (userData) => {
   try {
     const cleanPhone = userData.username.trim();
-    const userRef = doc(db, COLLECTION_NAME, cleanPhone); // Gán trực tiếp ID
+    const userRef = doc(db, COLLECTION_NAME, cleanPhone); 
     
-    // Kiểm tra xem SĐT này đã đăng ký chưa
     const snap = await getDoc(userRef);
     if (snap.exists()) {
       return { success: false, error: 'Số điện thoại này đã được đăng ký!' };
@@ -53,7 +54,6 @@ export const registerUser = async (userData) => {
       isBanned: false, 
       banUntil: null,
       
-      // BỔ SUNG BẢO MẬT, VÍ & ĐỊA CHỈ
       passcode: userData.passcode || "123456", 
       walletBalance: 0,    
       totalXu: 0,          
@@ -62,7 +62,6 @@ export const registerUser = async (userData) => {
       addresses: userData.address ? [{ id: Date.now(), detail: userData.address, isDefault: true }] : []
     };
 
-    // Dùng setDoc để ghi đè dữ liệu vào đúng ID là SĐT
     await setDoc(userRef, newUser);
     return { success: true, id: cleanPhone };
   } catch (error) {
@@ -78,7 +77,6 @@ export const getUserByPhone = async (phone) => {
     const userRef = doc(db, COLLECTION_NAME, cleanPhone);
     const snap = await getDoc(userRef);
     
-    // Fallback: Tìm bằng query (đề phòng có dữ liệu cũ chưa update cấu trúc ID=SĐT)
     if (!snap.exists()) {
        const q = query(collection(db, COLLECTION_NAME), where("username", "==", cleanPhone));
        const qs = await getDocs(q);
@@ -96,7 +94,6 @@ export const getUserByPhone = async (phone) => {
   }
 };
 
-// Tách logic kiểm tra ban ra một hàm riêng cho gọn
 const checkBanStatus = async (userData) => {
   if (userData.isBanned) {
     if (userData.banUntil === 'permanent') {
@@ -108,12 +105,28 @@ const checkBanStatus = async (userData) => {
        const dateStr = new Date(userData.banUntil).toLocaleString('vi-VN');
        throw new Error(`Tài khoản của bạn đang bị tạm khóa đến ${dateStr}.`);
     } else {
-       // Đã qua thời hạn cấm -> Tự động gỡ cấm
        await updateUserBanStatus(userData.id, { isBanned: false, banUntil: null });
        userData.isBanned = false; 
     }
   }
   return userData;
+};
+
+/**
+ * ==========================================
+ * MỚI: API GỌI BẢO MẬT (CHỐNG CHEAT)
+ * ==========================================
+ */
+
+export const applyQuickBan = async ({ phone, reason, days }) => {
+  if (!phone) return;
+  try {
+    const applyBanFn = httpsCallable(functions, 'applyQuickBan');
+    await applyBanFn({ phone, reason, days });
+    console.warn(`Đã yêu cầu cấm SĐT ${phone} do: ${reason}`);
+  } catch (e) {
+    console.error("Lỗi gửi yêu cầu Cấm:", e);
+  }
 };
 
 
@@ -148,7 +161,6 @@ export const updateCustomerSecure = async (phone, newData, inputPasscode) => {
     
     const userRef = doc(db, COLLECTION_NAME, userId);
     
-    // BẢO MẬT: Bóc tách loại bỏ username khỏi newData để chặn việc khách cố tình đổi SĐT định danh
     const { username, phone: _p, ...safeData } = newData;
 
     await updateDoc(userRef, { 
@@ -258,12 +270,12 @@ export const resetPasscodeByAdmin = async (userId, newPasscode) => {
   }
 };
 
-// Hàm đa năng để Admin Nạp/Trừ Tiền hoặc Xu
 export const adminUpdateBalance = async (userId, type, amount, note = "") => {
   try {
     const userRef = doc(db, COLLECTION_NAME, userId);
     const field = type === 'wallet' ? 'walletBalance' : 'totalXu';
     
+    // ĐÃ SỬA: Bổ sung lastUpdateSource để Cloud Functions không nghi ngờ Hack
     await updateDoc(userRef, {
       [field]: increment(amount),
       lastAdminAction: {
@@ -273,6 +285,7 @@ export const adminUpdateBalance = async (userId, type, amount, note = "") => {
         note,
         at: new Date()
       },
+      lastUpdateSource: 'admin',
       updatedAt: serverTimestamp()
     });
     return { success: true };

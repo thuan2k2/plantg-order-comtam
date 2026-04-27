@@ -52,8 +52,10 @@ export const createOrderSecure = async (orderData) => {
           throw new Error("Số dư ví không đủ! Vui lòng nạp thêm.");
         }
 
+        // ĐÃ SỬA: Thêm lastUpdateSource để tránh bị khóa tài khoản
         transaction.update(userRef, {
           walletBalance: increment(-totalAmount),
+          lastUpdateSource: 'order_payment',
           updatedAt: serverTimestamp()
         });
       }
@@ -183,8 +185,10 @@ export const processWalletPayment = async (phone, amount) => {
       const currentBalance = userSnap.data().walletBalance || 0;
       if (currentBalance < amount) throw new Error("Số dư ví Plant G không đủ để thanh toán!");
 
+      // ĐÃ SỬA: Thêm lastUpdateSource
       transaction.update(userRef, {
         walletBalance: increment(-amount),
+        lastUpdateSource: 'order_payment',
         updatedAt: serverTimestamp()
       });
     });
@@ -216,9 +220,11 @@ export const completeOrderWithBonus = async (order) => {
       const userSnap = await getDoc(userDocRef);
       
       if (userSnap.exists()) {
+        // ĐÃ SỬA: Thêm lastUpdateSource khi cộng Xu mua hàng
         await updateDoc(userDocRef, {
           totalXu: increment(earnedXu),
           totalSpend: increment(totalAmount), 
+          lastUpdateSource: 'order_payment',
           updatedAt: serverTimestamp()
         });
       }
@@ -241,7 +247,7 @@ export const completeOrderWithBonus = async (order) => {
 };
 
 // ==========================================
-// MỚI: HÀM NHẬN XU TỪ PET
+// HÀM NHẬN XU TỪ PET
 // ==========================================
 export const claimPetReward = async (phone, minCoins = 1, maxCoins = 10) => {
   try {
@@ -250,10 +256,12 @@ export const claimPetReward = async (phone, minCoins = 1, maxCoins = 10) => {
     
     const rewardCoins = Math.floor(Math.random() * (maxCoins - minCoins + 1)) + minCoins;
 
+    // ĐÃ SỬA: Thêm lastUpdateSource bảo mật cho Pet
     await updateDoc(userRef, {
       coins: increment(rewardCoins),
       totalXu: increment(rewardCoins),
       lastPetInteraction: serverTimestamp(),
+      lastUpdateSource: 'pet',
       updatedAt: serverTimestamp()
     });
 
@@ -422,6 +430,7 @@ export const updateOrderStatus = async (orderId, newStatus) => {
         }
       }
       
+      // Hoàn tiền nếu khách đã trả bằng Ví
       if (order.paymentMethod === 'WALLET' && order.paymentStatus === 'PAID') {
         const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
         if (totalAmount > 0) {
@@ -430,8 +439,10 @@ export const updateOrderStatus = async (orderId, newStatus) => {
           
           const userSnap = await getDoc(userDocRef);
           if (userSnap.exists()) {
+            // ĐÃ SỬA: Thêm lastUpdateSource để bypass hệ thống báo Hack
             await updateDoc(userDocRef, {
                walletBalance: increment(totalAmount),
+               lastUpdateSource: 'refund',
                updatedAt: serverTimestamp()
             });
           }
@@ -520,6 +531,7 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
         }
       }
 
+      // Hoàn tiền nếu khách đã trả bằng Ví
       if (order.paymentMethod === 'WALLET' && order.paymentStatus === 'PAID') {
         const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
         if (totalAmount > 0) {
@@ -528,8 +540,10 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
           
           const userSnap = await getDoc(userDocRef);
           if (userSnap.exists()) {
+            // ĐÃ SỬA: Thêm lastUpdateSource để bypass hệ thống báo Hack
             await updateDoc(userDocRef, {
                walletBalance: increment(totalAmount),
+               lastUpdateSource: 'refund',
                updatedAt: serverTimestamp()
             });
           }

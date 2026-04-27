@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { subscribeToAllOrders, getAllVouchers } from '../../services/orderService';
 import StatusBadge from '../../components/StatusBadge';
+import { useNavigate } from 'react-router-dom';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [vouchers, setVouchers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -120,6 +122,41 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* MỚI: Bổ sung lối tắt đến Trang Nhật ký bảo mật (Security Logs) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div 
+          onClick={() => navigate('/admin/security-logs')}
+          className="cursor-pointer bg-red-50 hover:bg-red-100 transition-colors border border-red-200 p-6 rounded-[2rem] flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-red-200 text-red-600 rounded-full flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">
+              🛡️
+            </div>
+            <div>
+              <h3 className="font-black text-red-700 uppercase tracking-widest text-xs">Nhật ký Bảo mật</h3>
+              <p className="text-[10px] font-bold text-red-500 mt-1">Giám sát số dư và phát hiện Hack/Cheat</p>
+            </div>
+          </div>
+          <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+        </div>
+
+        <div 
+          onClick={() => navigate('/admin/orders')}
+          className="cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 p-6 rounded-[2rem] flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">
+              📦
+            </div>
+            <div>
+              <h3 className="font-black text-gray-700 uppercase tracking-widest text-xs">Quản lý Đơn hàng</h3>
+              <p className="text-[10px] font-bold text-gray-500 mt-1">Xử lý đơn đặt hàng của khách hàng</p>
+            </div>
+          </div>
+          <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+        </div>
+      </div>
+
       {/* Bảng đơn hàng mới nhất và Phím tắt Voucher */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
@@ -127,7 +164,7 @@ const Dashboard = () => {
         <div className="lg:col-span-2 bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
           <div className="px-6 py-5 sm:px-8 sm:py-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
             <h2 className="text-[10px] sm:text-xs font-black uppercase text-gray-800 tracking-[0.2em]">Dòng đơn hàng mới nhất</h2>
-            <button onClick={() => window.location.href='/admin/orders'} className="text-[9px] sm:text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">Xem bếp →</button>
+            <button onClick={() => navigate('/admin/orders')} className="text-[9px] sm:text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">Xem bếp →</button>
           </div>
           
           <div className="overflow-x-auto">
@@ -163,7 +200,7 @@ const Dashboard = () => {
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-6 sm:p-8 flex flex-col h-[400px] lg:h-auto">
           <div className="flex justify-between items-center mb-6">
              <h2 className="text-[10px] sm:text-xs font-black uppercase text-gray-800 tracking-[0.2em]">Khuyến mãi</h2>
-             <button onClick={() => window.location.href='/admin/vouchers'} className="text-[9px] sm:text-[10px] font-black text-orange-500 uppercase tracking-widest">+ Quản lý</button>
+             <button onClick={() => navigate('/admin/vouchers')} className="text-[9px] sm:text-[10px] font-black text-orange-500 uppercase tracking-widest">+ Quản lý</button>
           </div>
           
           <div className="space-y-3 sm:space-y-4 flex-1 overflow-y-auto no-scrollbar">
@@ -189,7 +226,7 @@ const Dashboard = () => {
           </div>
 
           <button 
-            onClick={() => window.location.href='/admin/statistics'} 
+            onClick={() => navigate('/admin/statistics')} 
             className="mt-4 sm:mt-6 w-full py-3 sm:py-4 bg-gray-800 text-white rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest shadow-xl shadow-gray-200 active:scale-95 transition-all"
           >
             Xem lịch sử doanh thu

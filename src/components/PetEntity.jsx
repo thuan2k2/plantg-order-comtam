@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase/config';
-import { claimPetReward } from '../services/orderService';
+import { db, functions } from '../firebase/config';
+import { httpsCallable } from 'firebase/functions'; // GỌI CLOUD FUNCTION ĐỂ BẢO MẬT XU
 
-// CÁC MẨU CHUYỆN NHỎ (Mỗi mảng là 1 câu chuyện được kể nối tiếp nhau)
+// CÁC MẨU CHUYỆN NHỎ
 const PET_STORIES = [
   ["Trời hôm nay đẹp quá nhỉ?", "Bạn đã ăn cơm chưa?", "Nhớ uống nhiều nước nha!"],
   ["Mình bay nãy giờ mỏi cánh ghê...", "Nhưng mà rất vui!", "Lát nữa cho mình xin miếng sườn nhé 🤤"],
@@ -30,7 +30,6 @@ const PetEntity = ({ phone }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [transitionStyle, setTransitionStyle] = useState('none'); 
 
-  const [config, setConfig] = useState({ petMinReward: 1, petMaxReward: 10 });
   const isInteracting = useRef(false); 
   const storyTimeoutRef = useRef(null);
   const dragStartPos = useRef({ x: 0, y: 0 });
@@ -50,20 +49,6 @@ const PetEntity = ({ phone }) => {
     }
   }, [phone]);
 
-  // 1. Lắng nghe cấu hình số Xu phần thưởng từ Admin
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setConfig({
-          petMinReward: data.petMinReward || 1,
-          petMaxReward: data.petMaxReward || 10
-        });
-      }
-    });
-    return () => unsub();
-  }, []);
-
   // 2. Logic Bay Lượn Ngẫu Nhiên
   const movePet = useCallback(() => {
     if (isDragging) return;
@@ -76,11 +61,9 @@ const PetEntity = ({ phone }) => {
     const nextX = Math.random() * (maxX - paddingX) + paddingX;
     const nextY = Math.random() * (maxY - paddingY) + paddingY;
 
-    setTransitionStyle('all 8000ms ease-in-out'); // Mở lại CSS bay mượt mà
+    setTransitionStyle('all 8000ms ease-in-out'); 
 
     setPosition(prev => {
-      // FIX LỖI HƯỚNG MẶT: Ảnh gốc mặt quay sang TRÁI. 
-      // Bay sang PHẢI (nextX > prev.x) thì lật ảnh (scale-x-[-1])
       setIsFlipped(nextX > prev.x); 
       return { x: nextX, y: nextY };
     });
@@ -89,7 +72,7 @@ const PetEntity = ({ phone }) => {
   const startAutoMove = useCallback(() => {
     if (moveTimerRef.current) clearInterval(moveTimerRef.current);
     movePet(); 
-    moveTimerRef.current = setInterval(movePet, 8000); // Đổi hướng mỗi 8s
+    moveTimerRef.current = setInterval(movePet, 8000); 
   }, [movePet]);
 
   useEffect(() => {
@@ -150,43 +133,48 @@ const PetEntity = ({ phone }) => {
     if (storyTimeoutRef.current) clearTimeout(storyTimeoutRef.current);
     setMessage("Đợi xíu, có quà cho bạn nè! ✨");
 
-    const res = await claimPetReward(phone, config.petMinReward, config.petMaxReward);
-    
-    if (res.success) {
-      setFloatingReward(res.reward);
-      const thankPhrase = THANK_YOU_PHRASES[Math.floor(Math.random() * THANK_YOU_PHRASES.length)];
-      setMessage(thankPhrase);
-
-      setIsCooldown(true);
-      const randomCooldownSeconds = Math.floor(Math.random() * (120 - 60 + 1)) + 60;
+    try {
+      // ĐÃ FIX BẢO MẬT: Client KHÔNG tự tính xu nữa. Gọi thẳng lên Server.
+      const claimPetXu = httpsCallable(functions, 'claimPetXu');
+      const res = await claimPetXu({ phone });
       
-      // Lưu Cooldown vào localStorage để tránh F5
-      localStorage.setItem(`pet_cooldown_${phone}`, Date.now() + (randomCooldownSeconds * 1000));
+      if (res.data.success) {
+        setFloatingReward(res.data.reward); // Lấy số Xu do Server trả về
+        const thankPhrase = THANK_YOU_PHRASES[Math.floor(Math.random() * THANK_YOU_PHRASES.length)];
+        setMessage(thankPhrase);
 
-      setTimeout(() => {
-        setIsCooldown(false);
-      }, randomCooldownSeconds * 1000);
+        setIsCooldown(true);
+        const randomCooldownSeconds = Math.floor(Math.random() * (120 - 60 + 1)) + 60;
+        
+        // Lưu Cooldown vào localStorage để tránh F5
+        localStorage.setItem(`pet_cooldown_${phone}`, Date.now() + (randomCooldownSeconds * 1000));
 
-      setTimeout(() => {
-        setFloatingReward(null);
-        setMessage('');
-        isInteracting.current = false;
-      }, 5000);
-    } else {
-      setMessage("Ui lỗi rồi, mình rớt mất xu rồi! 😢");
+        setTimeout(() => {
+          setIsCooldown(false);
+        }, randomCooldownSeconds * 1000);
+
+        setTimeout(() => {
+          setFloatingReward(null);
+          setMessage('');
+          isInteracting.current = false;
+        }, 5000);
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage("Hôm nay hết xu rơi rồi! 😢");
       setTimeout(() => {
         setMessage('');
         isInteracting.current = false;
       }, 4000);
     }
-  }, [isCooldown, phone, config]);
+  }, [isCooldown, phone]);
 
   // 5. LOGIC KÉO THẢ (DRAG & DROP)
   const handlePointerDown = (e) => {
     e.preventDefault();
     if (moveTimerRef.current) clearInterval(moveTimerRef.current);
     
-    setTransitionStyle('none'); // Tắt CSS bay lượn để bám theo con trỏ ngay lập tức
+    setTransitionStyle('none'); 
     setIsDragging(true);
     isInteracting.current = true; 
     
@@ -203,7 +191,7 @@ const PetEntity = ({ phone }) => {
         const currentY = e.clientY || (e.touches && e.touches[0].clientY);
         
         setPosition(prev => {
-          setIsFlipped(currentX > prev.x); // Xoay mặt theo hướng kéo
+          setIsFlipped(currentX > prev.x); 
           return { x: currentX, y: currentY };
         });
       }
@@ -219,12 +207,10 @@ const PetEntity = ({ phone }) => {
         const dx = Math.abs(currentX - dragStartPos.current.x);
         const dy = Math.abs(currentY - dragStartPos.current.y);
 
-        // Nếu di chuyển rất nhỏ (< 10px) thì coi như là Click nhận Xu
         if (dx < 10 && dy < 10) {
           handleInteract();
         }
 
-        // Đứng im 1 giây rồi mới tự động bay đi chỗ khác
         setTimeout(() => {
           startAutoMove();
         }, 1000);
@@ -253,7 +239,7 @@ const PetEntity = ({ phone }) => {
         left: `${position.x}px`,
         top: `${position.y}px`,
         transition: transitionStyle, 
-        transform: 'translate(-50%, -50%)' // Căn chỉnh tọa độ vào chính giữa ảnh
+        transform: 'translate(-50%, -50%)' 
       }}
     >
       <div 
@@ -277,7 +263,6 @@ const PetEntity = ({ phone }) => {
           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white dark:bg-gray-800 rotate-45 border-b border-r border-gray-100 dark:border-gray-700"></div>
         </div>
 
-        {/* Khóa sự kiện kéo mặc định của trình duyệt ảnh bằng draggable="false" */}
         <img 
           src="/pet/Pet.gif" 
           alt="Pet" 

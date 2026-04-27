@@ -152,7 +152,7 @@ const Home = () => {
   }, []);
 
   // ====================================================
-  // ĐÃ FIX BUGS DOUBLE-DIPPING TRONG GAMIFICATION
+  // AUTO ĐẶC QUYỀN & CHỐNG HACK DOUBLE-DIPPING
   // ====================================================
   useEffect(() => {
     if (!userData || !savedPhone) return;
@@ -176,7 +176,7 @@ const Home = () => {
       if ((activeAutoPerk === 'GIFT' || activeAutoPerk === 'ALL') && userData.lastGiftReceived !== todayStr) {
         const amount = Math.min(50, limit);
         updates.lastGiftReceived = todayStr;
-        updates.lastGiftDate = todayStr; // Khóa nhận thủ công ở Gamification.jsx
+        updates.lastGiftDate = todayStr; 
         totalClaimed += amount;
         messages.push(`🎁 Hộp Quà (+${amount} Xu)`);
       }
@@ -185,7 +185,7 @@ const Home = () => {
       if ((activeAutoPerk === 'CHECKIN' || activeAutoPerk === 'ALL') && userData.lastCheckInDate !== todayStr) {
         const amount = Math.min(250, limit);
         updates.lastCheckInDate = todayStr;
-        updates.lastCheckin = todayStr; // Khóa nhận thủ công ở Gamification.jsx
+        updates.lastCheckin = todayStr; 
         totalClaimed += amount;
         messages.push(`📅 Điểm Danh (+${amount} Xu)`);
       }
@@ -194,7 +194,7 @@ const Home = () => {
       if ((activeAutoPerk === 'LUCKY' || activeAutoPerk === 'ALL') && userData.lastAutoLuckyDate !== todayStr) {
         const amount = Math.min(400, limit);
         updates.lastAutoLuckyDate = todayStr;
-        updates.lastLuckyReceived = `${todayStr} Auto`; // Khóa nhận thủ công
+        updates.lastLuckyReceived = `${todayStr} Auto`; 
         totalClaimed += amount;
         messages.push(`🧧 Săn Lì Xì Tự Động (+${amount} Xu)`);
       }
@@ -202,10 +202,12 @@ const Home = () => {
       if (totalClaimed > 0) {
         try {
           const userRef = doc(db, 'users', savedPhone);
+          // ĐÃ SỬA: Bổ sung lastUpdateSource chống cấm oan
           await updateDoc(userRef, {
             ...updates,
             totalXu: increment(totalClaimed),
-            coins: increment(totalClaimed) 
+            coins: increment(totalClaimed),
+            lastUpdateSource: 'lucky' 
           });
 
           setTimeout(() => {
@@ -275,10 +277,12 @@ const Home = () => {
         const randomXu = Math.floor(Math.random() * (max - min + 1)) + min;
         const currentXu = userDbData.totalXu || userDbData.coins || 0;
 
+        // ĐÃ SỬA: Bổ sung lastUpdateSource cho Lì Xì thủ công
         await updateDoc(userRef, {
           totalXu: currentXu + randomXu,
           coins: currentXu + randomXu,
-          lastLuckyReceived: timeKey
+          lastLuckyReceived: timeKey,
+          lastUpdateSource: 'lucky'
         });
 
         setLuckyReward(randomXu);
@@ -308,7 +312,6 @@ const Home = () => {
   const isShopActive = sysConfig.isActuallyOpen || sysConfig.canPreOrder;
 
   return (
-    // ĐÃ FIX BACKGROUND: Đưa background trực tiếp vào thẻ wrapper gốc
     <div 
       className="min-h-screen flex flex-col items-center p-6 font-sans transition-colors duration-300 relative bg-cover bg-center bg-fixed z-0"
       style={{ backgroundImage: "url('/background/background.jpg')" }}
@@ -490,7 +493,7 @@ const Home = () => {
           onClick={() => navigate(hasOrderedBefore ? `/checkorder?user=${savedPhone}` : '/checkorder')}
           className="w-full bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 text-gray-800 dark:text-orange-400 hover:bg-gray-50 dark:hover:bg-gray-700 font-black py-5 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-sm tracking-widest"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
           KIỂM TRA ĐƠN HÀNG
         </button>
 
