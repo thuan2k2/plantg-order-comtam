@@ -12,7 +12,7 @@ const Gamification = () => {
   const [showCalendar, setShowCalendar] = useState(false);
   const [rewardMessage, setRewardMessage] = useState(null);
   
-  // MỚI: State lưu trữ thời gian đếm ngược
+  // State lưu trữ thời gian đếm ngược
   const [timeLeftToReset, setTimeLeftToReset] = useState("");
 
   // Lấy SĐT từ localStorage (giống cách Home.jsx đang làm)
@@ -33,21 +33,34 @@ const Gamification = () => {
   const checkAvailableToday = (timestamp) => {
     if (!timestamp) return true; // Chưa từng nhận
     
+    let date;
+    // Kiểm tra nếu là Timestamp Firebase (Có hàm toDate())
+    if (typeof timestamp.toDate === 'function') {
+      date = new Date(timestamp.toDate());
+    } 
+    // ĐÃ FIX BUGS DOUBLE-DIPPING: Nếu là String (do Auto Claim tạo ra)
+    else if (typeof timestamp === 'string') {
+      // Vì chuỗi là format "Sun Apr 26 2026", nên dùng parse trực tiếp
+      date = new Date(timestamp);
+    } 
+    else {
+      return true; 
+    }
+    
     // Ép kiểu giờ Việt Nam để so sánh ngày
     const options = { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' };
-    const date = new Date(timestamp.toDate()); // Firestore timestamp to JS Date
-    
     const lastActionStr = date.toLocaleDateString('en-GB', options);
     const todayStr = new Date().toLocaleDateString('en-GB', options);
     
     return lastActionStr !== todayStr;
   };
 
-  const canClaimGift = checkAvailableToday(userData?.lastDailyGift);
-  const canCheckIn = checkAvailableToday(userData?.lastCheckIn);
+  // ĐÃ FIX: Đồng bộ kiểm tra biến `lastGiftDate` và `lastCheckin` vì đây là 2 biến Backend đang sử dụng để Check
+  const canClaimGift = checkAvailableToday(userData?.lastGiftDate || userData?.lastDailyGift);
+  const canCheckIn = checkAvailableToday(userData?.lastCheckin || userData?.lastCheckIn);
   const currentStreak = userData?.checkInStreak || 0;
 
-  // MỚI: Logic đồng hồ đếm ngược reset ngày mới
+  // Logic đồng hồ đếm ngược reset ngày mới
   useEffect(() => {
     if (!showCalendar) return;
 
@@ -101,8 +114,6 @@ const Gamification = () => {
       const result = await claimDailyCheckIn(phone);
       setRewardMessage(`📅 Điểm danh ngày ${result.streak} thành công! Nhận ${result.reward} xu.`);
       setTimeout(() => setRewardMessage(null), 3000);
-      
-      // setShowCalendar(false); 
     } catch (error) {
       alert(error.message || "Có lỗi xảy ra, vui lòng thử lại.");
     } finally {
@@ -115,7 +126,7 @@ const Gamification = () => {
   return (
     <>
       {/* CỤM NÚT NỔI Ở GÓC DƯỚI BÊN TRÁI */}
-      <div className="fixed bottom-24 left-6 flex flex-col gap-4 z-40">
+      <div className="fixed bottom-24 left-6 flex flex-col gap-4 z-40 pointer-events-auto">
         
         {/* Nút 1: Hộp Quà Bí Ẩn */}
         {canClaimGift && (
@@ -159,7 +170,7 @@ const Gamification = () => {
       {/* ========================================= */}
       {showCalendar && (
         <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200" 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200 pointer-events-auto" 
           onClick={() => setShowCalendar(false)}
         >
           <div 

@@ -29,9 +29,9 @@ const UserAvatar = ({ avatarUrl, totalSpend = 0, manualRankId = null, size = 'w-
         />
       )}
 
-      {/* ĐÃ FIX: Icon VIP chuyển xuống góc dưới bên phải */}
+      {/* ĐÃ FIX: Icon VIP chuyển xuống chính giữa phía dưới */}
       {current && current.vipIcon && (
-        <div className="absolute -bottom-1 -right-1 w-[40%] h-[40%] z-20 flex items-center justify-center bg-white/30 dark:bg-black/30 rounded-full backdrop-blur-sm shadow-sm pointer-events-none">
+        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-[45%] h-[45%] z-20 flex items-center justify-center bg-white/40 dark:bg-black/40 rounded-full backdrop-blur-md shadow-sm pointer-events-none">
           <img 
             src={current.vipIcon} 
             alt={`VIP Level ${current.vipLevel}`} 

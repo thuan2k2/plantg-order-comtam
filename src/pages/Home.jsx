@@ -151,6 +151,9 @@ const Home = () => {
     };
   }, []);
 
+  // ====================================================
+  // ĐÃ FIX BUGS DOUBLE-DIPPING TRONG GAMIFICATION
+  // ====================================================
   useEffect(() => {
     if (!userData || !savedPhone) return;
 
@@ -169,23 +172,29 @@ const Home = () => {
       let updates = {};
       let messages = [];
 
+      // 1. Auto nhận Hộp Quà
       if ((activeAutoPerk === 'GIFT' || activeAutoPerk === 'ALL') && userData.lastGiftReceived !== todayStr) {
         const amount = Math.min(50, limit);
         updates.lastGiftReceived = todayStr;
+        updates.lastGiftDate = todayStr; // Khóa nhận thủ công ở Gamification.jsx
         totalClaimed += amount;
         messages.push(`🎁 Hộp Quà (+${amount} Xu)`);
       }
 
+      // 2. Auto Điểm danh
       if ((activeAutoPerk === 'CHECKIN' || activeAutoPerk === 'ALL') && userData.lastCheckInDate !== todayStr) {
         const amount = Math.min(250, limit);
         updates.lastCheckInDate = todayStr;
+        updates.lastCheckin = todayStr; // Khóa nhận thủ công ở Gamification.jsx
         totalClaimed += amount;
         messages.push(`📅 Điểm Danh (+${amount} Xu)`);
       }
 
+      // 3. Auto Lì Xì Không Cần Canh Giờ
       if ((activeAutoPerk === 'LUCKY' || activeAutoPerk === 'ALL') && userData.lastAutoLuckyDate !== todayStr) {
         const amount = Math.min(400, limit);
         updates.lastAutoLuckyDate = todayStr;
+        updates.lastLuckyReceived = `${todayStr} Auto`; // Khóa nhận thủ công
         totalClaimed += amount;
         messages.push(`🧧 Săn Lì Xì Tự Động (+${amount} Xu)`);
       }
@@ -299,14 +308,16 @@ const Home = () => {
   const isShopActive = sysConfig.isActuallyOpen || sysConfig.canPreOrder;
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-6 font-sans transition-colors duration-300 relative">
+    // ĐÃ FIX BACKGROUND: Đưa background trực tiếp vào thẻ wrapper gốc
+    <div 
+      className="min-h-screen flex flex-col items-center p-6 font-sans transition-colors duration-300 relative bg-cover bg-center bg-fixed z-0"
+      style={{ backgroundImage: "url('/background/background.jpg')" }}
+    >
       
-      {/* ĐÃ FIX BACKGROUND */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <img src="/background/background.jpg" alt="bg" className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-orange-50/80 dark:bg-gray-900/90 backdrop-blur-[2px]"></div>
-      </div>
+      {/* Overlay phủ mờ ảnh nền */}
+      <div className="absolute inset-0 bg-orange-50/80 dark:bg-gray-900/90 backdrop-blur-[2px] z-0 pointer-events-none"></div>
 
+      {/* TOP BAR: THIẾT LẬP & AVATAR */}
       <div className="absolute top-6 left-6 flex gap-3 z-40">
         <div className="relative">
           <button 
@@ -356,7 +367,7 @@ const Home = () => {
       </div>
 
       {sysConfig.sysNotice && (
-        <div className="w-full max-w-md mt-24 mb-2 px-1 z-30">
+        <div className="w-full max-w-md mt-24 mb-2 px-1 z-30 relative">
           <div className="relative overflow-hidden bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border border-orange-200 dark:border-orange-900/50 rounded-[2rem] p-5 shadow-2xl shadow-orange-500/10 flex items-center gap-4 animate-in fade-in slide-in-from-top-4 group">
             <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-orange-400 to-red-500"></div>
             <div className="w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-2xl flex-shrink-0 group-hover:scale-110 transition-transform">
@@ -404,25 +415,25 @@ const Home = () => {
         </div>
       </div>
 
-      <div className="w-full max-w-xs mb-8 flex flex-col items-center z-10">
+      <div className="w-full max-w-xs mb-8 flex flex-col items-center z-10 relative">
         {hasOrderedBefore ? (
           <>
             <div className="w-full bg-white dark:bg-gray-800 rounded-3xl p-5 shadow-sm border border-orange-100 dark:border-gray-700 text-center relative overflow-hidden transition-colors group flex flex-col items-center">
-              <div className="absolute top-0 right-0 w-12 h-12 bg-orange-50 dark:bg-gray-700 rounded-bl-full opacity-50 transition-all group-hover:scale-150"></div>
-              <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.2em] mb-1">Thành viên thân thiết</p>
+              <div className="absolute top-0 right-0 w-12 h-12 bg-orange-50 dark:bg-gray-700 rounded-bl-full opacity-50 transition-all group-hover:scale-150 z-0"></div>
+              <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.2em] mb-1 relative z-10">Thành viên thân thiết</p>
               
-              <h2 className="w-full font-black text-gray-800 dark:text-white transition-colors flex flex-wrap items-center justify-center gap-1.5 mt-1">
+              <h2 className="w-full font-black text-gray-800 dark:text-white transition-colors flex flex-wrap items-center justify-center gap-1.5 mt-1 relative z-10">
                 <span className="text-base sm:text-lg leading-tight line-clamp-2 break-words text-center">
                   Chào mừng {customerName || 'Bạn'}!
                 </span>
                 {rankInfo && <VipBadge rankInfo={rankInfo} size="w-5 h-5 flex-shrink-0" />}
               </h2>
               
-              <p className="text-xs text-gray-400 font-bold mb-4 mt-2">{savedPhone}</p>
+              <p className="text-xs text-gray-400 font-bold mb-4 mt-2 relative z-10">{savedPhone}</p>
               
               <button 
                 onClick={() => handleLogoutCustomer()}
-                className="text-[10px] font-black text-red-500 border border-red-100 dark:border-red-900/50 px-4 py-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors uppercase tracking-widest"
+                className="text-[10px] font-black text-red-500 border border-red-100 dark:border-red-900/50 px-4 py-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors uppercase tracking-widest relative z-10"
               >
                 Đăng xuất
               </button>
@@ -453,7 +464,7 @@ const Home = () => {
         )}
       </div>
 
-      <div className="w-full max-w-xs space-y-4 z-10">
+      <div className="w-full max-w-xs space-y-4 z-10 relative">
         <button
           onClick={() => {
             if (!sysConfig.isActuallyOpen) return alert(`Quán hiện chưa tới giờ nhận đơn giao ngay.\nGiờ mở cửa: ${sysConfig.openTime || '11:00 - 21:00'}`);
@@ -501,9 +512,11 @@ const Home = () => {
         )}
       </div>
 
-      {hasOrderedBefore && <Gamification />}
+      <div className="relative z-10 w-full max-w-xs">
+         {hasOrderedBefore && <Gamification />}
+      </div>
 
-      <div className="mt-auto pt-10 pb-6 text-center w-full flex flex-col items-center z-10">
+      <div className="mt-auto pt-10 pb-6 text-center w-full flex flex-col items-center z-10 relative">
         <div className="flex items-center justify-center gap-2 mb-4 bg-white/50 dark:bg-gray-800/50 px-4 py-2 rounded-full border border-gray-100 dark:border-gray-700 shadow-sm backdrop-blur-sm">
           <div className="relative flex h-2.5 w-2.5">
             {isAdminOnline && (
