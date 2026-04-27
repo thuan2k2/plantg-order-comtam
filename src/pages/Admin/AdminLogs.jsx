@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
-import { db } from '../../../firebase/config'; // Lưu ý đường dẫn import tùy vào cấu trúc thư mục của bạn
+import { db } from '../../firebase/config'; // Lưu ý đường dẫn import tùy vào cấu trúc thư mục của bạn
 
 const AdminLogs = () => {
   const [activeTab, setActiveTab] = useState('BALANCE'); // 'BALANCE' hoặc 'SECURITY'
