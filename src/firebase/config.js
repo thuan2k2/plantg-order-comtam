@@ -1,6 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+// MỚI: Import getFunctions để sử dụng Cloud Functions
+import { getFunctions } from "firebase/functions";
 
 // Cấu hình Firebase của bạn
 const firebaseConfig = {
@@ -21,3 +23,6 @@ export const db = getFirestore(app);
 
 // Xuất Firebase Storage
 export const storage = getStorage(app);
+
+// MỚI: Khởi tạo và xuất Firebase Functions
+export const functions = getFunctions(app);
