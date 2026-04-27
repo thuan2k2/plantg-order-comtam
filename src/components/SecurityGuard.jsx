@@ -23,10 +23,29 @@ const SecurityGuard = ({ phone }) => {
     const unsub = onSnapshot(doc(db, 'users', phone), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (data.isBanned && data.bannedUntil) {
-          const expireTime = data.bannedUntil.toDate().getTime();
+        
+        if (data.isBanned) {
+          // Xử lý thông minh tất cả các trường hợp lưu trữ thời gian cấm
+          const banTimeData = data.bannedUntil || data.banUntil;
+          let expireTime = 0;
+
+          if (banTimeData === 'permanent' || data.bannedUntil === 'permanent' || data.banUntil === 'permanent') {
+            // Nếu cấm vĩnh viễn, set hạn cấm là 100 năm nữa
+            expireTime = Date.now() + 100 * 365 * 24 * 60 * 60 * 1000; 
+          } else if (banTimeData && typeof banTimeData.toDate === 'function') {
+            // Định dạng chuẩn Firestore Timestamp
+            expireTime = banTimeData.toDate().getTime();
+          } else if (banTimeData) {
+            // Định dạng chuỗi (String)
+            expireTime = new Date(banTimeData).getTime();
+          }
+
           if (expireTime > Date.now()) {
-            setBanData({ ...data, expireTime });
+            setBanData({ 
+              ...data, 
+              expireTime, 
+              banReason: data.banReason || 'Vi phạm chính sách hệ thống'
+            });
           } else {
             setBanData(null); 
           }
