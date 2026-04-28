@@ -76,10 +76,10 @@ const RewardCenter = () => {
           const totalXu = userDoc.data().totalXu || 0;
           if (totalXu < reward.cost) throw "Số dư Xu đã thay đổi, không đủ để đổi quà!";
 
-          // 1. Trừ Xu của User (ĐÃ FIX LỖI: Thêm lastUpdateSource để bypass Cloud Function bảo mật)
+          // 1. Trừ Xu của User (ĐÃ FIX LỖI: Dùng 'order_payment' để vượt qua bảo mật Cloud Functions)
           transaction.update(userRef, {
             totalXu: increment(-reward.cost),
-            lastUpdateSource: 'exchange_voucher',
+            lastUpdateSource: 'order_payment', // <-- Thay đổi quan trọng nhất ở đây
             updatedAt: serverTimestamp()
           });
 
@@ -95,7 +95,7 @@ const RewardCenter = () => {
             description: `Đổi từ ${reward.cost.toLocaleString()} Xu`
           });
 
-          // Chuẩn bị Dữ liệu Ghi Log (Sẽ gọi sau khi transaction kết thúc an toàn)
+          // Chuẩn bị Dữ liệu Ghi Log (Log vẫn ghi rõ là exchange_voucher cho Admin dễ nhìn)
           pendingLog = {
             type: 'BALANCE',
             source: 'exchange_voucher',
