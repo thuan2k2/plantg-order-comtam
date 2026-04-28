@@ -5,9 +5,11 @@ import {
   deleteUser, 
   updateUserBanStatus,
   resetPasscodeByAdmin, 
-  adminUpdateBalance // Sử dụng hàm mới đa năng (Nạp/Trừ Tiền và Xu)
+  adminUpdateBalance 
 } from '../../services/authService';
-import { createVoucher, deleteVoucher, getAllVouchers } from '../../services/orderService';
+
+// ĐÃ THAY ĐỔI: Sử dụng hàm subscribeToAllVouchers (Real-time) thay cho getAllVouchers
+import { createVoucher, deleteVoucher, subscribeToAllVouchers } from '../../services/orderService';
 
 const ManageUsers = () => {
   const [users, setUsers] = useState([]);
@@ -25,23 +27,28 @@ const ManageUsers = () => {
   const [banUserTarget, setBanUserTarget] = useState(null);
   const [banDuration, setBanDuration] = useState('7'); 
   const [customBanDate, setCustomBanDate] = useState('');
-  const [banReasonInput, setBanReasonInput] = useState(''); // MỚI: State lưu lý do cấm của Admin
+  const [banReasonInput, setBanReasonInput] = useState(''); 
 
   // SỬ DỤNG REAL-TIME LISTENER THAY VÌ LẤY 1 LẦN
   useEffect(() => {
     setIsLoading(true);
+    
+    // 1. Lắng nghe thay đổi của Khách hàng
     const unsubscribeUsers = subscribeToAllUsers((userData) => {
       setUsers(userData);
       setIsLoading(false);
     });
 
-    const fetchVouchers = async () => {
-      const voucherData = await getAllVouchers();
+    // 2. Lắng nghe thay đổi của Voucher (Real-time update)
+    const unsubscribeVouchers = subscribeToAllVouchers((voucherData) => {
       setAllVouchers(voucherData);
-    };
-    fetchVouchers();
+    });
 
-    return () => unsubscribeUsers();
+    // Dọn dẹp Listener khi component bị hủy
+    return () => {
+      unsubscribeUsers();
+      unsubscribeVouchers();
+    };
   }, []);
 
   const filteredUsers = users.filter(user => 
@@ -177,7 +184,7 @@ const ManageUsers = () => {
       banUntil = new Date().getTime() + (days * 24 * 60 * 60 * 1000);
     }
 
-    // ĐÃ FIX: Thiết lập lý do cấm chuẩn xác
+    // Thiết lập lý do cấm chuẩn xác
     const finalReason = banReasonInput.trim() || 'Khóa bởi Quản trị viên';
 
     const result = await updateUserBanStatus(banUserTarget.id, { 
@@ -195,7 +202,6 @@ const ManageUsers = () => {
     }
   };
 
-  // ĐÃ FIX: Đảm bảo format ngày chuẩn kể cả khi Firestore trả về Timestamp Object
   const formatBanTime = (banUntil) => {
     if (!banUntil) return '';
     if (banUntil === 'permanent') return 'Cấm Vĩnh Viễn';
@@ -221,10 +227,10 @@ const ManageUsers = () => {
       assignedPhone: voucherModalUser.username, 
       expiry: null 
     };
+    
     const res = await createVoucher(vData);
     if (res.success) {
-      const updatedV = await getAllVouchers();
-      setAllVouchers(updatedV);
+      // ĐÃ FIX: Chỉ cần báo thành công và clear form, Firebase Listener sẽ tự update giao diện.
       setNewVoucher({ code: '', value: 0, type: 'CASH', usageLimit: 1 });
       alert(`Đã tặng Voucher cho ${voucherModalUser.fullName}`);
     }
@@ -233,7 +239,7 @@ const ManageUsers = () => {
   const handleDeleteUserVoucher = async (vId) => {
     if (window.confirm("Xóa Voucher này của khách?")) {
       await deleteVoucher(vId);
-      setAllVouchers(prev => prev.filter(v => v.id !== vId));
+      // ĐÃ FIX: Không cần setAllVouchers thủ công nữa, Firebase Listener sẽ lo.
     }
   };
 

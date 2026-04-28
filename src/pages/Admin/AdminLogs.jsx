@@ -1,51 +1,54 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase/config'; 
+import { collection, query, orderBy, limit, onSnapshot, doc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 
 const AdminLogs = () => {
-  const [activeTab, setActiveTab] = useState('BALANCE'); // 'BALANCE' hoặc 'SECURITY'
-  const [timeFilter, setTimeFilter] = useState('TODAY'); // TODAY, WEEK, MONTH, YEAR, ALL
+  const [activeTab, setActiveTab] = useState('BALANCE'); 
+  const [timeFilter, setTimeFilter] = useState('TODAY'); 
   const [searchPhone, setSearchPhone] = useState('');
   
   const [logs, setLogs] = useState([]);
-  const [userHistory, setUserHistory] = useState([]); // Chứa 6 record gần nhất của 1 User
-  const [isLoading, setIsLoading] = useState(false);
+  const [userHistory, setUserHistory] = useState([]); 
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // MỚI: State quản lý các Log được chọn để xóa
+  const [selectedLogs, setSelectedLogs] = useState([]);
 
   // Hàm tính toán thời gian bắt đầu lọc
   const getStartDate = (filter) => {
     const now = new Date();
     if (filter === 'TODAY') return new Date(now.setHours(0, 0, 0, 0));
     if (filter === 'WEEK') {
-      const d = new Date(now.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1))); // T2 đầu tuần
+      const d = new Date(now.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1))); 
       return new Date(d.setHours(0, 0, 0, 0));
     }
     if (filter === 'MONTH') return new Date(now.getFullYear(), now.getMonth(), 1);
     if (filter === 'YEAR') return new Date(now.getFullYear(), 0, 1);
-    return new Date(0); // ALL
+    return new Date(0); 
   };
 
-  const fetchLogs = async () => {
+  // MỚI: Sử dụng onSnapshot để cập nhật Real-time thay vì getDocs
+  useEffect(() => {
     setIsLoading(true);
-    try {
-      const startDate = getStartDate(timeFilter);
+    const startDate = getStartDate(timeFilter);
 
-      // TỐI ƯU HÓA: Query 500 logs mới nhất rồi filter bằng JS để tránh lỗi thiếu Composite Index trên Firebase
-      const q = query(
-        collection(db, 'admin_logs'),
-        orderBy('createdAt', 'desc'),
-        limit(500)
-      );
+    // Query 500 logs mới nhất để tối ưu hiệu suất
+    const q = query(
+      collection(db, 'admin_logs'),
+      orderBy('createdAt', 'desc'),
+      limit(500) 
+    );
 
-      const snapshot = await getDocs(q);
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       let fetchedLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // 1. Lọc theo Tab (BALANCE hoặc SECURITY) và Lọc theo Thời gian
+      // 1. Lọc theo Tab và Thời gian
       fetchedLogs = fetchedLogs.filter(log => 
         log.type === activeTab &&
         log.createdAt && log.createdAt.toDate() >= startDate
       );
 
-      // 2. Lọc theo SĐT Khách hàng
+      // 2. Lọc theo SĐT
       if (searchPhone.trim()) {
         fetchedLogs = fetchedLogs.filter(log => 
           log.targetPhone && log.targetPhone.includes(searchPhone.trim())
@@ -54,30 +57,79 @@ const AdminLogs = () => {
 
       setLogs(fetchedLogs);
 
-      // 3. Tận dụng data đã lấy để hiển thị Lịch sử 6 bước nếu đang tìm 1 SĐT cụ thể
+      // 3. Lịch sử 6 bước
       if (activeTab === 'BALANCE' && searchPhone.trim().length >= 10) {
         setUserHistory(fetchedLogs.slice(0, 6));
       } else {
         setUserHistory([]);
       }
-
-    } catch (error) {
-      console.error("Lỗi lấy logs:", error);
-    } finally {
+      
       setIsLoading(false);
+    }, (error) => {
+      console.error("Lỗi lắng nghe logs:", error);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [activeTab, timeFilter, searchPhone]);
+
+  // --- MỚI: CÁC HÀM XỬ LÝ XÓA LOG ---
+  const handleSelectLog = (id) => {
+    setSelectedLogs(prev => prev.includes(id) ? prev.filter(logId => logId !== id) : [...prev, id]);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedLogs.length === logs.length && logs.length > 0) {
+      setSelectedLogs([]); // Bỏ chọn tất cả
+    } else {
+      setSelectedLogs(logs.map(log => log.id)); // Chọn tất cả
     }
   };
 
-  // Tự động load lại data khi đổi Tab, Thời gian hoặc gõ xong SĐT
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchLogs();
-    }, 500); 
+  const handleDeleteSingle = async (id) => {
+    if (window.confirm("Bạn có chắc muốn xóa bản ghi này?")) {
+      try {
+        await deleteDoc(doc(db, 'admin_logs', id));
+        setSelectedLogs(prev => prev.filter(logId => logId !== id));
+      } catch (error) {
+        alert("Lỗi khi xóa: " + error.message);
+      }
+    }
+  };
 
-    return () => clearTimeout(delayDebounceFn);
-  }, [activeTab, timeFilter, searchPhone]);
+  const handleDeleteSelected = async () => {
+    if (selectedLogs.length === 0) return;
+    if (window.confirm(`Xác nhận xóa ${selectedLogs.length} bản ghi đã chọn?`)) {
+      try {
+        const batch = writeBatch(db);
+        selectedLogs.forEach(id => {
+          batch.delete(doc(db, 'admin_logs', id));
+        });
+        await batch.commit();
+        setSelectedLogs([]);
+      } catch (error) {
+        alert("Lỗi khi xóa: " + error.message);
+      }
+    }
+  };
 
-  // CẬP NHẬT: Map màu sắc cho các nguồn tracking mới
+  const handleDeleteAll = async () => {
+    if (logs.length === 0) return;
+    if (window.confirm(`CẢNH BÁO: Bạn sắp xóa TOÀN BỘ ${logs.length} bản ghi trong danh sách hiện tại. Hành động này không thể hoàn tác!`)) {
+      try {
+        const batch = writeBatch(db);
+        logs.forEach(log => {
+          batch.delete(doc(db, 'admin_logs', log.id));
+        });
+        await batch.commit();
+        setSelectedLogs([]);
+      } catch (error) {
+        alert("Lỗi khi xóa: " + error.message);
+      }
+    }
+  };
+
+  // Map màu sắc cho các nguồn tracking mới
   const sourceColors = {
     'ADMIN_DEPOSIT': 'bg-purple-100 text-purple-700 border-purple-200',
     'ADMIN_DEDUCT': 'bg-orange-100 text-orange-700 border-orange-200',
@@ -86,6 +138,7 @@ const AdminLogs = () => {
     'ORDER_BONUS': 'bg-green-100 text-green-700 border-green-200',
     'PET_REWARD': 'bg-pink-100 text-pink-700 border-pink-200',
     'F12_HACK_DETECTED': 'bg-red-100 text-red-700 border-red-200',
+    'exchange_voucher': 'bg-yellow-100 text-yellow-700 border-yellow-200',
     'unknown': 'bg-gray-100 text-gray-500 border-gray-200'
   };
 
@@ -97,7 +150,8 @@ const AdminLogs = () => {
       'ORDER_PAYMENT': 'Thanh toán Đơn',
       'ORDER_BONUS': 'Thưởng Đơn hàng',
       'PET_REWARD': 'Thú cưng',
-      'F12_HACK_DETECTED': 'DevTools / Hack'
+      'F12_HACK_DETECTED': 'Bảo mật hệ thống',
+      'exchange_voucher': 'Đổi Voucher'
     };
     return dict[source] || source || 'Không rõ';
   };
@@ -107,15 +161,13 @@ const AdminLogs = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
         <div>
           <h1 className="text-2xl font-black text-gray-800 tracking-tighter">NHẬT KÝ HỆ THỐNG</h1>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
-            Giám sát số dư và bảo mật
-          </p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Giám sát số dư và bảo mật</p>
         </div>
 
         {/* Tab Chuyển đổi */}
         <div className="flex bg-gray-100 p-1 rounded-2xl w-full md:w-auto">
           <button
-            onClick={() => setActiveTab('BALANCE')}
+            onClick={() => { setActiveTab('BALANCE'); setSelectedLogs([]); }}
             className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
               activeTab === 'BALANCE' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
@@ -123,7 +175,7 @@ const AdminLogs = () => {
             💰 Biến động số dư
           </button>
           <button
-            onClick={() => setActiveTab('SECURITY')}
+            onClick={() => { setActiveTab('SECURITY'); setSelectedLogs([]); }}
             className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
               activeTab === 'SECURITY' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
@@ -133,31 +185,45 @@ const AdminLogs = () => {
         </div>
       </div>
 
-      {/* Bộ Lọc */}
-      <div className="flex flex-col md:flex-row gap-4">
-        <select 
-          value={timeFilter}
-          onChange={(e) => setTimeFilter(e.target.value)}
-          className="px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-bold text-gray-700 outline-none focus:border-blue-500 shadow-sm"
-        >
-          <option value="TODAY">Hôm nay</option>
-          <option value="WEEK">Tuần này</option>
-          <option value="MONTH">Tháng này</option>
-          <option value="YEAR">Năm nay</option>
-          <option value="ALL">Toàn thời gian</option>
-        </select>
+      {/* Bộ Lọc & Các nút Xóa */}
+      <div className="flex flex-col lg:flex-row gap-4 justify-between items-center">
+        <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
+          <select 
+            value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)}
+            className="px-4 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-bold text-gray-700 outline-none focus:border-blue-500 shadow-sm"
+          >
+            <option value="TODAY">Hôm nay</option>
+            <option value="WEEK">Tuần này</option>
+            <option value="MONTH">Tháng này</option>
+            <option value="YEAR">Năm nay</option>
+            <option value="ALL">Toàn thời gian</option>
+          </select>
 
-        <div className="flex-1 relative">
-          <input 
-            type="text" 
-            placeholder="🔍 Nhập số điện thoại cần tra cứu..."
-            value={searchPhone}
-            onChange={(e) => setSearchPhone(e.target.value)}
-            className="w-full px-5 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-bold text-gray-700 outline-none focus:border-blue-500 shadow-sm pr-10"
-          />
-          {searchPhone && (
-            <button onClick={() => setSearchPhone('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 font-bold">✕</button>
+          <div className="flex-1 relative min-w-[250px]">
+            <input 
+              type="text" placeholder="🔍 Nhập số điện thoại..." value={searchPhone} onChange={(e) => setSearchPhone(e.target.value)}
+              className="w-full px-5 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-bold text-gray-700 outline-none focus:border-blue-500 shadow-sm pr-10"
+            />
+            {searchPhone && <button onClick={() => setSearchPhone('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 font-bold">✕</button>}
+          </div>
+        </div>
+
+        {/* NÚT THAO TÁC XÓA */}
+        <div className="flex gap-2 w-full lg:w-auto justify-end">
+          {selectedLogs.length > 0 && (
+            <button 
+              onClick={handleDeleteSelected} 
+              className="px-4 py-3 bg-red-100 text-red-600 hover:bg-red-200 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm whitespace-nowrap"
+            >
+              Xóa {selectedLogs.length} dòng
+            </button>
           )}
+          <button 
+            onClick={handleDeleteAll} 
+            className="px-4 py-3 bg-gray-800 text-white hover:bg-black rounded-2xl text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm whitespace-nowrap"
+          >
+            Dọn sạch rác
+          </button>
         </div>
       </div>
 
@@ -167,7 +233,6 @@ const AdminLogs = () => {
           <h2 className="text-sm font-black text-blue-800 uppercase tracking-widest mb-4">
             🔍 Hồ sơ biến động: <span className="text-blue-600 bg-white px-3 py-1 rounded-lg shadow-sm ml-2">{searchPhone}</span>
           </h2>
-          
           <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
             {userHistory.map((history, index) => (
               <div key={history.id} className={`min-w-[160px] p-4 rounded-2xl border flex flex-col justify-between shrink-0 ${index === 0 ? 'bg-blue-600 border-blue-700 shadow-lg text-white transform scale-105 mx-2' : 'bg-white border-gray-200'}`}>
@@ -175,8 +240,6 @@ const AdminLogs = () => {
                   <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${index === 0 ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
                     {index === 0 ? 'MỚI NHẤT' : `TRƯỚC ĐÓ ${index}`}
                   </span>
-                  
-                  {/* Cập nhật hiển thị tài sản động theo assetType */}
                   <div className="mt-3">
                     <p className={`text-[10px] font-bold ${index === 0 ? 'text-blue-100' : 'text-gray-400'} uppercase tracking-widest`}>
                       {history.assetType === 'xu' ? 'Tổng Xu' : 'Số dư Ví'}
@@ -187,12 +250,8 @@ const AdminLogs = () => {
                   </div>
                 </div>
                 <div className="mt-4 pt-3 border-t border-dashed border-gray-300 border-opacity-30">
-                  <p className={`text-[10px] font-bold ${index === 0 ? 'text-blue-200' : 'text-gray-400'}`}>
-                    {history.createdAt?.toDate().toLocaleString('vi-VN')}
-                  </p>
-                  <p className={`text-[10px] font-black uppercase truncate mt-0.5 ${index === 0 ? 'text-white' : 'text-blue-600'}`}>
-                    {translateSource(history.source)}
-                  </p>
+                  <p className={`text-[10px] font-bold ${index === 0 ? 'text-blue-200' : 'text-gray-400'}`}>{history.createdAt?.toDate().toLocaleString('vi-VN')}</p>
+                  <p className={`text-[10px] font-black uppercase truncate mt-0.5 ${index === 0 ? 'text-white' : 'text-blue-600'}`}>{translateSource(history.source)}</p>
                 </div>
               </div>
             ))}
@@ -216,32 +275,49 @@ const AdminLogs = () => {
             <table className="w-full text-left border-collapse min-w-[800px]">
               <thead className="bg-gray-50/50">
                 <tr>
-                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">Thời gian</th>
-                  <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">SĐT Khách hàng</th>
+                  <th className="px-6 py-4 w-10 text-center">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedLogs.length > 0 && selectedLogs.length === logs.length} 
+                      onChange={handleSelectAll} 
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer" 
+                    />
+                  </th>
+                  <th className="px-4 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">Thời gian</th>
+                  <th className="px-4 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">SĐT Khách hàng</th>
                   
                   {activeTab === 'BALANCE' ? (
                     <>
-                      <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-right whitespace-nowrap">Biến động Xu</th>
-                      <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-right whitespace-nowrap">Biến động Ví</th>
-                      <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center whitespace-nowrap">Nguồn / Tác vụ</th>
+                      <th className="px-4 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-right whitespace-nowrap">Biến động Xu</th>
+                      <th className="px-4 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-right whitespace-nowrap">Biến động Ví</th>
+                      <th className="px-4 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest text-center whitespace-nowrap">Nguồn / Tác vụ</th>
                     </>
                   ) : (
                     <>
-                      <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">Hành động của Bot</th>
-                      <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">Chi tiết / Lý do cấm</th>
+                      <th className="px-4 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">Hành động của Bot</th>
+                      <th className="px-4 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">Chi tiết vi phạm</th>
                     </>
                   )}
+                  <th className="px-4 py-4 w-16 text-center">Xóa</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-4">
+                  <tr key={log.id} className={`transition-colors ${selectedLogs.includes(log.id) ? 'bg-blue-50/50' : 'hover:bg-gray-50/50'}`}>
+                    <td className="px-6 py-4 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedLogs.includes(log.id)} 
+                        onChange={() => handleSelectLog(log.id)} 
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer" 
+                      />
+                    </td>
+                    <td className="px-4 py-4">
                       <p className="text-xs font-bold text-gray-800">{log.createdAt?.toDate().toLocaleDateString('vi-VN')}</p>
                       <p className="text-[10px] font-black text-gray-400 uppercase">{log.createdAt?.toDate().toLocaleTimeString('vi-VN')}</p>
                     </td>
                     
-                    <td className="px-6 py-4">
+                    <td className="px-4 py-4">
                       <span className="text-sm font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-lg tracking-wider">
                         {log.targetPhone || 'Ẩn danh'}
                       </span>
@@ -249,7 +325,7 @@ const AdminLogs = () => {
 
                     {activeTab === 'BALANCE' ? (
                       <>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-4 py-4 text-right">
                           {log.assetType === 'xu' ? (
                             <>
                               <span className={`text-sm font-black ${log.walletChange > 0 ? 'text-green-600' : log.walletChange < 0 ? 'text-red-500' : 'text-gray-400'}`}>
@@ -261,7 +337,7 @@ const AdminLogs = () => {
                             <span className="text-gray-300">-</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-4 py-4 text-right">
                           {log.assetType === 'wallet' ? (
                             <>
                               <span className={`text-sm font-black ${log.walletChange > 0 ? 'text-green-600' : log.walletChange < 0 ? 'text-red-500' : 'text-gray-400'}`}>
@@ -273,7 +349,7 @@ const AdminLogs = () => {
                             <span className="text-gray-300">-</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-center">
+                        <td className="px-4 py-4 text-center">
                           <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${sourceColors[log.source] || sourceColors['unknown']}`}>
                             {translateSource(log.source)}
                           </span>
@@ -281,16 +357,25 @@ const AdminLogs = () => {
                       </>
                     ) : (
                       <>
-                        <td className="px-6 py-4">
-                          <span className="bg-red-100 text-red-600 border border-red-200 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest">
+                        <td className="px-4 py-4">
+                          <span className="bg-red-100 text-red-600 border border-red-200 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
                             {log.action}
                           </span>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-4 py-4">
                           <p className="text-xs font-bold text-gray-800 line-clamp-2 max-w-md">{log.reason}</p>
                         </td>
                       </>
                     )}
+                    <td className="px-4 py-4 text-center">
+                      <button 
+                        onClick={() => handleDeleteSingle(log.id)} 
+                        className="text-gray-300 hover:text-red-500 p-2 transition-colors active:scale-90"
+                        title="Xóa bản ghi này"
+                      >
+                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

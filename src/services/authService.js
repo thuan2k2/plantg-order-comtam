@@ -19,10 +19,10 @@ import {
   orderBy,
   onSnapshot,
   increment,
-  addDoc // MỚI: Thêm import addDoc để ghi log
+  addDoc 
 } from 'firebase/firestore';
 
-// MỚI: Thêm import để gọi Cloud Functions
+// Thêm import để gọi Cloud Functions
 import { httpsCallable } from 'firebase/functions'; 
 import { db, app, functions } from '../firebase/config'; 
 
@@ -54,6 +54,7 @@ export const registerUser = async (userData) => {
       createdAt: serverTimestamp(),
       isBanned: false, 
       banUntil: null,
+      banReason: null,
       
       passcode: userData.passcode || "123456", 
       walletBalance: 0,    
@@ -106,7 +107,8 @@ const checkBanStatus = async (userData) => {
        const dateStr = new Date(userData.banUntil).toLocaleString('vi-VN');
        throw new Error(`Tài khoản của bạn đang bị tạm khóa đến ${dateStr}.`);
     } else {
-       await updateUserBanStatus(userData.id, { isBanned: false, banUntil: null });
+       // Hết hạn cấm: Cập nhật trạng thái sạch
+       await updateUserBanStatus(userData.id, { isBanned: false, banUntil: null, banReason: null });
        userData.isBanned = false; 
     }
   }
@@ -115,30 +117,58 @@ const checkBanStatus = async (userData) => {
 
 /**
  * ==========================================
- * MỚI: API GỌI BẢO MẬT (CHỐNG CHEAT)
+ * HỆ THỐNG BẢO MẬT & CHỐNG CHEAT (ĐÃ NÂNG CẤP)
  * ==========================================
  */
 
-export const applyQuickBan = async ({ phone, reason, days }) => {
+// Cấu hình các mức phạt tự động cho từng hành vi
+const SECURITY_RULES = {
+  'F12': { days: 1, action: 'Cảnh cáo 1 ngày' },
+  'CHEAT': { days: 'permanent', action: 'Khóa Vĩnh Viễn' },
+  'BUG_XU': { days: 7, action: 'Thu hồi Xu & Khóa 7 ngày' },
+  'SPAM': { days: 3, action: 'Chặn & Khóa 3 ngày' },
+  'ANOMALY': { days: 1, action: 'Tạm khóa an toàn' }
+};
+
+export const applyQuickBan = async ({ phone, reason, type = 'F12' }) => {
   if (!phone) return;
   try {
-    // 1. Gọi Firebase Functions để thực hiện Ban bảo mật
-    const applyBanFn = httpsCallable(functions, 'applyQuickBan');
-    await applyBanFn({ phone, reason, days });
+    const rule = SECURITY_RULES[type] || SECURITY_RULES['F12'];
     
-    // 2. GHI LOG VÀO NHẬT KÝ HỆ THỐNG
+    // 1. Tính toán thời gian cấm thực tế
+    let banUntil = null;
+    if (rule.days === 'permanent') {
+      banUntil = 'permanent';
+    } else {
+      banUntil = new Date().getTime() + (rule.days * 24 * 60 * 60 * 1000);
+    }
+
+    // 2. Cập nhật trực tiếp vào Firestore (User sẽ bị văng ra ngay lập tức do SecurityGuard lắng nghe real-time)
+    const userRef = doc(db, COLLECTION_NAME, phone);
+    await updateDoc(userRef, {
+      isBanned: true,
+      banUntil: banUntil,
+      banReason: reason,
+      updatedAt: serverTimestamp()
+    });
+
+    // 3. Gọi Cloud Functions (để xử lý các tác vụ ngầm như thu hồi xu, chặn IP nếu cần)
+    const applyBanFn = httpsCallable(functions, 'applyQuickBan');
+    await applyBanFn({ phone, reason, days: rule.days === 'permanent' ? 9999 : rule.days });
+    
+    // 4. GHI LOG VÀO NHẬT KÝ HỆ THỐNG
     await addDoc(collection(db, 'admin_logs'), {
       type: 'SECURITY',
       source: 'F12_HACK_DETECTED',
-      action: `Cấm tự động 1 ngày`,
+      action: rule.action,
       targetPhone: phone,
       reason: reason,
       createdAt: serverTimestamp()
     });
 
-    console.warn(`Đã yêu cầu cấm SĐT ${phone} do: ${reason}`);
+    console.warn(`Đã thực thi lệnh cấm [${type}] SĐT ${phone} do: ${reason}`);
   } catch (e) {
-    console.error("Lỗi gửi yêu cầu Cấm:", e);
+    console.error("Lỗi thực thi lệnh Cấm:", e);
   }
 };
 

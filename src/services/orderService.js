@@ -16,11 +16,16 @@ import {
   setDoc 
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { applyQuickBan } from './authService'; // MỚI: Import lệnh trừng phạt bảo mật
 
 const COLLECTION_NAME = 'orders';
 const VOUCHER_COL = 'vouchers';
 
 let isSubmittingOrder = false;
+
+// BỘ NHỚ THEO DÕI BẢO MẬT (Chống SPAM & Dò Mã)
+const spamTracker = {}; 
+const voucherBruteForceTracker = {};
 
 // Hàm Ghi Log An Toàn (Đảm bảo lỗi Log không làm sập giao dịch chính)
 const safeLogAdmin = async (logData) => {
@@ -38,17 +43,26 @@ const safeLogAdmin = async (logData) => {
  */
 
 export const createOrderSecure = async (orderData) => {
+  const cleanPhone = orderData.phone.trim();
+  const now = Date.now();
+
+  // BẢO MẬT 1: KIỂM TRA SPAM TẠO ĐƠN (Khoảng cách < 10 giây)
+  if (spamTracker[cleanPhone] && now - spamTracker[cleanPhone] < 10000) {
+    applyQuickBan({ phone: cleanPhone, reason: 'Phát hiện spam click tạo đơn hàng liên tục', type: 'SPAM' });
+    return { success: false, error: "Hệ thống phát hiện Spam! Tài khoản đã bị tạm khóa bảo mật." };
+  }
+  spamTracker[cleanPhone] = now;
+
   if (isSubmittingOrder) {
     return { success: false, error: "Hệ thống đang xử lý đơn hàng, vui lòng không ấn liên tiếp!" };
   }
   isSubmittingOrder = true;
 
   try {
-    const cleanPhone = orderData.phone.trim();
     const isWallet = orderData.paymentMethod === 'WALLET';
     const totalAmount = parseInt(orderData.total.replace(/\D/g, '')) || 0;
     
-    let pendingLog = null; // Biến tạm chứa thông tin log
+    let pendingLog = null; 
 
     const result = await runTransaction(db, async (transaction) => {
       const userRef = doc(db, 'users', cleanPhone);
@@ -61,7 +75,9 @@ export const createOrderSecure = async (orderData) => {
         currentBalance = userDoc.data().walletBalance || 0;
 
         if (currentBalance < totalAmount) {
-          throw new Error("Số dư ví không đủ! Vui lòng nạp thêm.");
+          // BẢO MẬT 2: PHÁT HIỆN HACK SỐ DƯ VÍ (Can thiệp frontend để hiện nút thanh toán)
+          applyQuickBan({ phone: cleanPhone, reason: 'Phát hiện can thiệp mã nguồn thanh toán ảo (Hack số dư ví)', type: 'CHEAT' });
+          throw new Error("Phát hiện can thiệp hệ thống! Tài khoản đã bị khóa vĩnh viễn.");
         }
 
         // Cập nhật trừ tiền trong ví
@@ -71,7 +87,6 @@ export const createOrderSecure = async (orderData) => {
           updatedAt: serverTimestamp()
         });
 
-        // Chuẩn bị dữ liệu Log nhưng KHÔNG ghi trong Transaction
         pendingLog = {
           type: 'BALANCE',
           source: 'ORDER_PAYMENT',
@@ -95,11 +110,9 @@ export const createOrderSecure = async (orderData) => {
       };
       
       transaction.set(orderRef, newOrder);
-
       return { id: orderRef.id };
     });
 
-    // 100% Giao dịch thành công mới bắt đầu ghi Log ra ngoài
     if (pendingLog) {
       pendingLog.reason = `Thanh toán đơn hàng #${result.id.slice(-6).toUpperCase()}`;
       safeLogAdmin(pendingLog);
@@ -214,7 +227,11 @@ export const processWalletPayment = async (phone, amount) => {
       if (!userSnap.exists()) throw new Error("Không tìm thấy tài khoản!");
 
       const currentBalance = userSnap.data().walletBalance || 0;
-      if (currentBalance < amount) throw new Error("Số dư ví Plant G không đủ để thanh toán!");
+      if (currentBalance < amount) {
+        // BẢO MẬT 3: HACK THANH TOÁN SAU KHI TẠO ĐƠN
+        applyQuickBan({ phone: cleanPhone, reason: 'Phát hiện can thiệp thanh toán ví không hợp lệ', type: 'CHEAT' });
+        throw new Error("Giao dịch bất thường! Tài khoản đã bị khóa.");
+      }
 
       transaction.update(userRef, {
         walletBalance: increment(-amount),
@@ -223,13 +240,8 @@ export const processWalletPayment = async (phone, amount) => {
       });
 
       pendingLog = {
-        type: 'BALANCE',
-        source: 'ORDER_PAYMENT',
-        targetPhone: cleanPhone,
-        assetType: 'wallet',
-        walletChange: -amount,
-        walletBalance: currentBalance - amount,
-        reason: `Thanh toán bổ sung bằng Ví`
+        type: 'BALANCE', source: 'ORDER_PAYMENT', targetPhone: cleanPhone, assetType: 'wallet',
+        walletChange: -amount, walletBalance: currentBalance - amount, reason: `Thanh toán bổ sung bằng Ví`
       };
     });
 
@@ -247,9 +259,7 @@ export const completeOrderWithBonus = async (order) => {
     const now = new Date();
     
     await updateDoc(orderRef, {
-      status: 'COMPLETED',
-      completedAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      status: 'COMPLETED', completedAt: serverTimestamp(), updatedAt: serverTimestamp()
     });
 
     const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
@@ -258,27 +268,19 @@ export const completeOrderWithBonus = async (order) => {
     if (earnedXu > 0) {
       const cleanPhone = order.phone.trim();
       const userDocRef = doc(db, 'users', cleanPhone);
-      
       const userSnap = await getDoc(userDocRef);
       
       if (userSnap.exists()) {
         const currentXu = userSnap.data().totalXu || 0;
 
         await updateDoc(userDocRef, {
-          totalXu: increment(earnedXu),
-          totalSpend: increment(totalAmount), 
-          lastUpdateSource: 'order_payment',
-          updatedAt: serverTimestamp()
+          totalXu: increment(earnedXu), totalSpend: increment(totalAmount), 
+          lastUpdateSource: 'order_payment', updatedAt: serverTimestamp()
         });
 
         safeLogAdmin({
-          type: 'BALANCE',
-          source: 'ORDER_BONUS',
-          targetPhone: cleanPhone,
-          assetType: 'xu',
-          walletChange: earnedXu,
-          walletBalance: currentXu + earnedXu,
-          reason: `Thưởng xu hoàn thành đơn #${order.id.slice(-6).toUpperCase()}`
+          type: 'BALANCE', source: 'ORDER_BONUS', targetPhone: cleanPhone, assetType: 'xu',
+          walletChange: earnedXu, walletBalance: currentXu + earnedXu, reason: `Thưởng xu hoàn thành đơn #${order.id.slice(-6).toUpperCase()}`
         });
       }
     }
@@ -286,15 +288,11 @@ export const completeOrderWithBonus = async (order) => {
     if (order.confirmedAt) {
       const confirmTime = order.confirmedAt.toDate();
       const diffInMinutes = Math.floor((now - confirmTime) / (1000 * 60));
-
-      if (diffInMinutes >= 30) {
-        return { success: true, late: true, earnedXu };
-      }
+      if (diffInMinutes >= 30) return { success: true, late: true, earnedXu };
     }
     
     return { success: true, late: false, earnedXu };
   } catch (error) {
-    console.error("Lỗi hoàn thành đơn:", error);
     return { success: false, error: error.message };
   }
 };
@@ -302,37 +300,34 @@ export const completeOrderWithBonus = async (order) => {
 // ==========================================
 // HÀM NHẬN XU TỪ PET
 // ==========================================
-export const claimPetReward = async (phone, minCoins = 1, maxCoins = 10) => {
+export const claimPetReward = async (phone, minCoins = 1, maxCoins = 100) => {
   try {
     const cleanPhone = phone.trim();
+
+    // BẢO MẬT 4: PHÁT HIỆN BUG XU SỰ KIỆN (Truyền giá trị max siêu lớn)
+    if (maxCoins > 700 || minCoins < 0) {
+      applyQuickBan({ phone: cleanPhone, reason: 'Phát hiện can thiệp phần thưởng sự kiện (Bug Xu)', type: 'BUG_XU' });
+      return { success: false, error: "Lỗi dữ liệu! Hành vi bất thường đã bị ghi nhận." };
+    }
+
     const userRef = doc(db, 'users', cleanPhone);
-    
     const userSnap = await getDoc(userRef);
     const currentXu = userSnap.exists() ? (userSnap.data().totalXu || 0) : 0;
 
     const rewardCoins = Math.floor(Math.random() * (maxCoins - minCoins + 1)) + minCoins;
 
     await updateDoc(userRef, {
-      coins: increment(rewardCoins),
-      totalXu: increment(rewardCoins),
-      lastPetInteraction: serverTimestamp(),
-      lastUpdateSource: 'pet',
-      updatedAt: serverTimestamp()
+      coins: increment(rewardCoins), totalXu: increment(rewardCoins),
+      lastPetInteraction: serverTimestamp(), lastUpdateSource: 'pet', updatedAt: serverTimestamp()
     });
 
     safeLogAdmin({
-      type: 'BALANCE',
-      source: 'PET_REWARD',
-      targetPhone: cleanPhone,
-      assetType: 'xu',
-      walletChange: rewardCoins,
-      walletBalance: currentXu + rewardCoins,
-      reason: `Nhận xu ngẫu nhiên từ Thú cưng`
+      type: 'BALANCE', source: 'PET_REWARD', targetPhone: cleanPhone, assetType: 'xu',
+      walletChange: rewardCoins, walletBalance: currentXu + rewardCoins, reason: `Nhận xu ngẫu nhiên từ Thú cưng`
     });
 
     return { success: true, reward: rewardCoins };
   } catch (error) {
-    console.error("Lỗi nhận xu từ Pet:", error);
     return { success: false, error: error.message };
   }
 };
@@ -340,61 +335,92 @@ export const claimPetReward = async (phone, minCoins = 1, maxCoins = 10) => {
 
 /**
  * ==========================================
- * 3. QUẢN LÝ VOUCHER 
+ * 3. QUẢN LÝ VOUCHER (ĐÃ NÂNG CẤP REAL-TIME)
  * ==========================================
  */
 
+// Hàm cũ (Dùng để lấy 1 lần, giữ lại để tương thích các File khác nếu cần)
 export const getMyVouchers = async (phone) => {
   try {
     const vouchersRef = collection(db, VOUCHER_COL);
     const now = new Date();
-
     const qPublic = query(vouchersRef, where("assignedPhone", "==", ""), where("usageLimit", ">", 0));
     const snapPublic = await getDocs(qPublic);
     const publicVouchers = snapPublic.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
     let personalVouchers = [];
     if (phone && phone.trim().length >= 10) {
-      const cleanPhone = phone.trim();
-      const qPersonal = query(vouchersRef, where("assignedPhone", "==", cleanPhone), where("usageLimit", ">", 0));
+      const qPersonal = query(vouchersRef, where("assignedPhone", "==", phone.trim()), where("usageLimit", ">", 0));
       const snapPersonal = await getDocs(qPersonal);
       personalVouchers = snapPersonal.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
 
-    const allVouchers = [...publicVouchers, ...personalVouchers].filter(v => {
-      if (!v.expiry) return true;
-      return v.expiry.toDate() > now;
-    });
-
-    return allVouchers;
-  } catch (error) {
-    console.error("Lỗi getMyVouchers:", error);
-    return [];
-  }
+    return [...publicVouchers, ...personalVouchers].filter(v => !v.expiry || v.expiry.toDate() > now);
+  } catch (error) { return []; }
 };
 
+// Hàm cũ
 export const getAllVouchers = async () => {
   try {
     const q = query(collection(db, VOUCHER_COL), orderBy("createdAt", "desc"));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error("Lỗi getAllVouchers:", error);
-    return [];
-  }
+  } catch (error) { return []; }
+};
+
+// MỚI: HÀM THEO DÕI VOUCHER CÁ NHÂN THEO THỜI GIAN THỰC (REAL-TIME)
+export const subscribeToMyVouchers = (phone, callback) => {
+  if (!phone) return () => {};
+  const q = query(collection(db, VOUCHER_COL), where("usageLimit", ">", 0));
+  
+  return onSnapshot(q, (snapshot) => {
+    const now = new Date();
+    const allVouchers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // JS Filter để tránh lỗi Composite Index trên Firebase
+    const validVouchers = allVouchers.filter(v => {
+      if (v.expiry && v.expiry.toDate() < now) return false; // Hết hạn
+      if (v.assignedPhone && v.assignedPhone.trim() !== "" && v.assignedPhone !== phone.trim()) return false; // Của người khác
+      return true;
+    });
+    
+    callback(validVouchers);
+  });
+};
+
+// MỚI: HÀM THEO DÕI TOÀN BỘ VOUCHER (REAL-TIME CHO ADMIN)
+export const subscribeToAllVouchers = (callback) => {
+  const q = query(collection(db, VOUCHER_COL), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snapshot) => {
+    callback(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+  });
 };
 
 export const validateVoucher = async (code, phone) => {
   try {
+    const cleanPhone = phone.trim();
     const q = query(collection(db, VOUCHER_COL), where("code", "==", code.toUpperCase().trim()));
     const snapshot = await getDocs(q);
-    if (snapshot.empty) return { valid: false, msg: "Mã không tồn tại!" };
+    
+    if (snapshot.empty) {
+      // BẢO MẬT 5: PHÁT HIỆN DÒ MÃ VOUCHER RÁC (BRUTE-FORCE)
+      voucherBruteForceTracker[cleanPhone] = (voucherBruteForceTracker[cleanPhone] || 0) + 1;
+      if (voucherBruteForceTracker[cleanPhone] >= 7) {
+        applyQuickBan({ phone: cleanPhone, reason: 'Phát hiện dấu hiệu bất thường (Dò tìm mã Voucher liên tục)', type: 'ANOMALY' });
+        voucherBruteForceTracker[cleanPhone] = 0;
+        return { valid: false, msg: "Hệ thống phát hiện spam dò mã. Tài khoản bị tạm khóa!" };
+      }
+      return { valid: false, msg: "Mã không tồn tại!" };
+    }
+    
+    // Nếu nhập đúng mã thì reset lại bộ đếm cho khách hàng
+    voucherBruteForceTracker[cleanPhone] = 0;
     
     const v = snapshot.docs[0].data();
     const vId = snapshot.docs[0].id;
     const now = new Date();
 
-    if (v.assignedPhone && v.assignedPhone.trim() !== "" && v.assignedPhone !== phone.trim()) {
+    if (v.assignedPhone && v.assignedPhone.trim() !== "" && v.assignedPhone !== cleanPhone) {
       return { valid: false, msg: "Mã này không dành cho số điện thoại của bạn!" };
     }
     
@@ -432,26 +458,15 @@ export const awardLateVoucher = async (phone, orderId) => {
     expiryDate.setDate(expiryDate.getDate() + 3);
 
     await addDoc(collection(db, VOUCHER_COL), {
-      code: voucherCode,
-      type: 'CASH',
-      value: 5000,
-      usageLimit: 1,
-      assignedPhone: phone,
-      expiry: expiryDate,
-      description: `Bồi thường giao trễ đơn #${orderId.slice(-6).toUpperCase()}`,
-      createdAt: serverTimestamp()
+      code: voucherCode, type: 'CASH', value: 5000, usageLimit: 1, assignedPhone: phone,
+      expiry: expiryDate, description: `Bồi thường giao trễ đơn #${orderId.slice(-6).toUpperCase()}`, createdAt: serverTimestamp()
     });
 
     const orderRef = doc(db, COLLECTION_NAME, orderId);
-    await updateDoc(orderRef, { 
-      lateVoucherStatus: 'AWARDED',
-      updatedAt: serverTimestamp() 
-    });
+    await updateDoc(orderRef, { lateVoucherStatus: 'AWARDED', updatedAt: serverTimestamp() });
 
     return { success: true, code: voucherCode };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+  } catch (error) { return { success: false, error: error.message }; }
 };
 
 
@@ -495,7 +510,6 @@ export const updateOrderStatus = async (orderId, newStatus) => {
         }
       }
       
-      // Hoàn tiền nếu khách đã trả bằng Ví
       if (order.paymentMethod === 'WALLET' && order.paymentStatus === 'PAID') {
         const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
         if (totalAmount > 0) {
@@ -513,12 +527,8 @@ export const updateOrderStatus = async (orderId, newStatus) => {
             });
 
             safeLogAdmin({
-              type: 'BALANCE',
-              source: 'ORDER_REFUND',
-              targetPhone: cleanPhone,
-              assetType: 'wallet',
-              walletChange: totalAmount,
-              walletBalance: currentBalance + totalAmount,
+              type: 'BALANCE', source: 'ORDER_REFUND', targetPhone: cleanPhone, assetType: 'wallet',
+              walletChange: totalAmount, walletBalance: currentBalance + totalAmount,
               reason: `Hoàn tiền do Admin hủy đơn #${orderId.slice(-6).toUpperCase()}`
             });
           }
@@ -567,10 +577,7 @@ export const deleteOrderSoft = async (orderId, reason = "Xóa thủ công", dele
     const order = orderSnap.data();
 
     await updateDoc(orderRef, { 
-      status: 'DELETED', 
-      deleteReason: reason,
-      deletedBy: deleterName,
-      updatedAt: serverTimestamp() 
+      status: 'DELETED', deleteReason: reason, deletedBy: deleterName, updatedAt: serverTimestamp() 
     });
 
     if (order.usedVouchers) {
@@ -594,8 +601,7 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
     
     await updateDoc(orderRef, {
       status: isDirectCancel ? 'CANCELLED' : 'CANCEL_REQUESTED',
-      cancelReason: reason || "Khách tự hủy",
-      updatedAt: serverTimestamp()
+      cancelReason: reason || "Khách tự hủy", updatedAt: serverTimestamp()
     });
 
     if (isDirectCancel) {
@@ -607,7 +613,6 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
         }
       }
 
-      // Hoàn tiền nếu khách đã trả bằng Ví
       if (order.paymentMethod === 'WALLET' && order.paymentStatus === 'PAID') {
         const totalAmount = parseInt(order.total.replace(/\D/g, '')) || 0;
         if (totalAmount > 0) {
@@ -619,18 +624,12 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
             const currentBalance = userSnap.data().walletBalance || 0;
 
             await updateDoc(userDocRef, {
-               walletBalance: increment(totalAmount),
-               lastUpdateSource: 'refund',
-               updatedAt: serverTimestamp()
+               walletBalance: increment(totalAmount), lastUpdateSource: 'refund', updatedAt: serverTimestamp()
             });
 
             safeLogAdmin({
-              type: 'BALANCE',
-              source: 'ORDER_REFUND',
-              targetPhone: cleanPhone,
-              assetType: 'wallet',
-              walletChange: totalAmount,
-              walletBalance: currentBalance + totalAmount,
+              type: 'BALANCE', source: 'ORDER_REFUND', targetPhone: cleanPhone, assetType: 'wallet',
+              walletChange: totalAmount, walletBalance: currentBalance + totalAmount,
               reason: `Hoàn tiền do khách tự hủy đơn #${orderId.slice(-6).toUpperCase()}`
             });
           }
@@ -647,10 +646,7 @@ export const undoDeleteOrder = async (orderId, usedVouchers = []) => {
     const orderRef = doc(db, COLLECTION_NAME, orderId);
     
     await updateDoc(orderRef, { 
-      status: 'PENDING', 
-      deleteReason: null,
-      deletedBy: null,
-      updatedAt: serverTimestamp() 
+      status: 'PENDING', deleteReason: null, deletedBy: null, updatedAt: serverTimestamp() 
     });
 
     if (usedVouchers && usedVouchers.length > 0) {
@@ -660,7 +656,5 @@ export const undoDeleteOrder = async (orderId, usedVouchers = []) => {
     }
 
     return { success: true };
-  } catch (error) { 
-    return { success: false, error: error.message }; 
-  }
+  } catch (error) { return { success: false, error: error.message }; }
 };
