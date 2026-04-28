@@ -78,7 +78,7 @@ function App() {
   const [phone, setPhone] = useState('');
 
   useEffect(() => {
-    // Liên tục kiểm tra SĐT đăng nhập để cập nhật cho hệ thống giám sát
+    // ĐÃ TỐI ƯU: Sử dụng Event Listener thay vì setInterval để giảm tải trình duyệt và phản hồi tức thì
     const checkPhone = () => {
       try {
         const recentPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
@@ -92,9 +92,15 @@ function App() {
     };
     
     checkPhone(); // Check ngay khi load
-    const timer = setInterval(checkPhone, 2000); // Check mỗi 2 giây
     
-    return () => clearInterval(timer);
+    // Lắng nghe thay đổi từ LocalStorage (khi đăng nhập/đăng xuất)
+    window.addEventListener('storage', checkPhone);
+    window.addEventListener('auth-change', checkPhone); // Custom event cho update nội bộ
+    
+    return () => {
+      window.removeEventListener('storage', checkPhone);
+      window.removeEventListener('auth-change', checkPhone);
+    };
   }, [phone]);
 
   return (

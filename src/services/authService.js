@@ -18,7 +18,8 @@ import {
   serverTimestamp, 
   orderBy,
   onSnapshot,
-  increment 
+  increment,
+  addDoc // MỚI: Thêm import addDoc để ghi log
 } from 'firebase/firestore';
 
 // MỚI: Thêm import để gọi Cloud Functions
@@ -121,8 +122,20 @@ const checkBanStatus = async (userData) => {
 export const applyQuickBan = async ({ phone, reason, days }) => {
   if (!phone) return;
   try {
+    // 1. Gọi Firebase Functions để thực hiện Ban bảo mật
     const applyBanFn = httpsCallable(functions, 'applyQuickBan');
     await applyBanFn({ phone, reason, days });
+    
+    // 2. GHI LOG VÀO NHẬT KÝ HỆ THỐNG
+    await addDoc(collection(db, 'admin_logs'), {
+      type: 'SECURITY',
+      source: 'F12_HACK_DETECTED',
+      action: `Cấm tự động 1 ngày`,
+      targetPhone: phone,
+      reason: reason,
+      createdAt: serverTimestamp()
+    });
+
     console.warn(`Đã yêu cầu cấm SĐT ${phone} do: ${reason}`);
   } catch (e) {
     console.error("Lỗi gửi yêu cầu Cấm:", e);
@@ -273,9 +286,15 @@ export const resetPasscodeByAdmin = async (userId, newPasscode) => {
 export const adminUpdateBalance = async (userId, type, amount, note = "") => {
   try {
     const userRef = doc(db, COLLECTION_NAME, userId);
-    const field = type === 'wallet' ? 'walletBalance' : 'totalXu';
     
-    // ĐÃ SỬA: Bổ sung lastUpdateSource để Cloud Functions không nghi ngờ Hack
+    // 1. Lấy dữ liệu hiện tại để biết số dư gốc
+    const userSnap = await getDoc(userRef);
+    const userData = userSnap.exists() ? userSnap.data() : {};
+    
+    const field = type === 'wallet' ? 'walletBalance' : 'totalXu';
+    const currentBalance = userData[field] || 0;
+    
+    // 2. Cập nhật tiền/xu
     await updateDoc(userRef, {
       [field]: increment(amount),
       lastAdminAction: {
@@ -288,6 +307,19 @@ export const adminUpdateBalance = async (userId, type, amount, note = "") => {
       lastUpdateSource: 'admin',
       updatedAt: serverTimestamp()
     });
+
+    // 3. GHI LOG BIẾN ĐỘNG SỐ DƯ
+    await addDoc(collection(db, 'admin_logs'), {
+      type: 'BALANCE',
+      source: amount > 0 ? 'ADMIN_DEPOSIT' : 'ADMIN_DEDUCT',
+      targetPhone: userId,
+      assetType: type, // 'wallet' hoặc 'xu'
+      walletChange: amount,
+      walletBalance: currentBalance + amount, // Tổng số dư sau giao dịch
+      reason: note || (amount > 0 ? 'Admin nạp thêm' : 'Admin trừ đi'),
+      createdAt: serverTimestamp()
+    });
+
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };

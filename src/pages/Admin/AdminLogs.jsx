@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
-import { db } from '../../firebase/config'; // Lưu ý đường dẫn import tùy vào cấu trúc thư mục của bạn
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { db } from '../../firebase/config'; 
 
 const AdminLogs = () => {
   const [activeTab, setActiveTab] = useState('BALANCE'); // 'BALANCE' hoặc 'SECURITY'
@@ -27,41 +27,36 @@ const AdminLogs = () => {
   const fetchLogs = async () => {
     setIsLoading(true);
     try {
-      const collectionName = activeTab === 'BALANCE' ? 'balance_history' : 'security_logs';
       const startDate = getStartDate(timeFilter);
 
-      // Query cơ bản: Lọc theo thời gian và lấy 150 log mới nhất
-      // (Không dùng where 'phone' kết hợp orderBy ở đây để tránh lỗi thiếu Index trên Firebase)
+      // TỐI ƯU HÓA: Query 500 logs mới nhất rồi filter bằng JS để tránh lỗi thiếu Composite Index trên Firebase
       const q = query(
-        collection(db, collectionName),
-        where('timestamp', '>=', startDate),
-        orderBy('timestamp', 'desc'),
-        limit(150)
+        collection(db, 'admin_logs'),
+        orderBy('createdAt', 'desc'),
+        limit(500)
       );
 
       const snapshot = await getDocs(q);
       let fetchedLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // Lọc theo SĐT (Filter phía Client để nhẹ Database)
+      // 1. Lọc theo Tab (BALANCE hoặc SECURITY) và Lọc theo Thời gian
+      fetchedLogs = fetchedLogs.filter(log => 
+        log.type === activeTab &&
+        log.createdAt && log.createdAt.toDate() >= startDate
+      );
+
+      // 2. Lọc theo SĐT Khách hàng
       if (searchPhone.trim()) {
         fetchedLogs = fetchedLogs.filter(log => 
-          (log.userId && log.userId.includes(searchPhone.trim())) || 
-          (log.phone && log.phone.includes(searchPhone.trim()))
+          log.targetPhone && log.targetPhone.includes(searchPhone.trim())
         );
       }
 
       setLogs(fetchedLogs);
 
-      // YÊU CẦU ĐẶC BIỆT: Lấy 6 giá trị (1 Hiện tại + 5 Lịch sử) nếu đang tìm 1 SĐT cụ thể
+      // 3. Tận dụng data đã lấy để hiển thị Lịch sử 6 bước nếu đang tìm 1 SĐT cụ thể
       if (activeTab === 'BALANCE' && searchPhone.trim().length >= 10) {
-        const historyQuery = query(
-          collection(db, 'balance_history'),
-          where('userId', '==', searchPhone.trim()),
-          orderBy('timestamp', 'desc'),
-          limit(6)
-        );
-        const historySnap = await getDocs(historyQuery);
-        setUserHistory(historySnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setUserHistory(fetchedLogs.slice(0, 6));
       } else {
         setUserHistory([]);
       }
@@ -77,30 +72,32 @@ const AdminLogs = () => {
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       fetchLogs();
-    }, 500); // Đợi 0.5s sau khi gõ phím mới query để tránh spam DB
+    }, 500); 
 
     return () => clearTimeout(delayDebounceFn);
   }, [activeTab, timeFilter, searchPhone]);
 
-  // Map màu sắc cho các nguồn cộng Xu/Ví
+  // CẬP NHẬT: Map màu sắc cho các nguồn tracking mới
   const sourceColors = {
-    'admin': 'bg-purple-100 text-purple-700 border-purple-200',
-    'refund': 'bg-blue-100 text-blue-700 border-blue-200',
-    'order_payment': 'bg-gray-100 text-gray-700 border-gray-200',
-    'checkin': 'bg-green-100 text-green-700 border-green-200',
-    'pet': 'bg-pink-100 text-pink-700 border-pink-200',
-    'gift': 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    'lucky': 'bg-red-100 text-red-700 border-red-200',
-    'new_user': 'bg-teal-100 text-teal-700 border-teal-200',
-    'mail': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    'ADMIN_DEPOSIT': 'bg-purple-100 text-purple-700 border-purple-200',
+    'ADMIN_DEDUCT': 'bg-orange-100 text-orange-700 border-orange-200',
+    'ORDER_REFUND': 'bg-blue-100 text-blue-700 border-blue-200',
+    'ORDER_PAYMENT': 'bg-gray-100 text-gray-700 border-gray-200',
+    'ORDER_BONUS': 'bg-green-100 text-green-700 border-green-200',
+    'PET_REWARD': 'bg-pink-100 text-pink-700 border-pink-200',
+    'F12_HACK_DETECTED': 'bg-red-100 text-red-700 border-red-200',
     'unknown': 'bg-gray-100 text-gray-500 border-gray-200'
   };
 
   const translateSource = (source) => {
     const dict = {
-      'admin': 'Quản trị viên', 'refund': 'Hoàn tiền', 'order_payment': 'Thanh toán/Mua hàng',
-      'checkin': 'Điểm danh', 'pet': 'Thú cưng', 'gift': 'Hộp quà', 'lucky': 'Lì xì',
-      'new_user': 'Đăng ký mới', 'mail': 'Quà từ thư'
+      'ADMIN_DEPOSIT': 'Admin Nạp',
+      'ADMIN_DEDUCT': 'Admin Trừ',
+      'ORDER_REFUND': 'Hoàn tiền Hủy đơn',
+      'ORDER_PAYMENT': 'Thanh toán Đơn',
+      'ORDER_BONUS': 'Thưởng Đơn hàng',
+      'PET_REWARD': 'Thú cưng',
+      'F12_HACK_DETECTED': 'DevTools / Hack'
     };
     return dict[source] || source || 'Không rõ';
   };
@@ -164,7 +161,7 @@ const AdminLogs = () => {
         </div>
       </div>
 
-      {/* KHỐI LỊCH SỬ 6 BƯỚC (Chỉ hiện khi tìm chính xác 1 SĐT ở tab Balance) */}
+      {/* KHỐI LỊCH SỬ 6 BƯỚC */}
       {activeTab === 'BALANCE' && userHistory.length > 0 && (
         <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 p-6 rounded-[2rem] shadow-sm">
           <h2 className="text-sm font-black text-blue-800 uppercase tracking-widest mb-4">
@@ -176,23 +173,25 @@ const AdminLogs = () => {
               <div key={history.id} className={`min-w-[160px] p-4 rounded-2xl border flex flex-col justify-between shrink-0 ${index === 0 ? 'bg-blue-600 border-blue-700 shadow-lg text-white transform scale-105 mx-2' : 'bg-white border-gray-200'}`}>
                 <div>
                   <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${index === 0 ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
-                    {index === 0 ? 'HIỆN TẠI' : `TRƯỚC ĐÓ ${index}`}
+                    {index === 0 ? 'MỚI NHẤT' : `TRƯỚC ĐÓ ${index}`}
                   </span>
+                  
+                  {/* Cập nhật hiển thị tài sản động theo assetType */}
                   <div className="mt-3">
-                    <p className={`text-xs font-bold ${index === 0 ? 'text-blue-100' : 'text-gray-500'}`}>Tổng Xu</p>
-                    <p className="text-lg font-black">{history.totalXu?.toLocaleString()}</p>
-                  </div>
-                  <div className="mt-1">
-                    <p className={`text-xs font-bold ${index === 0 ? 'text-blue-100' : 'text-gray-500'}`}>Ví tiền</p>
-                    <p className="text-lg font-black">{history.walletBalance?.toLocaleString()}đ</p>
+                    <p className={`text-[10px] font-bold ${index === 0 ? 'text-blue-100' : 'text-gray-400'} uppercase tracking-widest`}>
+                      {history.assetType === 'xu' ? 'Tổng Xu' : 'Số dư Ví'}
+                    </p>
+                    <p className="text-lg font-black">
+                      {history.walletBalance?.toLocaleString()}{history.assetType === 'wallet' ? 'đ' : ''}
+                    </p>
                   </div>
                 </div>
                 <div className="mt-4 pt-3 border-t border-dashed border-gray-300 border-opacity-30">
                   <p className={`text-[10px] font-bold ${index === 0 ? 'text-blue-200' : 'text-gray-400'}`}>
-                    {history.timestamp?.toDate().toLocaleString('vi-VN')}
+                    {history.createdAt?.toDate().toLocaleString('vi-VN')}
                   </p>
                   <p className={`text-[10px] font-black uppercase truncate mt-0.5 ${index === 0 ? 'text-white' : 'text-blue-600'}`}>
-                    Nguồn: {translateSource(history.source)}
+                    {translateSource(history.source)}
                   </p>
                 </div>
               </div>
@@ -228,7 +227,7 @@ const AdminLogs = () => {
                     </>
                   ) : (
                     <>
-                      <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">Mã Vi Phạm</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">Hành động của Bot</th>
                       <th className="px-6 py-4 text-[10px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">Chi tiết / Lý do cấm</th>
                     </>
                   )}
@@ -238,29 +237,41 @@ const AdminLogs = () => {
                 {logs.map((log) => (
                   <tr key={log.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-6 py-4">
-                      <p className="text-xs font-bold text-gray-800">{log.timestamp?.toDate().toLocaleDateString('vi-VN')}</p>
-                      <p className="text-[10px] font-black text-gray-400 uppercase">{log.timestamp?.toDate().toLocaleTimeString('vi-VN')}</p>
+                      <p className="text-xs font-bold text-gray-800">{log.createdAt?.toDate().toLocaleDateString('vi-VN')}</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase">{log.createdAt?.toDate().toLocaleTimeString('vi-VN')}</p>
                     </td>
                     
                     <td className="px-6 py-4">
-                      <span className="text-sm font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">
-                        {log.userId || log.phone || 'Ẩn danh'}
+                      <span className="text-sm font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-lg tracking-wider">
+                        {log.targetPhone || 'Ẩn danh'}
                       </span>
                     </td>
 
                     {activeTab === 'BALANCE' ? (
                       <>
                         <td className="px-6 py-4 text-right">
-                          <span className={`text-sm font-black ${log.xuChange > 0 ? 'text-green-600' : log.xuChange < 0 ? 'text-red-500' : 'text-gray-400'}`}>
-                            {log.xuChange > 0 ? '+' : ''}{log.xuChange || 0}
-                          </span>
-                          <p className="text-[9px] font-bold text-gray-400">Hiện tại: {log.totalXu}</p>
+                          {log.assetType === 'xu' ? (
+                            <>
+                              <span className={`text-sm font-black ${log.walletChange > 0 ? 'text-green-600' : log.walletChange < 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                                {log.walletChange > 0 ? '+' : ''}{log.walletChange}
+                              </span>
+                              <p className="text-[9px] font-bold text-gray-400">Hiện tại: {log.walletBalance?.toLocaleString()}</p>
+                            </>
+                          ) : (
+                            <span className="text-gray-300">-</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <span className={`text-sm font-black ${log.walletChange > 0 ? 'text-green-600' : log.walletChange < 0 ? 'text-red-500' : 'text-gray-400'}`}>
-                            {log.walletChange > 0 ? '+' : ''}{log.walletChange?.toLocaleString() || 0}đ
-                          </span>
-                          <p className="text-[9px] font-bold text-gray-400">Hiện tại: {log.walletBalance?.toLocaleString()}đ</p>
+                          {log.assetType === 'wallet' ? (
+                            <>
+                              <span className={`text-sm font-black ${log.walletChange > 0 ? 'text-green-600' : log.walletChange < 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                                {log.walletChange > 0 ? '+' : ''}{log.walletChange?.toLocaleString()}đ
+                              </span>
+                              <p className="text-[9px] font-bold text-gray-400">Hiện tại: {log.walletBalance?.toLocaleString()}đ</p>
+                            </>
+                          ) : (
+                            <span className="text-gray-300">-</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${sourceColors[log.source] || sourceColors['unknown']}`}>

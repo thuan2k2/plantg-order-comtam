@@ -14,7 +14,7 @@ const SecurityGuard = ({ phone }) => {
 
   // 1. LẮNG NGHE TRẠNG THÁI BAN TỪ FIREBASE
   useEffect(() => {
-    // ĐÃ SỬA: Bỏ qua nếu chưa đăng nhập hoặc đang là admin
+    // Bỏ qua nếu chưa đăng nhập hoặc đang là admin
     if (!phone || phone === "" || isExempted) {
       setBanData(null);
       return;
@@ -24,8 +24,8 @@ const SecurityGuard = ({ phone }) => {
       if (snap.exists()) {
         const data = snap.data();
         
+        // ĐÃ FIX LỖI HIỂN THỊ: Ưu tiên cờ isBanned lên cao nhất
         if (data.isBanned) {
-          // Xử lý thông minh tất cả các trường hợp lưu trữ thời gian cấm
           const banTimeData = data.bannedUntil || data.banUntil;
           let expireTime = 0;
 
@@ -33,31 +33,29 @@ const SecurityGuard = ({ phone }) => {
             // Nếu cấm vĩnh viễn, set hạn cấm là 100 năm nữa
             expireTime = Date.now() + 100 * 365 * 24 * 60 * 60 * 1000; 
           } else if (banTimeData && typeof banTimeData.toMillis === 'function') {
-            // Định dạng chuẩn Firestore Timestamp (có toMillis)
             expireTime = banTimeData.toMillis();
           } else if (banTimeData && typeof banTimeData.toDate === 'function') {
-            // Định dạng chuẩn Firestore Timestamp (có toDate)
             expireTime = banTimeData.toDate().getTime();
           } else if (typeof banTimeData === 'number') {
-            // Định dạng số Miliseconds trực tiếp
             expireTime = banTimeData;
           } else if (typeof banTimeData === 'string') {
-            // Định dạng chuỗi (String)
             const parsed = new Date(banTimeData).getTime();
             if (!isNaN(parsed)) {
               expireTime = parsed;
             }
           }
 
-          if (expireTime > Date.now()) {
-            setBanData({ 
-              ...data, 
-              expireTime, 
-              banReason: data.banReason || 'Vi phạm chính sách hệ thống'
-            });
-          } else {
-            setBanData(null); 
+          // CƠ CHẾ BẢO VỆ KÉP: Nếu không parse được thời gian hoặc thời gian lỗi quá khứ, 
+          // nhưng isBanned vẫn = true, thì mặc định coi là cấm vĩnh viễn để khóa giao diện.
+          if (!expireTime || isNaN(expireTime) || expireTime <= Date.now()) {
+            expireTime = Date.now() + 100 * 365 * 24 * 60 * 60 * 1000;
           }
+
+          setBanData({ 
+            ...data, 
+            expireTime, 
+            banReason: data.banReason || 'Vi phạm chính sách hệ thống'
+          });
         } else {
           setBanData(null);
         }
@@ -69,7 +67,6 @@ const SecurityGuard = ({ phone }) => {
 
   // 2. CHỐNG F12 / DEVTOOLS & GỌI LỆNH CẤM (CHỈ DÀNH CHO KHÁCH HÀNG ĐÃ ĐĂNG NHẬP)
   useEffect(() => {
-    // ĐÃ SỬA: Chỉ kích hoạt bảo vệ khi khách hàng đã đăng nhập SĐT
     if (!phone || phone === "" || isExempted) return;
 
     let hasTriggered = false;
@@ -77,7 +74,15 @@ const SecurityGuard = ({ phone }) => {
     const triggerBan = (reason) => {
       if (hasTriggered) return;
       hasTriggered = true;
+      
+      // Gọi lên Firebase
       applyQuickBan({ phone, reason, days: 1 });
+      
+      // ĐÃ FIX BUGS TRỄ (DELAY): Khóa màn hình nội bộ ngay lập tức không cần đợi Firebase phản hồi
+      setBanData({
+        banReason: reason,
+        expireTime: Date.now() + 24 * 60 * 60 * 1000 // Tạm tính 1 ngày
+      });
     };
 
     const handleKeyDown = (e) => {
@@ -118,8 +123,13 @@ const SecurityGuard = ({ phone }) => {
       const diff = banData.expireTime - Date.now();
       
       if (diff <= 0) {
-        setBanData(null);
-        clearInterval(timer);
+        setCountdown("00:00:00 (Đang mở khóa...)");
+        return;
+      }
+
+      // Xử lý hiển thị nếu là cấm vĩnh viễn (lớn hơn 50 năm)
+      if (diff > 50 * 365 * 24 * 60 * 60 * 1000) {
+        setCountdown("Vĩnh viễn");
         return;
       }
 

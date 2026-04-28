@@ -156,15 +156,18 @@ export const claimDailyCheckIn = async (phone) => {
 // HÀM TESTING (Dùng để reset giả lập qua ngày mới / test sự kiện)
 // ============================================================================
 
-// 9. Xóa thời gian nhận quà để test lại Hộp Quà & Điểm Danh
+// 9. Xóa thời gian nhận quà để test lại Hộp Quà & Điểm Danh (ĐÃ FIX TRIỆT ĐỂ)
 export const resetTestingGamification = async (phone) => {
   try {
     const userRef = doc(db, 'users', phone);
     await updateDoc(userRef, {
       lastDailyGift: null,
-      lastCheckIn: null
+      lastCheckIn: null,
+      attendanceCount: 0, // Reset ngày điểm danh về 0
+      checkInStreak: 0,   // Reset biến phụ (nếu có)
+      dailyCheckInHistory: [] // Xóa lịch sử điểm danh 7 ngày
     });
-    console.log("Đã reset thời gian nhận thưởng hàng ngày!");
+    console.log("Đã reset hoàn toàn tiến trình nhận thưởng & điểm danh hàng ngày!");
     return true;
   } catch (error) {
     console.error("Lỗi khi reset test:", error);

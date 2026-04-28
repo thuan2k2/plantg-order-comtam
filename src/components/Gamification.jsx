@@ -39,10 +39,17 @@ const Gamification = () => {
     if (typeof dataValue.toDate === 'function') {
       date = dataValue.toDate();
     } 
-    // ĐÃ FIX BUGS DOUBLE-DIPPING: Nếu là String (do Auto Claim tạo ra) hoặc Number
+    // Fix lỗi Firebase trả về raw object (cache)
+    else if (dataValue.seconds) {
+      date = new Date(dataValue.seconds * 1000);
+    }
+    // Fix bugs Double-dipping: Nếu là String hoặc Number
     else {
       date = new Date(dataValue);
     }
+    
+    // An toàn: Nếu parse ngày bị lỗi, mặc định cho phép nhận lại
+    if (isNaN(date.getTime())) return true;
     
     // Ép kiểu giờ Việt Nam để so sánh ngày
     const options = { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' };
@@ -52,10 +59,12 @@ const Gamification = () => {
     return lastActionStr !== todayStr;
   };
 
-  // ĐÃ FIX: Đồng bộ kiểm tra biến `lastGiftDate` và `lastCheckin` vì đây là 2 biến Backend đang sử dụng để Check
-  const canClaimGift = checkAvailableToday(userData?.lastGiftDate || userData?.lastDailyGift);
-  const canCheckIn = checkAvailableToday(userData?.lastCheckin || userData?.lastCheckIn || userData?.lastCheckInDate);
-  const currentStreak = userData?.checkInStreak || 0;
+  // ĐÃ FIX: Chỉ sử dụng đúng biến Backend & Admin Reset đang dùng để tránh rác dữ liệu
+  const canClaimGift = checkAvailableToday(userData?.lastDailyGift);
+  const canCheckIn = checkAvailableToday(userData?.lastCheckIn);
+  
+  // ĐÃ FIX: Lấy chuẩn biến đếm ngày từ backend (attendanceCount)
+  const currentStreak = userData?.attendanceCount || userData?.checkInStreak || 0;
 
   // Logic đồng hồ đếm ngược reset ngày mới
   useEffect(() => {
@@ -199,7 +208,6 @@ const Gamification = () => {
                 const isToday = day === currentStreak + 1;
                 const isLastDay = day === 7;
                 
-                // Loại bỏ fix cứng 100/10 xu, chỉ hiện icon quà hoặc check
                 return (
                   <div key={day} className={`relative flex flex-col items-center justify-center py-3 rounded-2xl border-2 transition-all ${
                     isClaimed ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' :
