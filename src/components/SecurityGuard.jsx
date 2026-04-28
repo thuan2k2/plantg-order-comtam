@@ -32,12 +32,21 @@ const SecurityGuard = ({ phone }) => {
           if (banTimeData === 'permanent' || data.bannedUntil === 'permanent' || data.banUntil === 'permanent') {
             // Nếu cấm vĩnh viễn, set hạn cấm là 100 năm nữa
             expireTime = Date.now() + 100 * 365 * 24 * 60 * 60 * 1000; 
+          } else if (banTimeData && typeof banTimeData.toMillis === 'function') {
+            // Định dạng chuẩn Firestore Timestamp (có toMillis)
+            expireTime = banTimeData.toMillis();
           } else if (banTimeData && typeof banTimeData.toDate === 'function') {
-            // Định dạng chuẩn Firestore Timestamp
+            // Định dạng chuẩn Firestore Timestamp (có toDate)
             expireTime = banTimeData.toDate().getTime();
-          } else if (banTimeData) {
+          } else if (typeof banTimeData === 'number') {
+            // Định dạng số Miliseconds trực tiếp
+            expireTime = banTimeData;
+          } else if (typeof banTimeData === 'string') {
             // Định dạng chuỗi (String)
-            expireTime = new Date(banTimeData).getTime();
+            const parsed = new Date(banTimeData).getTime();
+            if (!isNaN(parsed)) {
+              expireTime = parsed;
+            }
           }
 
           if (expireTime > Date.now()) {

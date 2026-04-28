@@ -30,21 +30,18 @@ const Gamification = () => {
   }, [phone]);
 
   // 2. Logic tính toán ngày mới (GMT+7) ở Frontend để hiển thị/ẩn Icon
-  const checkAvailableToday = (timestamp) => {
-    if (!timestamp) return true; // Chưa từng nhận
+  const checkAvailableToday = (dataValue) => {
+    // Nếu chưa từng nhận, hoặc bị Admin xóa (Reset) thì cho phép nhận
+    if (!dataValue) return true; 
     
     let date;
     // Kiểm tra nếu là Timestamp Firebase (Có hàm toDate())
-    if (typeof timestamp.toDate === 'function') {
-      date = new Date(timestamp.toDate());
+    if (typeof dataValue.toDate === 'function') {
+      date = dataValue.toDate();
     } 
-    // ĐÃ FIX BUGS DOUBLE-DIPPING: Nếu là String (do Auto Claim tạo ra)
-    else if (typeof timestamp === 'string') {
-      // Vì chuỗi là format "Sun Apr 26 2026", nên dùng parse trực tiếp
-      date = new Date(timestamp);
-    } 
+    // ĐÃ FIX BUGS DOUBLE-DIPPING: Nếu là String (do Auto Claim tạo ra) hoặc Number
     else {
-      return true; 
+      date = new Date(dataValue);
     }
     
     // Ép kiểu giờ Việt Nam để so sánh ngày
@@ -57,7 +54,7 @@ const Gamification = () => {
 
   // ĐÃ FIX: Đồng bộ kiểm tra biến `lastGiftDate` và `lastCheckin` vì đây là 2 biến Backend đang sử dụng để Check
   const canClaimGift = checkAvailableToday(userData?.lastGiftDate || userData?.lastDailyGift);
-  const canCheckIn = checkAvailableToday(userData?.lastCheckin || userData?.lastCheckIn);
+  const canCheckIn = checkAvailableToday(userData?.lastCheckin || userData?.lastCheckIn || userData?.lastCheckInDate);
   const currentStreak = userData?.checkInStreak || 0;
 
   // Logic đồng hồ đếm ngược reset ngày mới
