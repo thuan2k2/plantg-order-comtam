@@ -3,6 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, updateDoc, increment, collection, addDoc, serverTimestamp, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
+// Hàm Ghi Log An Toàn (Đảm bảo lỗi Log không làm sập giao dịch đổi thưởng)
+const safeLogAdmin = async (logData) => {
+  try {
+    await addDoc(collection(db, 'admin_logs'), { ...logData, createdAt: serverTimestamp() });
+  } catch (error) {
+    console.warn("Cảnh báo: Không thể ghi log nhưng giao dịch đổi voucher đã hoàn tất thành công", error);
+  }
+};
+
 const RewardCenter = () => {
   const navigate = useNavigate();
   const [customerInfo, setCustomerInfo] = useState(null);
@@ -53,6 +62,8 @@ const RewardCenter = () => {
 
     if (window.confirm(`Xác nhận dùng ${reward.cost.toLocaleString()} Xu để đổi lấy ${reward.name}?`)) {
       setIsProcessing(true);
+      let pendingLog = null; // Biến tạm lưu thông tin log
+      
       try {
         const userRef = doc(db, 'users', phone.trim());
         const voucherRef = doc(collection(db, 'vouchers'));
@@ -82,7 +93,23 @@ const RewardCenter = () => {
             createdAt: serverTimestamp(),
             description: `Đổi từ ${reward.cost.toLocaleString()} Xu`
           });
+
+          // Chuẩn bị Dữ liệu Ghi Log (Sẽ gọi sau khi transaction kết thúc an toàn)
+          pendingLog = {
+            type: 'BALANCE',
+            source: 'exchange_voucher',
+            targetPhone: phone.trim(),
+            assetType: 'xu',
+            walletChange: -reward.cost,
+            walletBalance: totalXu - reward.cost,
+            reason: `Đổi Xu lấy Voucher: ${reward.name}`
+          };
         });
+
+        // NẾU TRANSACTION THÀNH CÔNG -> GHI LOG
+        if (pendingLog) {
+          safeLogAdmin(pendingLog);
+        }
 
         alert(`🎉 Đổi quà thành công! Mã Voucher của bạn là: DOI-... (Kiểm tra trong Kho mã khi đặt hàng)`);
       } catch (error) {

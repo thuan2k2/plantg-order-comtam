@@ -25,6 +25,7 @@ const ManageUsers = () => {
   const [banUserTarget, setBanUserTarget] = useState(null);
   const [banDuration, setBanDuration] = useState('7'); 
   const [customBanDate, setCustomBanDate] = useState('');
+  const [banReasonInput, setBanReasonInput] = useState(''); // MỚI: State lưu lý do cấm của Admin
 
   // SỬ DỤNG REAL-TIME LISTENER THAY VÌ LẤY 1 LẦN
   useEffect(() => {
@@ -146,12 +147,14 @@ const ManageUsers = () => {
   // --- HÀM QUẢN LÝ CẤM (BAN) USER ---
   const openBanModal = (user) => {
     setBanUserTarget(user);
+    setBanDuration('7'); // Mặc định là 7
+    setBanReasonInput(''); // Xóa trắng ô lý do
     setShowBanModal(true);
   };
 
   const handleUnbanUser = async (user) => {
     if (window.confirm(`Xác nhận GỠ LỆNH CẤM cho khách hàng ${user.fullName}?`)) {
-      const result = await updateUserBanStatus(user.id, { isBanned: false, banUntil: null });
+      const result = await updateUserBanStatus(user.id, { isBanned: false, banUntil: null, banReason: null });
       if (result.success) {
         alert(`Đã gỡ cấm cho ${user.fullName}. Họ có thể đặt hàng trở lại.`);
       }
@@ -174,9 +177,13 @@ const ManageUsers = () => {
       banUntil = new Date().getTime() + (days * 24 * 60 * 60 * 1000);
     }
 
+    // ĐÃ FIX: Thiết lập lý do cấm chuẩn xác
+    const finalReason = banReasonInput.trim() || 'Khóa bởi Quản trị viên';
+
     const result = await updateUserBanStatus(banUserTarget.id, { 
       isBanned: true, 
-      banUntil: banUntil 
+      banUntil: banUntil,
+      banReason: finalReason
     });
 
     if (result.success) {
@@ -188,14 +195,20 @@ const ManageUsers = () => {
     }
   };
 
+  // ĐÃ FIX: Đảm bảo format ngày chuẩn kể cả khi Firestore trả về Timestamp Object
   const formatBanTime = (banUntil) => {
     if (!banUntil) return '';
     if (banUntil === 'permanent') return 'Cấm Vĩnh Viễn';
     
-    const date = new Date(banUntil);
+    let timeInMillis = banUntil;
+    if (typeof banUntil.toMillis === 'function') timeInMillis = banUntil.toMillis();
+    else if (typeof banUntil.toDate === 'function') timeInMillis = banUntil.toDate().getTime();
+    else if (typeof banUntil === 'string' && !isNaN(new Date(banUntil).getTime())) timeInMillis = new Date(banUntil).getTime();
+
+    const date = new Date(timeInMillis);
     const now = new Date().getTime();
     
-    if (banUntil < now) return 'Đã hết hạn cấm (Đang gỡ...)';
+    if (timeInMillis < now) return 'Đã hết hạn cấm (Đang gỡ...)';
     
     return `Đến: ${date.toLocaleDateString('vi-VN')} ${date.toLocaleTimeString('vi-VN')}`;
   };
@@ -363,7 +376,16 @@ const ManageUsers = () => {
             <h3 className="text-xl font-black text-red-600 uppercase tracking-tighter mb-2">Đình chỉ tài khoản</h3>
             <p className="text-xs font-bold text-gray-500 mb-6">Khách hàng <span className="text-gray-800">[{banUserTarget.fullName}]</span> sẽ không thể đặt đơn mới.</p>
             
-            <div className="space-y-4 mb-8 bg-gray-50 p-5 rounded-3xl border border-gray-100">
+            <div className="space-y-4 mb-6 bg-gray-50 p-5 rounded-3xl border border-gray-100">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Lý do cấm (Hiển thị cho khách)</label>
+              <input 
+                type="text" 
+                placeholder="VD: Gian lận điểm danh..." 
+                value={banReasonInput} 
+                onChange={(e) => setBanReasonInput(e.target.value)}
+                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm font-bold mb-4 outline-none focus:ring-2 focus:ring-red-500"
+              />
+
               <label className="flex items-center gap-3 p-2 cursor-pointer">
                 <input type="radio" name="banDuration" value="1" checked={banDuration === '1'} onChange={(e) => setBanDuration(e.target.value)} className="w-4 h-4 text-red-600" />
                 <span className="text-sm font-black text-gray-700">Khóa 1 ngày (Cảnh cáo)</span>

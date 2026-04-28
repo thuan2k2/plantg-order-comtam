@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { applyQuickBan } from '../services/authService';
@@ -6,6 +6,9 @@ import { applyQuickBan } from '../services/authService';
 const SecurityGuard = ({ phone }) => {
   const [banData, setBanData] = useState(null);
   const [countdown, setCountdown] = useState("");
+
+  // MỚI: Ref dùng để khóa event F12 nếu đã bị ban, tránh ghi đè lệnh cấm của Admin
+  const isBannedRef = useRef(false);
 
   // KIỂM TRA QUYỀN MIỄN TRỪ
   const isAdminPath = window.location.pathname.startsWith('/admin');
@@ -17,6 +20,7 @@ const SecurityGuard = ({ phone }) => {
     // Bỏ qua nếu chưa đăng nhập hoặc đang là admin
     if (!phone || phone === "" || isExempted) {
       setBanData(null);
+      isBannedRef.current = false;
       return;
     }
 
@@ -26,6 +30,8 @@ const SecurityGuard = ({ phone }) => {
         
         // ĐÃ FIX LỖI HIỂN THỊ: Ưu tiên cờ isBanned lên cao nhất
         if (data.isBanned) {
+          isBannedRef.current = true; // Khóa F12 trigger
+
           const banTimeData = data.bannedUntil || data.banUntil;
           let expireTime = 0;
 
@@ -58,6 +64,7 @@ const SecurityGuard = ({ phone }) => {
           });
         } else {
           setBanData(null);
+          isBannedRef.current = false;
         }
       }
     });
@@ -72,13 +79,14 @@ const SecurityGuard = ({ phone }) => {
     let hasTriggered = false;
 
     const triggerBan = (reason) => {
-      if (hasTriggered) return;
+      // ĐÃ SỬA: Nếu đã bị cấm bởi Admin trước đó, không được phép kích hoạt F12 để ghi đè
+      if (hasTriggered || isBannedRef.current) return;
       hasTriggered = true;
       
       // Gọi lên Firebase
       applyQuickBan({ phone, reason, days: 1 });
       
-      // ĐÃ FIX BUGS TRỄ (DELAY): Khóa màn hình nội bộ ngay lập tức không cần đợi Firebase phản hồi
+      // Khóa màn hình nội bộ ngay lập tức không cần đợi Firebase phản hồi
       setBanData({
         banReason: reason,
         expireTime: Date.now() + 24 * 60 * 60 * 1000 // Tạm tính 1 ngày
@@ -151,6 +159,9 @@ const SecurityGuard = ({ phone }) => {
   // Không hiển thị gì nếu không bị cấm hoặc là Admin
   if (!banData || isExempted) return null;
 
+  // Hiển thị Banner: Phân biệt Admin hay Hệ thống (F12)
+  const isSystemBan = banData.banReason?.includes('DevTools') || banData.banReason?.includes('nhà phát triển') || banData.banReason?.includes('Can thiệp');
+
   return (
     <div className="fixed inset-0 z-[99999] bg-black/95 backdrop-blur-lg flex items-center justify-center p-6 text-center select-none">
       <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl animate-in zoom-in border-4 border-red-500 relative overflow-hidden">
@@ -160,7 +171,9 @@ const SecurityGuard = ({ phone }) => {
           <div className="text-6xl mb-4 animate-bounce drop-shadow-md">⚠️</div>
           <h2 className="text-2xl font-black text-red-600 uppercase mb-4 tracking-widest">Bạn đã bị Cấm!</h2>
           <p className="text-gray-800 dark:text-gray-200 font-bold mb-6 text-sm leading-relaxed">
-            Phát hiện hành vi đáng ngờ: <br/>
+            <span className="text-gray-500 uppercase text-[10px] tracking-widest block mb-1">
+              {isSystemBan ? 'HỆ THỐNG PHÁT HIỆN HÀNH VI ĐÁNG NGỜ' : 'KHÓA BỞI QUẢN TRỊ VIÊN'}
+            </span>
             <span className="text-red-600 dark:text-red-400 font-black text-base">{banData.banReason || 'Vi phạm chính sách'}</span>
             <br/><br/>
             Hành vi của bạn đã được hệ thống lưu lại và Quản trị viên sẽ xem xét xử lý.

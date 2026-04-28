@@ -22,6 +22,15 @@ const VOUCHER_COL = 'vouchers';
 
 let isSubmittingOrder = false;
 
+// Hàm Ghi Log An Toàn (Đảm bảo lỗi Log không làm sập giao dịch chính)
+const safeLogAdmin = async (logData) => {
+  try {
+    await addDoc(collection(db, 'admin_logs'), { ...logData, createdAt: serverTimestamp() });
+  } catch (error) {
+    console.warn("Cảnh báo: Không thể ghi log nhưng giao dịch đã hoàn tất thành công", error);
+  }
+};
+
 /**
  * ==========================================
  * 1. QUẢN LÝ ĐƠN HÀNG (TẠO, CẬP NHẬT)
@@ -38,6 +47,8 @@ export const createOrderSecure = async (orderData) => {
     const cleanPhone = orderData.phone.trim();
     const isWallet = orderData.paymentMethod === 'WALLET';
     const totalAmount = parseInt(orderData.total.replace(/\D/g, '')) || 0;
+    
+    let pendingLog = null; // Biến tạm chứa thông tin log
 
     const result = await runTransaction(db, async (transaction) => {
       const userRef = doc(db, 'users', cleanPhone);
@@ -59,6 +70,17 @@ export const createOrderSecure = async (orderData) => {
           lastUpdateSource: 'order_payment',
           updatedAt: serverTimestamp()
         });
+
+        // Chuẩn bị dữ liệu Log nhưng KHÔNG ghi trong Transaction
+        pendingLog = {
+          type: 'BALANCE',
+          source: 'ORDER_PAYMENT',
+          targetPhone: cleanPhone,
+          assetType: 'wallet',
+          walletChange: -totalAmount,
+          walletBalance: currentBalance - totalAmount,
+          reason: 'Thanh toán đơn hàng'
+        };
       }
 
       const orderRef = doc(collection(db, COLLECTION_NAME));
@@ -74,23 +96,14 @@ export const createOrderSecure = async (orderData) => {
       
       transaction.set(orderRef, newOrder);
 
-      // MỚI: Ghi Nhật ký biến động số dư bằng Transaction
-      if (isWallet) {
-        const logRef = doc(collection(db, 'admin_logs'));
-        transaction.set(logRef, {
-          type: 'BALANCE',
-          source: 'ORDER_PAYMENT',
-          targetPhone: cleanPhone,
-          assetType: 'wallet',
-          walletChange: -totalAmount,
-          walletBalance: currentBalance - totalAmount,
-          reason: `Thanh toán đơn hàng #${orderRef.id.slice(-6).toUpperCase()}`,
-          createdAt: serverTimestamp()
-        });
-      }
-
       return { id: orderRef.id };
     });
+
+    // 100% Giao dịch thành công mới bắt đầu ghi Log ra ngoài
+    if (pendingLog) {
+      pendingLog.reason = `Thanh toán đơn hàng #${result.id.slice(-6).toUpperCase()}`;
+      safeLogAdmin(pendingLog);
+    }
 
     if (orderData.usedVouchers && orderData.usedVouchers.length > 0) {
       for (const v of orderData.usedVouchers) {
@@ -194,6 +207,7 @@ export const processWalletPayment = async (phone, amount) => {
   try {
     const cleanPhone = phone.trim();
     const userRef = doc(db, 'users', cleanPhone); 
+    let pendingLog = null;
 
     await runTransaction(db, async (transaction) => {
       const userSnap = await transaction.get(userRef);
@@ -208,19 +222,18 @@ export const processWalletPayment = async (phone, amount) => {
         updatedAt: serverTimestamp()
       });
 
-      // MỚI: Ghi log
-      const logRef = doc(collection(db, 'admin_logs'));
-      transaction.set(logRef, {
+      pendingLog = {
         type: 'BALANCE',
         source: 'ORDER_PAYMENT',
         targetPhone: cleanPhone,
         assetType: 'wallet',
         walletChange: -amount,
         walletBalance: currentBalance - amount,
-        reason: `Thanh toán bổ sung bằng Ví`,
-        createdAt: serverTimestamp()
-      });
+        reason: `Thanh toán bổ sung bằng Ví`
+      };
     });
+
+    if (pendingLog) safeLogAdmin(pendingLog);
 
     return { success: true };
   } catch (e) {
@@ -258,16 +271,14 @@ export const completeOrderWithBonus = async (order) => {
           updatedAt: serverTimestamp()
         });
 
-        // MỚI: Ghi log nhận xu
-        await addDoc(collection(db, 'admin_logs'), {
+        safeLogAdmin({
           type: 'BALANCE',
           source: 'ORDER_BONUS',
           targetPhone: cleanPhone,
           assetType: 'xu',
           walletChange: earnedXu,
           walletBalance: currentXu + earnedXu,
-          reason: `Thưởng xu hoàn thành đơn #${order.id.slice(-6).toUpperCase()}`,
-          createdAt: serverTimestamp()
+          reason: `Thưởng xu hoàn thành đơn #${order.id.slice(-6).toUpperCase()}`
         });
       }
     }
@@ -296,7 +307,6 @@ export const claimPetReward = async (phone, minCoins = 1, maxCoins = 10) => {
     const cleanPhone = phone.trim();
     const userRef = doc(db, 'users', cleanPhone);
     
-    // MỚI: Lấy số dư hiện tại để ghi log
     const userSnap = await getDoc(userRef);
     const currentXu = userSnap.exists() ? (userSnap.data().totalXu || 0) : 0;
 
@@ -310,16 +320,14 @@ export const claimPetReward = async (phone, minCoins = 1, maxCoins = 10) => {
       updatedAt: serverTimestamp()
     });
 
-    // MỚI: Ghi log biến động Xu từ Pet
-    await addDoc(collection(db, 'admin_logs'), {
+    safeLogAdmin({
       type: 'BALANCE',
       source: 'PET_REWARD',
       targetPhone: cleanPhone,
       assetType: 'xu',
       walletChange: rewardCoins,
       walletBalance: currentXu + rewardCoins,
-      reason: `Nhận xu ngẫu nhiên từ Thú cưng`,
-      createdAt: serverTimestamp()
+      reason: `Nhận xu ngẫu nhiên từ Thú cưng`
     });
 
     return { success: true, reward: rewardCoins };
@@ -504,16 +512,14 @@ export const updateOrderStatus = async (orderId, newStatus) => {
                updatedAt: serverTimestamp()
             });
 
-            // MỚI: Ghi log hoàn tiền
-            await addDoc(collection(db, 'admin_logs'), {
+            safeLogAdmin({
               type: 'BALANCE',
               source: 'ORDER_REFUND',
               targetPhone: cleanPhone,
               assetType: 'wallet',
               walletChange: totalAmount,
               walletBalance: currentBalance + totalAmount,
-              reason: `Hoàn tiền do Admin hủy đơn #${orderId.slice(-6).toUpperCase()}`,
-              createdAt: serverTimestamp()
+              reason: `Hoàn tiền do Admin hủy đơn #${orderId.slice(-6).toUpperCase()}`
             });
           }
         }
@@ -618,16 +624,14 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
                updatedAt: serverTimestamp()
             });
 
-            // MỚI: Ghi log hoàn tiền
-            await addDoc(collection(db, 'admin_logs'), {
+            safeLogAdmin({
               type: 'BALANCE',
               source: 'ORDER_REFUND',
               targetPhone: cleanPhone,
               assetType: 'wallet',
               walletChange: totalAmount,
               walletBalance: currentBalance + totalAmount,
-              reason: `Hoàn tiền do khách tự hủy đơn #${orderId.slice(-6).toUpperCase()}`,
-              createdAt: serverTimestamp()
+              reason: `Hoàn tiền do khách tự hủy đơn #${orderId.slice(-6).toUpperCase()}`
             });
           }
         }
