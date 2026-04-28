@@ -141,14 +141,12 @@ const SecurityGuard = ({ phone }) => {
         return;
       }
 
-      const d = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      // ĐÃ FIX: Tính tổng số giờ thay vì tách ra số ngày
+      const totalHours = Math.floor(diff / (1000 * 60 * 60));
       const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
       const s = Math.floor((diff % (1000 * 60)) / 1000);
 
-      let timeString = "";
-      if (d > 0) timeString += `${d} ngày `;
-      timeString += `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      const timeString = `${totalHours.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
       
       setCountdown(timeString);
     }, 1000);
