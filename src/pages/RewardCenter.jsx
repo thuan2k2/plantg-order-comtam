@@ -76,9 +76,10 @@ const RewardCenter = () => {
           const totalXu = userDoc.data().totalXu || 0;
           if (totalXu < reward.cost) throw "Số dư Xu đã thay đổi, không đủ để đổi quà!";
 
-          // 1. Trừ Xu của User
+          // 1. Trừ Xu của User (ĐÃ FIX LỖI: Thêm lastUpdateSource để bypass Cloud Function bảo mật)
           transaction.update(userRef, {
             totalXu: increment(-reward.cost),
+            lastUpdateSource: 'exchange_voucher',
             updatedAt: serverTimestamp()
           });
 

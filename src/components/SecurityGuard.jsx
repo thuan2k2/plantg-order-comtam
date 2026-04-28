@@ -7,6 +7,9 @@ const SecurityGuard = ({ phone }) => {
   const [banData, setBanData] = useState(null);
   const [countdown, setCountdown] = useState("");
 
+  // ĐÃ FIX RACE CONDITION: Đảm bảo dữ liệu từ DB đã tải xong mới cho phép bẫy F12 kích hoạt
+  const [isDataLoaded, setIsDataLoaded] = useState(false); 
+
   // MỚI: Ref dùng để khóa event F12 nếu đã bị ban, tránh ghi đè lệnh cấm của Admin
   const isBannedRef = useRef(false);
 
@@ -21,10 +24,13 @@ const SecurityGuard = ({ phone }) => {
     if (!phone || phone === "" || isExempted) {
       setBanData(null);
       isBannedRef.current = false;
+      setIsDataLoaded(true); // Nếu là Admin hoặc chưa đăng nhập, coi như tải xong
       return;
     }
 
     const unsub = onSnapshot(doc(db, 'users', phone), (snap) => {
+      setIsDataLoaded(true); // Xác nhận đã nhận được dữ liệu từ Firebase
+
       if (snap.exists()) {
         const data = snap.data();
         
@@ -74,7 +80,8 @@ const SecurityGuard = ({ phone }) => {
 
   // 2. CHỐNG F12 / DEVTOOLS & GỌI LỆNH CẤM (CHỈ DÀNH CHO KHÁCH HÀNG ĐÃ ĐĂNG NHẬP)
   useEffect(() => {
-    if (!phone || phone === "" || isExempted) return;
+    // ĐÃ FIX BẢO MẬT: Bẫy chỉ giăng KHI VÀ CHỈ KHI chắc chắn User chưa bị cấm (Đã load xong data)
+    if (!isDataLoaded || !phone || phone === "" || isExempted || isBannedRef.current) return;
 
     let hasTriggered = false;
 
@@ -121,7 +128,7 @@ const SecurityGuard = ({ phone }) => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', detectDevToolsResize);
     };
-  }, [phone, isExempted]);
+  }, [phone, isExempted, isDataLoaded]); // Cập nhật Dependency khi data loaded
 
   // 3. LOGIC ĐỒNG HỒ ĐẾM NGƯỢC
   useEffect(() => {
