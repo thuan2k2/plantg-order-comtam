@@ -305,7 +305,7 @@ export const claimPetReward = async (phone, minCoins = 1, maxCoins = 100) => {
     const cleanPhone = phone.trim();
 
     // BẢO MẬT 4: PHÁT HIỆN BUG XU SỰ KIỆN (Truyền giá trị max siêu lớn)
-    if (maxCoins > 700 || minCoins < 0) {
+    if (maxCoins > 800 || minCoins < 0) {
       applyQuickBan({ phone: cleanPhone, reason: 'Phát hiện can thiệp phần thưởng sự kiện (Bug Xu)', type: 'BUG_XU' });
       return { success: false, error: "Lỗi dữ liệu! Hành vi bất thường đã bị ghi nhận." };
     }

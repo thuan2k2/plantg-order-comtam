@@ -16,18 +16,19 @@ const safeLogAdmin = async (logData) => {
   }
 };
 
-// 1. Khởi tạo hoặc Cập nhật thông tin phòng chat lấy từ dữ liệu gốc 'users'
+/**
+ * 1. Khởi tạo hoặc Cập nhật thông tin phòng chat lấy từ dữ liệu gốc 'users'
+ * Hỗ trợ Zalo Bridge: Khởi tạo các cờ unread để Bot Zalo và Web Admin cùng theo dõi
+ */
 export const startChat = async (phone, name = null, avatarUrl = null, orderId = null) => {
   const chatRef = doc(db, CHAT_COLLECTION, phone);
   const userRef = doc(db, 'users', phone);
   
-  // Trích xuất dữ liệu từ collection users để đồng bộ thông tin chính xác
   const userSnap = await getDoc(userRef);
   const userData = userSnap.exists() ? userSnap.data() : {};
 
   await setDoc(chatRef, {
     userPhone: phone,
-    // Ưu tiên thông tin từ users, nếu không có mới dùng thông tin truyền vào
     userName: userData.fullName || name || 'Khách hàng',
     userAvatar: userData.avatarUrl || avatarUrl || '',
     orderId: orderId,
@@ -37,19 +38,19 @@ export const startChat = async (phone, name = null, avatarUrl = null, orderId = 
   }, { merge: true }); 
 };
 
-// 2. Gửi tin nhắn mới (Đã tối ưu hóa đồng bộ dữ liệu User)
+/**
+ * 2. Gửi tin nhắn mới
+ * Cập nhật: Cờ unreadUser sẽ kích hoạt Zalo Bot gửi tin nhắn về điện thoại khách
+ */
 export const sendMessage = async (chatId, sender, text) => {
   const chatRef = doc(db, CHAT_COLLECTION, chatId);
   const messagesRef = collection(db, CHAT_COLLECTION, chatId, 'messages');
 
   try {
     const senderUpper = sender.toUpperCase();
-    
-    // Kiểm tra xem phòng chat đã tồn tại chưa
     const chatSnap = await getDoc(chatRef);
     
     if (!chatSnap.exists()) {
-      // Nếu chưa có, khởi tạo phòng chat kèm thông tin từ collection users
       await startChat(chatId);
     }
 
@@ -60,10 +61,11 @@ export const sendMessage = async (chatId, sender, text) => {
       createdAt: serverTimestamp()
     });
 
-    // Bước 2: Cập nhật meta-data ở Document chính
+    // Bước 2: Cập nhật meta-data
+    // unreadUser: true sẽ đánh động cho Zalo Bot (nếu khách có kết nối Zalo)
     await updateDoc(chatRef, {
       unreadAdmin: senderUpper === 'USER',
-      unreadUser: senderUpper === 'ADMIN',
+      unreadUser: senderUpper === 'ADMIN', 
       lastUpdated: serverTimestamp()
     });
   } catch (error) {
@@ -86,20 +88,17 @@ export const markRead = async (chatId, role) => {
   }
 };
 
-// 4. Đóng Chat: Xóa sạch dữ liệu tin nhắn trên Firebase
+// 4. Đóng Chat
 export const closeChat = async (chatId) => {
   try {
     const messagesRef = collection(db, CHAT_COLLECTION, chatId, "messages");
     const snapshot = await getDocs(messagesRef);
-    
     const batch = writeBatch(db);
     
-    // Xóa toàn bộ tin nhắn trong subcollection 'messages'
     snapshot.docs.forEach((messageDoc) => {
       batch.delete(messageDoc.ref);
     });
     
-    // Cập nhật lại document chính (Reset trạng thái nhưng giữ lại thông tin User để lần sau nhắn tiếp)
     const chatDocRef = doc(db, CHAT_COLLECTION, chatId);
     batch.update(chatDocRef, {
       unreadUser: false,
@@ -123,7 +122,7 @@ export const subscribeToAdminChats = (callback) => {
 };
 
 // ============================================================================
-// HỆ THỐNG GAMIFICATION & HÒM THƯ (NEW)
+// HỆ THỐNG GAMIFICATION & HÒM THƯ (REAL-TIME LOGS)
 // ============================================================================
 
 const functions = getFunctions();
@@ -134,21 +133,18 @@ export const claimMailboxAttachment = async (phone, mailId) => {
     const claimFn = httpsCallable(functions, 'claimMailAttachment');
     const result = await claimFn({ phone, mailId });
     
-    // MỚI: Ghi Log sau khi nhận xu từ thư thành công
     if (result.data && result.data.reward > 0) {
       const userSnap = await getDoc(doc(db, 'users', phone));
       const currentXu = userSnap.exists() ? (userSnap.data().totalXu || 0) : result.data.reward;
       
       safeLogAdmin({
         type: 'BALANCE', source: 'mail', targetPhone: phone, assetType: 'xu',
-        walletChange: result.data.reward, walletBalance: currentXu, reason: `Nhận xu từ thư đính kèm hệ thống`
+        walletChange: result.data.reward, walletBalance: currentXu, 
+        reason: `Nhận quà từ Hòm thư hệ thống`
       });
     }
-
     return result.data;
-  } catch (error) {
-    throw error;
-  }
+  } catch (error) { throw error; }
 };
 
 // 7. Giao tiếp với API Mở hộp quà hàng ngày
@@ -157,21 +153,18 @@ export const claimDailyReward = async (phone) => {
     const giftFn = httpsCallable(functions, 'claimDailyGift');
     const result = await giftFn({ phone });
     
-    // MỚI: Ghi Log sau khi mở Hộp Quà thành công
     if (result.data && result.data.reward > 0) {
       const userSnap = await getDoc(doc(db, 'users', phone));
       const currentXu = userSnap.exists() ? (userSnap.data().totalXu || 0) : result.data.reward;
       
       safeLogAdmin({
         type: 'BALANCE', source: 'gift', targetPhone: phone, assetType: 'xu',
-        walletChange: result.data.reward, walletBalance: currentXu, reason: `Mở hộp quà may mắn hàng ngày`
+        walletChange: result.data.reward, walletBalance: currentXu, 
+        reason: `Mở hộp quà may mắn hàng ngày`
       });
     }
-
     return result.data;
-  } catch (error) {
-    throw error;
-  }
+  } catch (error) { throw error; }
 };
 
 // 8. Giao tiếp với API Điểm danh 7 ngày
@@ -180,57 +173,52 @@ export const claimDailyCheckIn = async (phone) => {
     const checkInFn = httpsCallable(functions, 'claimDailyCheckIn');
     const result = await checkInFn({ phone });
     
-    // MỚI: Ghi Log sau khi Điểm danh thành công
     if (result.data && result.data.reward > 0) {
       const userSnap = await getDoc(doc(db, 'users', phone));
       const currentXu = userSnap.exists() ? (userSnap.data().totalXu || 0) : result.data.reward;
       
       safeLogAdmin({
         type: 'BALANCE', source: 'checkin', targetPhone: phone, assetType: 'xu',
-        walletChange: result.data.reward, walletBalance: currentXu, reason: `Điểm danh liên tục (Ngày ${result.data.streak || 1})`
+        walletChange: result.data.reward, walletBalance: currentXu, 
+        reason: `Thưởng điểm danh (Ngày ${result.data.streak || 1})`
       });
     }
-
     return result.data;
-  } catch (error) {
-    throw error;
-  }
+  } catch (error) { throw error; }
 };
 
 // ============================================================================
-// HÀM TESTING (Dùng để reset giả lập qua ngày mới / test sự kiện)
+// HÀM TESTING (DÙNG ĐỂ RESET THỬ NGHIỆM)
 // ============================================================================
 
-// 9. Xóa thời gian nhận quà để test lại Hộp Quà & Điểm Danh (ĐÃ FIX TRIỆT ĐỂ)
+// 9. Xóa thời gian nhận quà để test lại
 export const resetTestingGamification = async (phone) => {
   try {
     const userRef = doc(db, 'users', phone);
     await updateDoc(userRef, {
       lastDailyGift: null,
       lastCheckIn: null,
-      attendanceCount: 0, // Reset ngày điểm danh về 0
-      checkInStreak: 0,   // Reset biến phụ (nếu có)
-      dailyCheckInHistory: [] // Xóa lịch sử điểm danh 7 ngày
+      attendanceCount: 0, 
+      checkInStreak: 0,   
+      dailyCheckInHistory: [],
+      lastUpdateSource: 'admin', // ĐÃ THÊM: Để tránh bị hệ thống tự động Ban khi test
+      updatedAt: serverTimestamp()
     });
-    console.log("Đã reset hoàn toàn tiến trình nhận thưởng & điểm danh hàng ngày!");
+    console.log("✅ Đã reset tiến trình test Gamification an toàn.");
     return true;
-  } catch (error) {
-    console.error("Lỗi khi reset test:", error);
-    throw error;
-  }
+  } catch (error) { throw error; }
 };
 
-// 10. Xóa cờ đã nhận Lucky Xu để test lại sự kiện Lì Xì Rơi
+// 10. Xóa cờ đã nhận Lucky Xu
 export const resetTestingLuckyXu = async (phone) => {
   try {
     const userRef = doc(db, 'users', phone);
     await updateDoc(userRef, {
-      lastLuckyReceived: null
+      lastLuckyReceived: null,
+      lastUpdateSource: 'admin', // ĐÃ THÊM: Tránh bị khóa khi test Lì xì
+      updatedAt: serverTimestamp()
     });
-    console.log("Đã reset cờ nhận Lucky Xu!");
+    console.log("✅ Đã reset cờ Lucky Xu an toàn.");
     return true;
-  } catch (error) {
-    console.error("Lỗi khi reset Lucky Xu:", error);
-    throw error;
-  }
+  } catch (error) { throw error; }
 };
