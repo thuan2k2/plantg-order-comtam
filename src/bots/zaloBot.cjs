@@ -37,7 +37,12 @@ const MENU = {
 
 const CANCEL_KEYWORDS = ['hủy', 'huy', 'hủy đơn', 'huy don', 'không đặt nữa'];
 const SUPPORT_KEYWORDS = ['hỗ trợ', 'ho tro', 'cần hỗ trợ', 'nhân viên', 'tư vấn', 'shop ơi', 'ad ơi', 'chủ quán'];
-const GREETING_KEYWORDS = ['hi', 'hello', 'xin chào', 'chào', 'bắt đầu', 'alo shop', 'alo sốp'];
+const GREETING_KEYWORDS = ['nay có bán không ạ','đặt cơm ạ','shop ơi','hello','hi','xin chào', 'chào', 'bắt đầu', 'alo shop', 'alo sốp', 'alo'];
+const RESET_KEYWORDS = ['reset', 'xóa hết', 'làm lại'];
+const CHANGE_INFO_KEYWORDS = ['thay đổi thông tin', 'đổi địa chỉ', 'đổi sđt', 'cập nhật thông tin'];
+const MENU_KEYWORDS = ['menu', 'thực đơn', 'món ăn', 'xin menu', 'có món gì'];
+const PAYMENT_BANK_KEYWORDS = ['chuyển khoản', 'ck', 'banking', 'qr'];
+const PAYMENT_CASH_KEYWORDS = ['tiền mặt', 'ship cod', 'cod'];
 
 const app = express();
 app.use(express.json());
@@ -45,31 +50,23 @@ const bot = new ZaloBot(process.env.BOT_TOKEN, { polling: false });
 const ADMIN_ZALO_ID = process.env.ZALO_BOT_ADMIN_ID; // a65dc2194697d372478
 
 /**
- * --- HÀM PHÂN TÍCH ĐƠN HÀNG ---
+ * --- HÀM TRỢ GIÚP ---
  */
 const advancedParse = (text) => {
     let items = [];
     let total = 0;
     const lowerText = text.toLowerCase();
-
-    // 1. Nhận diện món chính
     const primaryQtyMatch = lowerText.match(/(\d+)\s*(p|phần|hộp|cơm|suất)/);
     let primaryQty = primaryQtyMatch ? parseInt(primaryQtyMatch[1]) : 0;
-
-    if (primaryQty === 0 && (lowerText.includes('phần') || lowerText.includes('hộp') || lowerText.includes('cơm'))) {
-        primaryQty = 1;
-    }
+    if (primaryQty === 0 && (lowerText.includes('phần') || lowerText.includes('hộp') || lowerText.includes('cơm'))) primaryQty = 1;
 
     if (primaryQty > 0) {
         let itemName = MENU.PRIMARY.name;
-        if (lowerText.includes('cơm sườn') && !lowerText.includes('trứng')) {
-            itemName = 'Cơm tấm sườn';
-        }
+        if (lowerText.includes('cơm sườn') && !lowerText.includes('trứng')) itemName = 'Cơm tấm sườn';
         items.push(`${primaryQty}x ${itemName}`);
         total += MENU.PRIMARY.price * primaryQty;
     }
 
-    // 2. Nhận diện món thêm
     MENU.SIDE_DISHES.forEach(side => {
         if (side.keywords.some(k => lowerText.includes(k))) {
             const qtyMatch = lowerText.match(new RegExp(`(\\d+)\\s*(${side.keywords.join('|')})`));
@@ -79,27 +76,21 @@ const advancedParse = (text) => {
         }
     });
 
-    return { 
-        items: items.join(', '), 
-        total, 
-        note: text // QUAN TRỌNG: Ghi chú lưu TOÀN BỘ tin nhắn gốc
-    };
+    return { items: items.join(', '), total, note: text };
 };
 
-/**
- * --- ĐỊNH DẠNG TIN NHẮN XÁC NHẬN ---
- */
 const formatConfirmMsg = (order) => {
-    return `📝 XÁC NHẬN ĐƠN HÀNG\n` +
+    return `📝 XÁC NHẬN THÔNG TIN\n` +
            `--------------------------\n` +
            `👤 Khách hàng: ${order.customer}\n` +
            `📍 Địa chỉ: ${order.address}\n` +
            `📞 SĐT nhận hàng: ${order.phone}\n` +
-           `🍱 Đơn hàng: ${order.items}\n` +
+           `🍱 Đơn hàng: ${order.items || 'Chưa chọn món'}\n` +
            `📝 Ghi chú: ${order.note}\n` +
            `💰 Tổng cộng: ${order.total.toLocaleString()}đ\n` +
            `--------------------------\n` +
-           `👉 Nhắn "Ok" để chốt đơn.`;
+           `👉 Nhắn "Ok" để chốt đơn.\n` +
+           `👉 Nhắn "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ.`;
 };
 
 /**
@@ -112,68 +103,83 @@ bot.on('message', async (msg) => {
 
     if (!text || text.startsWith('/')) return;
 
-    // A. XỬ LÝ ADMIN REPLY (Chat ngược lại với khách)
+    // A. XỬ LÝ ADMIN REPLY (Fix cơ chế nhắn ngược lại khách)
     if (zaloId === ADMIN_ZALO_ID && msg.quote) {
         const quotedMsg = msg.quote.text;
-        // Trích xuất ZaloID của khách từ tin nhắn báo đơn mà bot đã gửi cho Admin trước đó
-        const targetIdMatch = quotedMsg.match(/🆔:\s*(\S+)/);
+        // Cải tiến Regex để bắt ZaloID một cách chính xác nhất
+        const targetIdMatch = quotedMsg.match(/🆔:\s*([a-zA-Z0-9_-]+)/);
         
         if (targetIdMatch) {
             const targetZaloId = targetIdMatch[1];
-            
-            // Gửi tin nhắn cho khách
             await bot.sendMessage(targetZaloId, `💬 Phản hồi từ Shop: ${text}`);
 
-            // Đồng bộ lên Firebase Support Chats để hiện trên web admin
             await db.collection('support_chats').add({
                 zaloId: targetZaloId,
                 sender: 'ADMIN',
                 message: text,
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
             });
-            console.log(`✅ Admin đã phản hồi cho khách ${targetZaloId}`);
             return;
         }
     }
 
     try {
-        // Lưu log mọi tin nhắn để học tập
-        await db.collection('learning_logs').add({
-            zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp()
-        });
+        await db.collection('learning_logs').add({ zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp() });
 
         const sessionRef = db.collection('bot_sessions').doc(zaloId);
         const sessionSnap = await sessionRef.get();
         let session = sessionSnap.exists ? sessionSnap.data() : { state: null, pendingOrder: null };
 
-        // B. CHUYỂN CUỘC HỘI THOẠI ĐẾN SHOP
-        if (SUPPORT_KEYWORDS.some(k => text.toLowerCase().includes(k))) {
+        const lowerText = text.toLowerCase();
+
+        // B. LỆNH ĐIỀU HƯỚNG (RESET, MENU, THAY ĐỔI)
+        if (RESET_KEYWORDS.includes(lowerText)) {
+            await sessionRef.delete();
+            return bot.sendMessage(zaloId, "🔄 Đã xóa thông tin phiên đặt hàng. Bạn có thể bắt đầu lại bằng cách nhắn món muốn đặt.");
+        }
+
+        if (MENU_KEYWORDS.some(k => lowerText.includes(k))) {
+            const menuMsg = `🍱 THỰC ĐƠN SHOP PLANTG\n` +
+                            `--------------------------\n` +
+                            `1. ${MENU.PRIMARY.name}: ${MENU.PRIMARY.price.toLocaleString()}đ\n` +
+                            `2. Cơm thêm: 5.000đ\n` +
+                            `3. Sườn thêm: 10.000đ\n` +
+                            `4. Trứng thêm: 5.000đ\n` +
+                            `5. Canh/Nước mắm thêm: Miễn phí\n` +
+                            `--------------------------\n` +
+                            `👉 Shop nhận đơn từ 1 phần trở lên.`;
+            return bot.sendMessage(zaloId, menuMsg);
+        }
+
+        if (CHANGE_INFO_KEYWORDS.some(k => lowerText.includes(k))) {
+            session.state = 'WAITING_PHONE';
+            await sessionRef.set(session);
+            return bot.sendMessage(zaloId, "📝 Vui lòng nhập Số điện thoại mới để quán cập nhật nhé.");
+        }
+
+        // C. THANH TOÁN (BANKING QR / TIỀN MẶT)
+        if (PAYMENT_BANK_KEYWORDS.some(k => lowerText.includes(k))) {
+            bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua mã QR này và nhắn 'Ok' sau khi xong nhé:");
+            // Gửi ảnh QR (Thay URL bằng link QR VietQR của quán bạn)
+            return bot.sendImage(zaloId, "https://img.vietqr.io/image/mbbank-123456789-compact2.jpg?amount=0&addInfo=Thanh%20toan%20Com%20Tam");
+        }
+
+        if (PAYMENT_CASH_KEYWORDS.some(k => lowerText.includes(k))) {
+            return bot.sendMessage(zaloId, "💵 Đã ghi nhận hình thức thanh toán tiền mặt (COD).");
+        }
+
+        // D. HỖ TRỢ TRỰC TIẾP
+        if (SUPPORT_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             bot.sendMessage(zaloId, "🤖 Tôi không hiểu ý của bạn, tôi sẽ chuyển cuộc hội thoại đến Shop. Vui lòng chờ trong giây lát!");
-            if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `⚠️ CẦN HỖ TRỢ TRỰC TIẾP\n👤: ${name}\n🆔: ${zaloId}\n💬: ${text}`);
+            if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `⚠️ CẦN HỖ TRỢ\n🆔: ${zaloId}\n👤: ${name}\n💬: ${text}`);
             return;
         }
 
-        // C. XỬ LÝ HỦY ĐƠN
-        if (CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k))) {
-            await sessionRef.delete();
-            const orderQuery = await db.collection('orders').where("zaloId", "==", zaloId).orderBy("createdAt", "desc").limit(1).get();
-            if (!orderQuery.empty) {
-                const lastOrder = orderQuery.docs[0];
-                const s = lastOrder.data().status;
-                if (!['PREPARING', 'SHIPPING', 'COMPLETED'].includes(s)) {
-                    await lastOrder.ref.update({ status: 'CANCELLED' });
-                    return bot.sendMessage(zaloId, "✅ Đã hủy đơn hàng gần nhất của bạn.");
-                }
-            }
-            return bot.sendMessage(zaloId, "✅ Đã xóa trạng thái đặt hàng hiện tại.");
-        }
-
-        // D. NHẬN DIỆN ĐƠN HÀNG
+        // E. NHẬN DIỆN ĐƠN HÀNG
         const detected = advancedParse(text);
         if (detected.items) {
             session.pendingOrder = { customer: name, items: detected.items, total: detected.total, note: detected.note, zaloId };
-            
             const userQuery = await db.collection('users').where("zaloId", "==", zaloId).limit(1).get();
             if (!userQuery.empty) {
                 const userData = userQuery.docs[0].data();
@@ -189,7 +195,7 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // E. XỬ LÝ THEO TRẠNG THÁI (NHẬP SĐT/ĐỊA CHỈ)
+        // F. LUỒNG NHẬP LIỆU
         if (session.state === 'WAITING_PHONE') {
             const phone = text.replace(/\D/g, '');
             if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
@@ -203,7 +209,7 @@ bot.on('message', async (msg) => {
             }
             session.state = 'WAITING_ADDRESS';
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, "Dạ cho quán xin địa chỉ giao hàng với ạ.");
+            return bot.sendMessage(zaloId, "Dạ cho quán xin địa chỉ giao hàng cụ thể nhé.");
         }
 
         if (session.state === 'WAITING_ADDRESS') {
@@ -216,8 +222,7 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, formatConfirmMsg(session.pendingOrder));
         }
 
-        // F. XÁC NHẬN "OK"
-        if (text.toLowerCase() === 'ok' && session.state === 'WAITING_CONFIRM') {
+        if (lowerText === 'ok' && session.state === 'WAITING_CONFIRM') {
             const order = session.pendingOrder;
             const docRef = await db.collection('orders').add({
                 ...order, status: 'PENDING', total: order.total.toLocaleString() + 'đ', createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -227,24 +232,18 @@ bot.on('message', async (msg) => {
             const finalMsg = `✅ ĐÃ CHỐT ĐƠN (#${docRef.id.slice(-6).toUpperCase()})\n` +
                              `🍱 Món: ${order.items}\n` +
                              `📍 Giao: ${order.address}\n` +
-                             `🔔 Trạng thái: 🕒 Chờ xác nhận (Shop sẽ báo bạn ngay khi chuẩn bị xong)`;
+                             `🔔 Trạng thái: 🕒 Chờ xác nhận`;
             bot.sendMessage(zaloId, finalMsg);
-
-            if (ADMIN_ZALO_ID) {
-                bot.sendMessage(ADMIN_ZALO_ID, `🔔 ĐƠN MỚI\n🆔: ${zaloId}\n👤 Khách: ${order.customer}\n🍱 Đơn: ${order.items}\n📝 Note: ${order.note}`);
-            }
+            if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `🔔 ĐƠN MỚI\n🆔: ${zaloId}\n👤 Khách: ${order.customer}\n🍱 Đơn: ${order.items}\n📝 Note: ${order.note}`);
             return;
         }
 
-        // CHÀO HỎI
-        if (GREETING_KEYWORDS.some(k => text.toLowerCase().includes(k))) {
+        if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
-            return bot.sendMessage(zaloId, `Xin chào ${name}. Cảm ơn bạn đã liên hệ Shop PlantG. Bạn muốn đặt món hay hỗ trợ gì ạ?`);
+            return bot.sendMessage(zaloId, `Xin chào ${name}. Cảm ơn bạn đã liên hệ Shop PlantG. Nhắn "Menu" để xem các món cơm hôm nay nhé!`);
         }
 
-    } catch (error) {
-        console.error("❌ Lỗi xử lý tin nhắn:", error);
-    }
+    } catch (error) { console.error("❌ Lỗi:", error); }
 });
 
 /**
