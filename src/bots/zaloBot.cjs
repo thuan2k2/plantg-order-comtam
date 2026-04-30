@@ -172,7 +172,7 @@ bot.on('message', async (msg) => {
         // C. THANH TOÁN (TÁCH THÀNH 2 TIN NHẮN RIÊNG BIỆT)
         if (PAYMENT_BANK_KEYWORDS.some(k => lowerText.includes(k))) {
             // Tin 1: Nội dung chữ
-            await bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua mã QR này và nhắn 'Ok' sau khi xong nhé:");
+            await bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua mã QR này và nhắn 'Ok' sau khi xong nhé: Ngân hàng TPBank 00006464313");
             // Tin 2: Nội dung ảnh
             return bot.sendImage(zaloId, "https://img.vietqr.io/image/TPB-00006464313-qr_only.png");
         }
