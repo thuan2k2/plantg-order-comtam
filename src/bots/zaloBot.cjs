@@ -172,9 +172,9 @@ bot.on('message', async (msg) => {
         // C. THANH TOÁN (TÁCH THÀNH 2 TIN NHẮN RIÊNG BIỆT)
         if (PAYMENT_BANK_KEYWORDS.some(k => lowerText.includes(k))) {
             // Tin 1: Nội dung chữ
-            await bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua mã QR này và nhắn 'Ok' sau khi xong nhé: Ngân hàng TPBank 00006464313");
+            await bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua STK hoặc ảnh trong link nhé: Ngân hàng TPBank 00006464313 - PHẠM ĐỨC THUẬN (https://img.vietqr.io/image/TPB-00006464313-qr_only.png)");
             // Tin 2: Nội dung ảnh
-            return bot.sendImage(zaloId, "https://img.vietqr.io/image/TPB-00006464313-qr_only.png");
+            return bot.sendMessage(zaloId, "https://img.vietqr.io/image/TPB-00006464313-qr_only.png");
         }
 
         if (PAYMENT_CASH_KEYWORDS.some(k => lowerText.includes(k))) {
@@ -204,7 +204,7 @@ bot.on('message', async (msg) => {
             } else {
                 session.state = 'WAITING_PHONE';
                 await sessionRef.set(session);
-                return bot.sendMessage(zaloId, `🤖 Nhận đơn: ${detected.items}. Cho quán xin SĐT nhận hàng nhé!`);
+                return bot.sendMessage(zaloId, `🤖 Nhận đơn: ${detected.items}. Cho quán xin SĐT nhận hàng nhé! Nếu BOT không phản hồi lại Xác nhận thông tin thì mình copy lại SĐT đã gửi và dán vào ô chat (ấn nút X phía trên nếu Zalo hiện gửi kèm thông tin) để gửi SĐT nha <3`);
             }
         }
 
