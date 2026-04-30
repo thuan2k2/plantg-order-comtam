@@ -15,57 +15,77 @@ try {
 } catch (error) { process.exit(1); }
 const db = admin.firestore();
 
-// 2. CẤU HÌNH THỰC ĐƠN & TRẠNG THÁI
-const MENU = [
-    { keywords: ['sườn trứng', 'suon trung'], name: 'Cơm tấm sườn trứng', price: 35000 },
-    { keywords: ['cơm tấm sườn', 'com tam suon', 'cơm sườn'], name: 'Cơm tấm sườn', price: 35000 },
-    { keywords: ['canh thêm', 'canh them'], name: 'Canh thêm', price: 0 },
-    { keywords: ['cà chua thêm', 'ca chua them'], name: 'Cà chua thêm', price: 0 },
-    { keywords: ['cơm thêm', 'com them'], name: 'Cơm thêm', price: 5000 },
-    { keywords: ['dưa chua thêm', 'dua chua them'], name: 'Dưa chua thêm', price: 0 },
-    { keywords: ['dưa leo thêm', 'dua leo them'], name: 'Dưa leo thêm', price: 0 },
-    { keywords: ['nước mắm thêm', 'nuoc mam them'], name: 'Nước mắm thêm', price: 0 },
-    { keywords: ['sườn thêm', 'suon them'], name: 'Sườn thêm', price: 10000 },
-    { keywords: ['trứng thêm', 'trung them'], name: 'Trứng thêm', price: 5000 }
-];
+// 2. CẤU HÌNH THỰC ĐƠN
+const MENU = {
+    PRIMARY: { keywords: ['sườn trứng', 'suon trung', 'đầy đủ', '30k', '35k', 'phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp'], name: 'Cơm tấm sườn trứng', price: 35000 },
+    SIDE_DISHES: [
+        { keywords: ['cơm thêm', 'thêm cơm', 'cơm k sườn'], name: 'Cơm thêm', price: 5000 },
+        { keywords: ['sườn thêm', 'miếng sườn', 'thêm sườn'], name: 'Sườn thêm', price: 10000 },
+        { keywords: ['trứng thêm', 'thêm trứng', '2 trứng', 'lòng đào'], name: 'Trứng thêm', price: 5000 },
+        { keywords: ['canh thêm'], name: 'Canh thêm', price: 0 },
+        { keywords: ['nước mắm thêm', 'nc mắm', 'bịch nước mắm'], name: 'Nước mắm thêm', price: 0 }
+    ]
+};
 
 const CANCEL_KEYWORDS = ['hủy', 'huy', 'hủy đơn', 'huy don', 'không đặt nữa'];
-
-const userStates = {}; 
-const pendingOrders = {};
 
 const app = express();
 app.use(express.json());
 const bot = new ZaloBot(process.env.BOT_TOKEN, { polling: false });
 const ADMIN_ZALO_ID = process.env.ZALO_BOT_ADMIN_ID;
 
-// Hàm bóc tách đơn hàng
-const parseOrderWithNotes = (text) => {
+/**
+ * --- HÀM NHẬN DIỆN THÔNG MINH (ADVANCED PARSER) ---
+ */
+const advancedParse = (text) => {
     let items = [];
     let total = 0;
-    let unrecognizedParts = [];
-    const lines = text.toLowerCase().split(/[,|\n]/);
+    const lowerText = text.toLowerCase();
 
-    lines.forEach(line => {
-        let matched = false;
-        const cleanLine = line.trim();
-        if (!cleanLine) return;
-        MENU.forEach(m => {
-            if (m.keywords.some(k => cleanLine.includes(k))) {
-                const qtyMatch = cleanLine.match(/\d+/);
-                const qty = qtyMatch ? parseInt(qtyMatch[0]) : 1;
-                items.push(`${qty}x ${m.name}`);
-                total += m.price * qty;
-                matched = true;
-            }
-        });
-        if (!matched) unrecognizedParts.push(cleanLine);
+    // 1. Tìm số lượng món chính (Ví dụ: 2p, 3 phần, 2 cơm)
+    const primaryQtyMatch = lowerText.match(/(\d+)\s*(p|phần|hộp|cơm|suất|hộp)/);
+    let primaryQty = primaryQtyMatch ? parseInt(primaryQtyMatch[1]) : 0;
+
+    // Nếu không thấy số lượng nhưng có từ khóa món chính -> Mặc định 1
+    if (primaryQty === 0 && (lowerText.includes('phần cơm') || lowerText.includes('hộp cơm') || lowerText.includes('đặt cơm') || lowerText.includes('hộp'))) {
+        primaryQty = 1;
+    }
+
+    if (primaryQty > 0) {
+        // Mặc định là Sườn trứng trừ khi nhắc đích danh "cơm sườn"
+        let itemName = MENU.PRIMARY.name;
+        if (lowerText.includes('cơm sườn') && !lowerText.includes('trứng')) {
+            itemName = 'Cơm tấm sườn';
+        }
+        items.push(`${primaryQty}x ${itemName}`);
+        total += MENU.PRIMARY.price * primaryQty;
+    }
+
+    // 2. Xử lý món thêm
+    MENU.SIDE_DISHES.forEach(side => {
+        if (side.keywords.some(k => lowerText.includes(k))) {
+            const qtyMatch = lowerText.match(new RegExp(`(\\d+)\\s*(${side.keywords.join('|')})`));
+            const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
+            items.push(`${qty}x ${side.name}`);
+            total += side.price * qty;
+        }
     });
-    return { items: items.join(', '), total, note: unrecognizedParts.join(', ') };
+
+    // 3. Trích xuất SĐT và Địa chỉ từ tin nhắn
+    const phoneMatch = lowerText.match(/(0[3|5|7|8|9][0-9]{8})/);
+    const addressMatch = lowerText.match(/(đ\/c|địa chỉ|tới|đến|ở)\s+([^,.\n]+)/);
+
+    return { 
+        items: items.join(', '), 
+        total, 
+        note: text, 
+        detectedPhone: phoneMatch ? phoneMatch[1] : null,
+        detectedAddress: addressMatch ? addressMatch[2].trim() : null
+    };
 };
 
 /**
- * --- XỬ LÝ TIN NHẮN TỰ ĐỘNG ---
+ * --- XỬ LÝ TIN NHẮN CHÍNH ---
  */
 bot.on('message', async (msg) => {
     const zaloId = msg.chat.id;
@@ -74,97 +94,100 @@ bot.on('message', async (msg) => {
 
     if (!text || text.startsWith('/')) return;
 
-    // A. XỬ LÝ LỆNH HỦY (ƯU TIÊN CAO NHẤT)
-    if (CANCEL_KEYWORDS.some(k => text.toLowerCase() === k)) {
-        // 1. Xóa đơn nháp đang dở nếu khách đang trong luồng đặt
-        if (pendingOrders[zaloId]) {
-            delete pendingOrders[zaloId];
-            userStates[zaloId] = null;
-            return bot.sendMessage(zaloId, `✅ Đã hủy quá trình đặt đơn hiện tại. Bạn cần món gì cứ nhắn quán nhé!`);
-        }
+    // LƯU LOG ĐỂ HỌC TẬP (Learning Logs)
+    await db.collection('learning_logs').add({
+        zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
 
-        // 2. Tìm đơn hàng mới nhất của Zalo ID này để hủy
-        const orderQuery = await db.collection('orders')
-            .where("zaloId", "==", zaloId)
-            .orderBy("createdAt", "desc").limit(1).get();
+    // LẤY SESSION TỪ FIRESTORE (Chống reset RAM)
+    const sessionRef = db.collection('bot_sessions').doc(zaloId);
+    const sessionSnap = await sessionRef.get();
+    let session = sessionSnap.exists ? sessionSnap.data() : { state: null, pendingOrder: null };
 
+    // A. XỬ LÝ LỆNH HỦY
+    if (CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k))) {
+        await sessionRef.delete();
+        const orderQuery = await db.collection('orders').where("zaloId", "==", zaloId).orderBy("createdAt", "desc").limit(1).get();
         if (!orderQuery.empty) {
             const lastOrder = orderQuery.docs[0];
-            const status = lastOrder.data().status;
-
-            // Không được hủy nếu trạng thái là Bếp đang làm, Đang giao hoặc Đã xong
-            const blockCancel = ['PREPARING', 'SHIPPING', 'COMPLETED'];
-            if (blockCancel.includes(status)) {
-                const statusMap = { 'PREPARING': 'Bếp đang làm', 'SHIPPING': 'Đang giao hàng', 'COMPLETED': 'Đã hoàn thành' };
-                return bot.sendMessage(zaloId, `❌ Rất tiếc, đơn #${lastOrder.id.slice(-6).toUpperCase()} đang ở trạng thái "${statusMap[status]}" nên không thể hủy được ạ!`);
+            if (!['PREPARING', 'SHIPPING', 'COMPLETED'].includes(lastOrder.data().status)) {
+                await lastOrder.ref.update({ status: 'CANCELLED' });
+                return bot.sendMessage(zaloId, "✅ Đã hủy đơn hàng gần nhất của bạn.");
             }
-            
-            await lastOrder.ref.update({ status: 'CANCELLED' });
-            return bot.sendMessage(zaloId, `✅ Đã hủy đơn hàng #${lastOrder.id.slice(-6).toUpperCase()} thành công theo yêu cầu của ${name}.`);
         }
-        return bot.sendMessage(zaloId, `Dạ hiện bạn không có đơn hàng nào chờ xử lý để hủy ạ.`);
+        return bot.sendMessage(zaloId, "✅ Đã xóa trạng thái đặt hàng hiện tại.");
     }
 
-    // B. NHẬN DIỆN MÓN ĂN (ƯU TIÊN NHẬN DIỆN MỚI)
-    // Nếu tin nhắn chứa món ăn, ta ưu tiên nhận diện đơn mới và ghi đè trạng thái cũ
-    const detected = parseOrderWithNotes(text);
+    // B. NHẬN DIỆN ĐƠN HÀNG MỚI (ƯU TIÊN)
+    const detected = advancedParse(text);
     if (detected.items) {
-        pendingOrders[zaloId] = { customer: name, items: detected.items, total: detected.total, note: detected.note, zaloId };
+        session.pendingOrder = { customer: name, items: detected.items, total: detected.total, note: detected.note, zaloId };
+        
+        // Nếu tin nhắn có sẵn SĐT/Địa chỉ -> Nhảy thẳng tới xác nhận
+        if (detected.detectedPhone || detected.detectedAddress) {
+            if (detected.detectedPhone) session.pendingOrder.phone = detected.detectedPhone;
+            if (detected.detectedAddress) session.pendingOrder.address = detected.detectedAddress;
+        }
 
+        // Kiểm tra khách quen qua Zalo ID
         const userQuery = await db.collection('users').where("zaloId", "==", zaloId).limit(1).get();
         if (!userQuery.empty) {
             const userData = userQuery.docs[0].data();
-            pendingOrders[zaloId].phone = userQuery.docs[0].id;
-            pendingOrders[zaloId].address = userData.address;
-            userStates[zaloId] = 'WAITING_CONFIRM';
-            return bot.sendMessage(zaloId, `Dạ, đơn hàng mới của mình là: ${pendingOrders[zaloId].items}.\n🏠 Giao đến: ${userData.address}.\n\nNhắn "Ok" để Xác nhận đơn hàng.`);
+            session.pendingOrder.phone = session.pendingOrder.phone || userQuery.docs[0].id;
+            session.pendingOrder.address = session.pendingOrder.address || userData.address;
+        }
+
+        // Quyết định trạng thái tiếp theo
+        if (session.pendingOrder.phone && session.pendingOrder.address) {
+            session.state = 'WAITING_CONFIRM';
+            await sessionRef.set(session);
+            return bot.sendMessage(zaloId, `🤖 Nhận đơn: ${session.pendingOrder.items}\n📍 Giao: ${session.pendingOrder.address}\n📝 Ghi chú: ${session.pendingOrder.note}\n\nNhắn "Ok" để chốt đơn nhé!`);
+        } else if (!session.pendingOrder.phone) {
+            session.state = 'WAITING_PHONE';
+            await sessionRef.set(session);
+            return bot.sendMessage(zaloId, `🤖 Shop nhận đơn: ${session.pendingOrder.items}. Cho quán xin SĐT nhận hàng nhé!`);
         } else {
-            userStates[zaloId] = 'WAITING_PHONE';
-            return bot.sendMessage(zaloId, `Dạ, mình nhận đơn món: ${pendingOrders[zaloId].items}.\nBạn cho quán xin SĐT nhận hàng nhé!`);
+            session.state = 'WAITING_ADDRESS';
+            await sessionRef.set(session);
+            return bot.sendMessage(zaloId, `🤖 Cho quán xin địa chỉ giao hàng cụ thể nhé.`);
         }
     }
 
-    // C. XỬ LÝ CHÀO HỎI
-    if (['hi', 'hello', 'xin chào', 'chào', 'bắt đầu'].includes(text.toLowerCase())) {
-        userStates[zaloId] = null; 
-        return bot.sendMessage(zaloId, `Xin chào ${name}. Cảm ơn bạn đã liên hệ với Shop PlantG. Bạn cần đặt món hay hỗ trợ gì ạ?`);
-    }
-
-    // D. TIẾP TỤC CÁC TRẠNG THÁI KHÁC (Nếu không phải món mới)
-    if (userStates[zaloId] === 'WAITING_PHONE') {
+    // C. XỬ LÝ THEO TRẠNG THÁI (Lấy từ Firestore)
+    if (session.state === 'WAITING_PHONE') {
         const phone = text.replace(/\D/g, '');
-        if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ Số điện thoại không hợp lệ, vui lòng nhập lại.");
-        pendingOrders[zaloId].phone = phone;
+        if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
+        session.pendingOrder.phone = phone;
         const userSnap = await db.collection('users').doc(phone).get();
         if (userSnap.exists) {
-            const userData = userSnap.data();
-            await db.collection('users').doc(phone).update({ zaloId });
-            pendingOrders[zaloId].address = userData.address;
-            userStates[zaloId] = 'WAITING_CONFIRM';
-            return bot.sendMessage(zaloId, `Hệ thống nhận ra khách quen!\n📍 Địa chỉ: ${userData.address}.\n\nNhắn "Ok" để chốt đơn.`);
-        } else {
-            userStates[zaloId] = 'WAITING_ADDRESS';
-            return bot.sendMessage(zaloId, `Dạ, quán chưa có thông tin của mình. Cho mình xin địa chỉ giao hàng cụ thể nhé.`);
+            session.pendingOrder.address = userSnap.data().address;
+            session.state = 'WAITING_CONFIRM';
+            await sessionRef.set(session);
+            return bot.sendMessage(zaloId, `Nhận ra khách quen! Giao tới: ${userSnap.data().address} đúng không ạ? Nhắn "Ok" để chốt.`);
         }
+        session.state = 'WAITING_ADDRESS';
+        await sessionRef.set(session);
+        return bot.sendMessage(zaloId, "Dạ cho quán xin địa chỉ giao hàng với ạ.");
     }
 
-    if (userStates[zaloId] === 'WAITING_ADDRESS') {
-        pendingOrders[zaloId].address = text;
-        await db.collection('users').doc(pendingOrders[zaloId].phone).set({
-            fullName: name, address: text, zaloId: zaloId, username: pendingOrders[zaloId].phone, createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        userStates[zaloId] = 'WAITING_CONFIRM';
-        return bot.sendMessage(zaloId, `Đã lưu! Đơn: ${pendingOrders[zaloId].items}.\n🏠 Giao đến: ${text}.\n\nNhắn "Ok" để chốt đơn.`);
+    if (session.state === 'WAITING_ADDRESS') {
+        session.pendingOrder.address = text;
+        session.state = 'WAITING_CONFIRM';
+        await db.collection('users').doc(session.pendingOrder.phone).set({
+            fullName: name, address: text, zaloId, username: session.pendingOrder.phone
+        }, { merge: true });
+        await sessionRef.set(session);
+        return bot.sendMessage(zaloId, `Đã ghi nhận địa chỉ! Nhắn "Ok" để chốt đơn: ${session.pendingOrder.items}`);
     }
 
-    if (text.toLowerCase() === 'ok' && userStates[zaloId] === 'WAITING_CONFIRM') {
-        const order = pendingOrders[zaloId];
+    if (text.toLowerCase() === 'ok' && session.state === 'WAITING_CONFIRM') {
+        const order = session.pendingOrder;
         const docRef = await db.collection('orders').add({
             ...order, status: 'PENDING', total: order.total.toLocaleString() + 'đ', createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
-        bot.sendMessage(zaloId, `✅ Đã chốt đơn #${docRef.id.slice(-6).toUpperCase()}!`);
-        if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `🔔 ĐƠN MỚI!\nKhách: ${order.customer}\nSĐT: ${order.phone}\nMón: ${order.items}`);
-        userStates[zaloId] = null; delete pendingOrders[zaloId];
+        await sessionRef.delete();
+        bot.sendMessage(zaloId, `✅ Xong! Đơn #${docRef.id.slice(-6).toUpperCase()} đang được làm.`);
+        if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `🔔 ĐƠN MỚI: ${order.items}\nSĐT: ${order.phone}\nLưu ý: ${order.note}`);
         return;
     }
 });
@@ -177,7 +200,7 @@ db.collection('orders').onSnapshot((snapshot) => {
         const order = change.doc.data();
         if (change.type === "modified" && order.zaloId) {
             const statusMap = { 'PREPARING': '👨‍🍳 Đang chuẩn bị', 'SHIPPING': '🚚 Đang giao', 'COMPLETED': '✅ Đã xong', 'CANCELLED': '❌ Đã hủy' };
-            bot.sendMessage(order.zaloId, `🔔 CẬP NHẬT: Đơn #${change.doc.id.slice(-6).toUpperCase()} đã chuyển sang [${statusMap[order.status] || order.status}]`);
+            bot.sendMessage(order.zaloId, `🔔 Đơn #${change.doc.id.slice(-6).toUpperCase()} đã chuyển sang [${statusMap[order.status] || order.status}]`);
         }
     });
 });
@@ -187,6 +210,7 @@ app.post('/webhook', (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
 });
+
 app.listen(process.env.PORT || 3000, () => {
     if (process.env.WEBHOOK_URL) bot.setWebHook(process.env.WEBHOOK_URL, { secret_token: process.env.WEBHOOK_SECRET_TOKEN });
 });
