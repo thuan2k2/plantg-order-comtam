@@ -19,6 +19,9 @@ try {
 }
 const db = admin.firestore();
 
+// Thời điểm server bắt đầu chạy để tránh gửi lại tin nhắn cũ
+const serverStartTime = Date.now();
+
 // 2. CẤU HÌNH THỰC ĐƠN
 const MENU = {
     PRIMARY: { 
@@ -35,13 +38,9 @@ const MENU = {
     ]
 };
 
-const CANCEL_KEYWORDS = ['hủy', 'huy', 'hủy đơn', 'huy don', 'không đặt nữa'];
 const SUPPORT_KEYWORDS = ['hỗ trợ', 'ho tro', 'cần hỗ trợ', 'nhân viên', 'tư vấn', 'shop ơi', 'ad ơi'];
-const GREETING_KEYWORDS = ['nay có bán không ạ','đặt cơm ạ','shop ơi','hello','hi','xin chào', 'chào', 'bắt đầu', 'alo shop', 'alo sốp', 'alo'];
-const RESET_KEYWORDS = ['reset', 'xóa hết', 'làm lại'];
-const CHANGE_INFO_KEYWORDS = ['thay đổi thông tin', 'đổi địa chỉ', 'đổi sđt', 'cập nhật thông tin'];
 const MENU_KEYWORDS = ['menu', 'thực đơn', 'món ăn', 'xin menu', 'có món gì'];
-const PAYMENT_BANK_KEYWORDS = ['chuyển khoản', 'ck', 'banking', 'qr'];
+const GREETING_KEYWORDS = ['hello', 'hi', 'xin chào', 'chào', 'bắt đầu', 'alo', 'đặt cơm'];
 
 const app = express();
 app.use(express.json());
@@ -52,9 +51,11 @@ const ADMIN_ZALO_ID = String(process.env.ZALO_BOT_ADMIN_ID || 'a65dc2194697d3724
  * --- HÀM TRỢ GIÚP ---
  */
 const getPhoneByZaloId = async (zaloId) => {
-    const userQuery = await db.collection('users').where("zaloId", "==", zaloId).limit(1).get();
-    if (!userQuery.empty) return userQuery.docs[0].id;
-    return null;
+    try {
+        const userQuery = await db.collection('users').where("zaloId", "==", zaloId).limit(1).get();
+        if (!userQuery.empty) return userQuery.docs[0].id;
+        return null;
+    } catch (e) { return null; }
 };
 
 const advancedParse = (text) => {
@@ -83,25 +84,27 @@ const advancedParse = (text) => {
     return { items: items.join(', '), total, note: text };
 };
 
-const formatConfirmMsg = (order) => {
-    return `📝 XÁC NHẬN THÔNG TIN\n--------------------------\n👤 Khách hàng: ${order.customer}\n📍 Địa chỉ: ${order.address}\n📞 SĐT nhận hàng: ${order.phone}\n🍱 Đơn hàng: ${order.items || 'Chưa chọn món'}\n📝 Ghi chú: ${order.note}\n💰 Tổng cộng: ${order.total.toLocaleString()}đ\n--------------------------\n👉 Nhắn "Ok" để chốt đơn.`;
-};
-
 /**
- * --- XỬ LÝ TIN NHẮN TỪ KHÁCH (ZALO -> WEB ADMIN) ---
+ * --- XỬ LÝ TIN NHẮN TỪ KHÁCH ---
  */
 bot.on('message', async (msg) => {
     const zaloId = String(msg.chat.id);
     const text = msg.text?.trim();
     const name = msg.from?.display_name || "bạn";
 
-    if (!text || text.startsWith('/') || zaloId === ADMIN_ZALO_ID) return;
+    if (!text || text.startsWith('/')) return;
+
+    // NẾU LÀ ADMIN NHẮN, CHỈ LOG VÀ DỪNG (Để tránh bot tự trả lời admin gây vòng lặp)
+    if (zaloId === ADMIN_ZALO_ID) {
+        console.log(`👤 Admin [${name}] nhắn: ${text}`);
+        return; 
+    }
 
     try {
         const userPhone = await getPhoneByZaloId(zaloId);
         const chatIdentifier = userPhone || zaloId;
 
-        // CHỈ LƯU NỘI DUNG CHAT VÀO support_chats (Không lưu SĐT/Địa chỉ tại đây)
+        // Lưu vào support_chats để Admin thấy trên Web
         await db.collection('support_chats').doc(chatIdentifier).collection('messages').add({
             sender: 'USER',
             message: text,
@@ -113,75 +116,73 @@ bot.on('message', async (msg) => {
         let session = sessionSnap.exists ? sessionSnap.data() : { state: null, pendingOrder: null, tempPhone: null };
         const lowerText = text.toLowerCase();
 
-        // LUỒNG ĐĂNG KÝ BẮT BUỘC (SĐT & Địa chỉ lưu tại collection 'users')
+        // 1. KIỂM TRA ĐĂNG KÝ BẮT BUỘC
         if (!userPhone && !['WAITING_REG_PHONE', 'WAITING_REG_ADDRESS'].includes(session.state)) {
             session.state = 'WAITING_REG_PHONE';
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, `Chào mừng ${name}! 👋\nVui lòng nhập Số điện thoại để Shop hỗ trợ bạn nhé.`);
+            return bot.sendMessage(zaloId, `Chào mừng ${name}! 👋\nVui lòng nhập Số điện thoại để Shop hỗ trợ bạn đặt cơm nhé.`);
         }
 
+        // 2. XỬ LÝ LUỒNG ĐĂNG KÝ
         if (session.state === 'WAITING_REG_PHONE') {
             const phone = text.replace(/\D/g, '');
-            if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
+            if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ. Vui lòng nhập lại.");
             const userSnap = await db.collection('users').doc(phone).get();
             if (userSnap.exists) {
                 await db.collection('users').doc(phone).update({ zaloId });
                 session.state = null;
                 await sessionRef.set(session);
-                return bot.sendMessage(zaloId, `✅ Đã nhận diện tài khoản ${phone}!`);
+                return bot.sendMessage(zaloId, `✅ Đã nhận diện tài khoản ${phone}! Chào mừng bạn quay lại.`);
             } else {
                 session.tempPhone = phone;
                 session.state = 'WAITING_REG_ADDRESS';
                 await sessionRef.set(session);
-                return bot.sendMessage(zaloId, `Cho quán xin ĐỊA CHỈ GIAO HÀNG để tạo tài khoản mới nhé! (Pass: 12345)`);
+                return bot.sendMessage(zaloId, `Cho quán xin ĐỊA CHỈ GIAO HÀNG để tạo tài khoản cho bạn nhé!`);
             }
         }
 
         if (session.state === 'WAITING_REG_ADDRESS') {
             const newPhone = session.tempPhone;
-            // LƯU THÔNG TIN CÁ NHÂN VÀO COLLECTION 'users'
             await db.collection('users').doc(newPhone).set({
-                fullName: name,
-                address: text,
-                zaloId: zaloId,
-                username: newPhone,
-                passcode: "12345",
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
+                fullName: name, address: text, zaloId: zaloId, username: newPhone, passcode: "12345", createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
             session.state = null;
             session.tempPhone = null;
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, `🎉 Đăng ký thành công tài khoản ${newPhone}!`);
+            return bot.sendMessage(zaloId, `🎉 Đăng ký thành công tài khoản ${newPhone}! Bạn có thể đặt cơm ngay.`);
         }
 
-        // LỆNH ĐIỀU HƯỚNG
-        if (RESET_KEYWORDS.includes(lowerText)) { await sessionRef.delete(); return bot.sendMessage(zaloId, "🔄 Đã reset phiên."); }
-        if (MENU_KEYWORDS.some(k => lowerText.includes(k))) return bot.sendMessage(zaloId, `🍱 THỰC ĐƠN: 1. Sườn trứng: 35k...`);
-        if (PAYMENT_BANK_KEYWORDS.some(k => lowerText.includes(k))) return bot.sendMessage(zaloId, "💳 CK: TPBank 00006464313 - PHẠM ĐỨC THUẬN");
+        // 3. XỬ LÝ LỆNH CHUNG
+        if (MENU_KEYWORDS.some(k => lowerText.includes(k))) {
+            return bot.sendMessage(zaloId, `🍱 THỰC ĐƠN: 1. Sườn trứng: 35k. Nhắn món bạn muốn đặt nhé!`);
+        }
 
-        // NHẬN DIỆN ĐƠN HÀNG (Sử dụng dữ liệu từ collection 'users')
+        if (SUPPORT_KEYWORDS.some(k => lowerText.includes(k))) {
+            return bot.sendMessage(zaloId, "🤖 Shop đã nhận được yêu cầu. Nhân viên sẽ hỗ trợ bạn ngay!");
+        }
+
+        // 4. NHẬN DIỆN ĐƠN HÀNG
         const detected = advancedParse(text);
         if (detected.items) {
             const userData = (await db.collection('users').doc(userPhone).get()).data();
-            session.pendingOrder = { 
-                customer: name, items: detected.items, total: detected.total, note: detected.note, 
-                zaloId, phone: userPhone, address: userData.address 
-            };
+            session.pendingOrder = { customer: name, items: detected.items, total: detected.total, note: text, zaloId, phone: userPhone, address: userData.address };
             session.state = 'WAITING_CONFIRM';
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, formatConfirmMsg(session.pendingOrder));
+            return bot.sendMessage(zaloId, `📝 XÁC NHẬN: ${detected.items}\n📍 Giao: ${userData.address}\n👉 Nhắn "Ok" để chốt.`);
         }
 
         if (lowerText === 'ok' && session.state === 'WAITING_CONFIRM') {
             const order = session.pendingOrder;
             await db.collection('orders').add({ ...order, status: 'PENDING', total: order.total.toLocaleString() + 'đ', createdAt: admin.firestore.FieldValue.serverTimestamp() });
             await sessionRef.delete();
-            bot.sendMessage(zaloId, `✅ Đã chốt đơn!`);
-            if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `🔔 ĐƠN MỚI: ${userPhone} - ${order.items}`);
-            return;
+            return bot.sendMessage(zaloId, `✅ Đã chốt đơn!`);
         }
 
-    } catch (error) { console.error("❌ Lỗi:", error); }
+        if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
+            return bot.sendMessage(zaloId, `Chào ${name}! Shop cơm PlantG nghe ạ. Nhắn "Menu" để xem món nhé.`);
+        }
+
+    } catch (error) { console.error("❌ Lỗi xử lý:", error); }
 });
 
 /**
@@ -189,42 +190,32 @@ bot.on('message', async (msg) => {
  */
 db.collectionGroup('messages').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach(async (change) => {
-        // Chỉ xử lý tin nhắn MỚI do ADMIN gửi từ Web
-        if (change.type === 'added' && change.doc.data().sender === 'ADMIN') {
+        // Chỉ xử lý tin nhắn MỚI (added) gửi bởi ADMIN và phải có nội dung
+        if (change.type === 'added') {
             const msgData = change.doc.data();
-            // Lấy ID khách (SĐT hoặc ZaloID) từ đường dẫn document
-            const pathSegments = change.doc.ref.path.split('/');
-            const clientIdentifier = pathSegments[1]; // support_chats/{clientIdentifier}/messages/...
+            
+            // KIỂM TRA: Phải là Admin gửi && Tin nhắn mới tạo sau khi server khởi động && Có nội dung message
+            const isNewMessage = msgData.timestamp && msgData.timestamp.toMillis() > serverStartTime;
+            
+            if (msgData.sender === 'ADMIN' && isNewMessage) {
+                const messageContent = msgData.message || msgData.text; // Đề phòng web admin dùng trường 'text'
+                
+                if (!messageContent) return; // Không có nội dung thì bỏ qua
 
-            try {
-                let targetZaloId = null;
-                // 1. Kiểm tra xem clientIdentifier có phải là SĐT trong collection users không
-                const userSnap = await db.collection('users').doc(clientIdentifier).get();
-                if (userSnap.exists) {
-                    targetZaloId = userSnap.data().zaloId;
-                } else {
-                    // 2. Nếu không phải SĐT, có thể nó là ID ẩn danh của Zalo
-                    targetZaloId = clientIdentifier;
-                }
+                const pathSegments = change.doc.ref.path.split('/');
+                const clientIdentifier = pathSegments[1]; 
 
-                if (targetZaloId) {
-                    await bot.sendMessage(targetZaloId, `💬 Shop phản hồi: ${msgData.message}`);
-                    console.log(`✅ Đã chuyển tin nhắn Admin tới khách: ${clientIdentifier}`);
-                }
-            } catch (err) { console.error("❌ Lỗi gửi tin nhắn Admin:", err.message); }
-        }
-    });
-});
+                try {
+                    let targetZaloId = null;
+                    const userSnap = await db.collection('users').doc(clientIdentifier).get();
+                    targetZaloId = userSnap.exists ? userSnap.data().zaloId : clientIdentifier;
 
-/**
- * --- THÔNG BÁO TRẠNG THÁI ĐƠN HÀNG ---
- */
-db.collection('orders').onSnapshot((snapshot) => {
-    snapshot.docChanges().forEach(async (change) => {
-        const order = change.doc.data();
-        if (change.type === "modified" && order.zaloId) {
-            const statusMap = { 'PREPARING': '👨‍🍳 Đang chuẩn bị', 'SHIPPING': '🚚 Đang giao', 'COMPLETED': '✅ Đã xong', 'CANCELLED': '❌ Đã hủy' };
-            bot.sendMessage(order.zaloId, `🔔 Cập nhật: [${statusMap[order.status] || order.status}]`);
+                    if (targetZaloId) {
+                        await bot.sendMessage(targetZaloId, `💬 Shop phản hồi: ${messageContent}`);
+                        console.log(`✅ Đã gửi phản hồi tới khách: ${clientIdentifier}`);
+                    }
+                } catch (err) { console.error("❌ Lỗi gửi tin Admin:", err.message); }
+            }
         }
     });
 });
