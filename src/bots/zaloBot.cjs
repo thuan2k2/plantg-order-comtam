@@ -68,8 +68,8 @@ const advancedParse = (text) => {
     if (qty === 0 && (lowerText.includes('phần') || lowerText.includes('hộp') || lowerText.includes('cơm'))) qty = 1;
 
     if (qty > 0) {
-        // Ưu tiên sườn trứng nếu có từ khóa "trứng" hoặc "đầy đủ"
-        const isEgg = lowerText.includes('trứng') || lowerText.includes('đầy đủ');
+        // Logic phân biệt: Nếu có "trứng", "st" hoặc "đầy đủ" thì là Sườn trứng
+        const isEgg = lowerText.includes('trứng') || lowerText.includes('đầy đủ') || lowerText.includes('st');
         const dish = isEgg ? MENU.MAIN[0] : MENU.MAIN[1];
         
         items.push(`${qty}x ${dish.name}`);
@@ -99,17 +99,14 @@ bot.on('message', async (msg) => {
 
     if (!text || text.startsWith('/')) return;
 
-    // Bỏ qua cơ chế Reply cũ trên Zalo - Nếu là Admin thì chỉ ghi nhận
-    if (zaloId === ADMIN_ZALO_ID) {
-        console.log(`👤 Admin Zalo nhắn: ${text}`);
-        return;
-    }
+    // Không xử lý reply bằng quote trên Zalo
+    if (zaloId === ADMIN_ZALO_ID) return;
 
     try {
         const userPhone = await getPhoneByZaloId(zaloId);
         const chatIdentifier = userPhone || zaloId;
 
-        // 1. Đồng bộ Fields lên support_chats (Để Web Admin nhận diện)
+        // 1. Đồng bộ Fields lên support_chats (Mess Web Admin)
         await db.collection('support_chats').doc(chatIdentifier).set({
             lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
             orderId: null,
@@ -120,17 +117,17 @@ bot.on('message', async (msg) => {
             userPhone: userPhone || ""
         }, { merge: true });
 
-        // 2. Lưu tin nhắn vào sub-collection
+        // 2. Lưu tin nhắn vào sub-collection (Trường 'message')
         await db.collection('support_chats').doc(chatIdentifier).collection('messages').add({
             sender: 'USER',
             message: text,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // 3. Thông báo cho Admin qua Zalo (Ghi nhận thông tin, không Reply tại đây)
+        // 3. Thông báo cho Admin (Sửa lỗi undefined)
         if (ADMIN_ZALO_ID) {
-            const adminMsg = `💬 TIN NHẮN MỚI\n━━━━━━━━━━━━━━━━\n👤 Khách: ${name}\n📞 SĐT: (${userPhone || 'Chưa có'})\n🆔: ${zaloId}\n💌 Nội dung:\n「 ${text} 」\n━━━━━━━━━━━━━━━━`;
-            await bot.sendMessage(ADMIN_ZALO_ID, adminMsg);
+            const adminNotify = `💬 TIN NHẮN MỚI\n━━━━━━━━━━━━━━━━\n👤 Khách: ${name}\n📞 SĐT: (${userPhone || 'Chưa có'})\n🆔: ${zaloId}\n💌 Nội dung:\n「 ${text} 」\n━━━━━━━━━━━━━━━━`;
+            await bot.sendMessage(ADMIN_ZALO_ID, adminNotify);
         }
 
         const sessionRef = db.collection('bot_sessions').doc(zaloId);
@@ -142,7 +139,7 @@ bot.on('message', async (msg) => {
         if (!userPhone && !['WAITING_REG_PHONE', 'WAITING_REG_ADDRESS'].includes(session.state)) {
             session.state = 'WAITING_REG_PHONE';
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, `Chào mừng ${name}! 👋\nVui lòng nhập Số điện thoại để Shop hỗ trợ nhé.`);
+            return bot.sendMessage(zaloId, `Chào mừng ${name}! 👋\nVui lòng nhập Số điện thoại để Shop hỗ trợ bạn nhé.`);
         }
 
         if (session.state === 'WAITING_REG_PHONE') {
@@ -173,7 +170,7 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, `🎉 Đăng ký thành công tài khoản ${newPhone}!`);
         }
 
-        // Xử lý món ăn và chốt đơn
+        // Xử lý đơn hàng
         const detected = advancedParse(text);
         if (detected.items) {
             const userData = (await db.collection('users').doc(userPhone).get()).data();
@@ -187,7 +184,11 @@ bot.on('message', async (msg) => {
             const order = session.pendingOrder;
             await db.collection('orders').add({ ...order, status: 'PENDING', total: order.total.toLocaleString() + 'đ', createdAt: admin.firestore.FieldValue.serverTimestamp() });
             await sessionRef.delete();
-            return bot.sendMessage(zaloId, `✅ Đã chốt đơn! Cảm ơn bạn.`);
+            return bot.sendMessage(zaloId, `✅ Đã chốt đơn thành công!`);
+        }
+
+        if (MENU_KEYWORDS.some(k => lowerText.includes(k))) {
+            return bot.sendMessage(zaloId, "🍱 Nhắn món bạn muốn đặt ngay nhé!");
         }
 
     } catch (error) { console.error("❌ Lỗi:", error); }
