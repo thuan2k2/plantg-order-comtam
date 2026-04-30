@@ -22,7 +22,7 @@ const db = admin.firestore();
 // 2. CẤU HÌNH THỰC ĐƠN & TỪ KHÓA
 const MENU = {
     PRIMARY: { 
-        keywords: ['sườn trứng', 'suon trung', 'đầy đủ', '30k', '35k', 'phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm', '1p', '2p', '3p', '4p', '5p'], 
+        keywords: ['sườn trứng', 'suon trung', 'đầy đủ', '30k', '35k', 'phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm'], 
         name: 'Cơm tấm sườn trứng', 
         price: 35000 
     },
@@ -103,27 +103,40 @@ bot.on('message', async (msg) => {
 
     if (!text || text.startsWith('/')) return;
 
-    // A. XỬ LÝ ADMIN REPLY (Fix cơ chế nhắn ngược lại khách)
+    // A. XỬ LÝ ADMIN REPLY (Fix Regex và cơ chế gửi phản hồi)
     if (zaloId === ADMIN_ZALO_ID && msg.quote) {
         const quotedMsg = msg.quote.text;
-        // Cải tiến Regex để bắt ZaloID một cách chính xác nhất
-        const targetIdMatch = quotedMsg.match(/🆔:\s*([a-zA-Z0-9_-]+)/);
+        // Cải tiến Regex bắt ID khách từ tin nhắn báo đơn/hỗ trợ của Bot
+        const targetIdMatch = quotedMsg.match(/🆔:\s*([a-zA-Z0-9.\-_]+)/);
         
         if (targetIdMatch) {
             const targetZaloId = targetIdMatch[1];
             await bot.sendMessage(targetZaloId, `💬 Phản hồi từ Shop: ${text}`);
 
+            // Đồng bộ Admin Chat lên Firebase
             await db.collection('support_chats').add({
                 zaloId: targetZaloId,
                 sender: 'ADMIN',
                 message: text,
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
             });
+            console.log(`✅ Admin đã gửi phản hồi cho khách: ${targetZaloId}`);
             return;
         }
     }
 
     try {
+        // ĐỒNG BỘ TIN NHẮN KHÁCH LÊN WEB ADMIN (SUPPORT CHATS)
+        // Đây là bước quan trọng để tin nhắn khách luôn hiện trên Web Admin
+        await db.collection('support_chats').add({
+            zaloId,
+            sender: 'USER',
+            message: text,
+            name: name,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Lưu log học tập
         await db.collection('learning_logs').add({ zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp() });
 
         const sessionRef = db.collection('bot_sessions').doc(zaloId);
@@ -135,7 +148,7 @@ bot.on('message', async (msg) => {
         // B. LỆNH ĐIỀU HƯỚNG (RESET, MENU, THAY ĐỔI)
         if (RESET_KEYWORDS.includes(lowerText)) {
             await sessionRef.delete();
-            return bot.sendMessage(zaloId, "🔄 Đã xóa thông tin phiên đặt hàng. Bạn có thể bắt đầu lại bằng cách nhắn món muốn đặt.");
+            return bot.sendMessage(zaloId, "🔄 Đã xóa thông tin phiên đặt hàng. Bạn có thể bắt đầu lại ngay bây giờ.");
         }
 
         if (MENU_KEYWORDS.some(k => lowerText.includes(k))) {
@@ -145,34 +158,34 @@ bot.on('message', async (msg) => {
                             `2. Cơm thêm: 5.000đ\n` +
                             `3. Sườn thêm: 10.000đ\n` +
                             `4. Trứng thêm: 5.000đ\n` +
-                            `5. Canh/Nước mắm thêm: Miễn phí\n` +
                             `--------------------------\n` +
-                            `👉 Shop nhận đơn từ 1 phần trở lên.`;
+                            `👉 Nhắn món bạn muốn đặt ngay nhé!`;
             return bot.sendMessage(zaloId, menuMsg);
         }
 
         if (CHANGE_INFO_KEYWORDS.some(k => lowerText.includes(k))) {
             session.state = 'WAITING_PHONE';
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, "📝 Vui lòng nhập Số điện thoại mới để quán cập nhật nhé.");
+            return bot.sendMessage(zaloId, "📝 Vui lòng nhập Số điện thoại mới để quán cập nhật thông tin giao hàng.");
         }
 
-        // C. THANH TOÁN (BANKING QR / TIỀN MẶT)
+        // C. THANH TOÁN (TÁCH THÀNH 2 TIN NHẮN RIÊNG BIỆT)
         if (PAYMENT_BANK_KEYWORDS.some(k => lowerText.includes(k))) {
-            bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua mã QR này và nhắn 'Ok' sau khi xong nhé:");
-            // Gửi ảnh QR (Thay URL bằng link QR VietQR của quán bạn)
-            return bot.sendImage(zaloId, "https://img.vietqr.io/image/mbbank-123456789-compact2.jpg?amount=0&addInfo=Thanh%20toan%20Com%20Tam");
+            // Tin 1: Nội dung chữ
+            await bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua mã QR này và nhắn 'Ok' sau khi xong nhé:");
+            // Tin 2: Nội dung ảnh
+            return bot.sendImage(zaloId, "https://img.vietqr.io/image/TPB-00006464313-qr_only.png");
         }
 
         if (PAYMENT_CASH_KEYWORDS.some(k => lowerText.includes(k))) {
-            return bot.sendMessage(zaloId, "💵 Đã ghi nhận hình thức thanh toán tiền mặt (COD).");
+            return bot.sendMessage(zaloId, "💵 Đã ghi nhận hình thức thanh toán Tiền mặt khi nhận hàng (COD).");
         }
 
         // D. HỖ TRỢ TRỰC TIẾP
         if (SUPPORT_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             bot.sendMessage(zaloId, "🤖 Tôi không hiểu ý của bạn, tôi sẽ chuyển cuộc hội thoại đến Shop. Vui lòng chờ trong giây lát!");
-            if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `⚠️ CẦN HỖ TRỢ\n🆔: ${zaloId}\n👤: ${name}\n💬: ${text}`);
+            if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `⚠️ KHÁCH CẦN HỖ TRỢ TRỰC TIẾP\n🆔: ${zaloId}\n👤: ${name}\n💬: ${text}`);
             return;
         }
 
@@ -195,7 +208,7 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // F. LUỒNG NHẬP LIỆU
+        // F. LUỒNG NHẬP LIỆU STATE MACHINE
         if (session.state === 'WAITING_PHONE') {
             const phone = text.replace(/\D/g, '');
             if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
@@ -209,7 +222,7 @@ bot.on('message', async (msg) => {
             }
             session.state = 'WAITING_ADDRESS';
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, "Dạ cho quán xin địa chỉ giao hàng cụ thể nhé.");
+            return bot.sendMessage(zaloId, "Dạ khách mới, cho quán xin địa chỉ giao hàng cụ thể nhé.");
         }
 
         if (session.state === 'WAITING_ADDRESS') {
@@ -240,7 +253,7 @@ bot.on('message', async (msg) => {
 
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
-            return bot.sendMessage(zaloId, `Xin chào ${name}. Cảm ơn bạn đã liên hệ Shop PlantG. Nhắn "Menu" để xem các món cơm hôm nay nhé!`);
+            return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món hôm nay nhé.`);
         }
 
     } catch (error) { console.error("❌ Lỗi:", error); }
