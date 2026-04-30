@@ -19,20 +19,25 @@ try {
 }
 const db = admin.firestore();
 
-// 2. CẤU HÌNH THỰC ĐƠN
+// 2. CẤU HÌNH THỰC ĐƠN & TỪ KHÓA
 const MENU = {
-    PRIMARY: { keywords: ['sườn trứng', 'suon trung', 'đầy đủ', '30k', '35k', 'phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', '1p', '2p', '3p', '4p', '5p'], name: 'Cơm tấm sườn trứng', price: 35000 },
+    PRIMARY: { 
+        keywords: ['sườn trứng', 'suon trung', 'đầy đủ', '30k', '35k', 'phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm'], 
+        name: 'Cơm tấm sườn trứng', 
+        price: 35000 
+    },
     SIDE_DISHES: [
         { keywords: ['cơm thêm', 'thêm cơm', 'cơm k sườn'], name: 'Cơm thêm', price: 5000 },
         { keywords: ['sườn thêm', 'miếng sườn', 'thêm sườn'], name: 'Sườn thêm', price: 10000 },
-        { keywords: ['trứng thêm', 'thêm trứng', '2 trứng', 'lòng đào'], name: 'Trứng thêm', price: 5000 },
+        { keywords: ['trứng thêm', 'thêm trứng', 'trứng', 'lòng đào'], name: 'Trứng thêm', price: 5000 },
         { keywords: ['canh thêm'], name: 'Canh thêm', price: 0 },
-        { keywords: ['nước mắm thêm', 'nc mắm', 'bịch nước mắm'], name: 'Nước mắm thêm', price: 0 }
+        { keywords: ['nước mắm thêm', 'nc mắm', 'bịch nước mắm', 'mắm'], name: 'Nước mắm thêm', price: 0 }
     ]
 };
 
 const CANCEL_KEYWORDS = ['hủy', 'huy', 'hủy đơn', 'huy don', 'không đặt nữa'];
-const GREETING_KEYWORDS = ['hi', 'hello', 'xin chào', 'chào', 'bắt đầu', 'alo', 'ê'];
+const SUPPORT_KEYWORDS = ['hỗ trợ', 'ho tro', 'cần hỗ trợ', 'nhân viên', 'tư vấn', 'shop ơi', 'ad ơi', 'chủ quán'];
+const GREETING_KEYWORDS = ['hi', 'hello', 'xin chào', 'chào', 'bắt đầu','alo shop','Alo sốp',];
 
 const app = express();
 app.use(express.json());
@@ -40,23 +45,25 @@ const bot = new ZaloBot(process.env.BOT_TOKEN, { polling: false });
 const ADMIN_ZALO_ID = process.env.ZALO_BOT_ADMIN_ID;
 
 /**
- * --- HÀM NHẬN DIỆN THÔNG MINH (ADVANCED PARSER) ---
+ * --- HÀM PHÂN TÍCH LOGIC CHUYÊN SÂU ---
  */
 const advancedParse = (text) => {
     let items = [];
     let total = 0;
+    let unrecognizedParts = [];
     const lowerText = text.toLowerCase();
 
+    // 1. Nhận diện món chính (Mặc định Sườn Trứng)
     const primaryQtyMatch = lowerText.match(/(\d+)\s*(p|phần|hộp|cơm|suất)/);
     let primaryQty = primaryQtyMatch ? parseInt(primaryQtyMatch[1]) : 0;
 
-    const defaultKeywords = ['phần cơm', 'hộp cơm', 'đặt cơm', 'phần', 'hộp', 'suất', '1p'];
-    if (primaryQty === 0 && defaultKeywords.some(k => lowerText.includes(k))) {
+    if (primaryQty === 0 && (lowerText.includes('phần') || lowerText.includes('hộp') || lowerText.includes('cơm'))) {
         primaryQty = 1;
     }
 
     if (primaryQty > 0) {
         let itemName = MENU.PRIMARY.name;
+        // Nếu chỉ nói "cơm sườn" và tuyệt đối không có chữ "trứng"
         if (lowerText.includes('cơm sườn') && !lowerText.includes('trứng')) {
             itemName = 'Cơm tấm sườn';
         }
@@ -64,24 +71,32 @@ const advancedParse = (text) => {
         total += MENU.PRIMARY.price * primaryQty;
     }
 
+    // 2. Nhận diện món thêm và lọc bỏ để lấy ghi chú
+    let remainingText = lowerText;
+    
+    // Xóa các cụm từ món chính khỏi text để tìm ghi chú
+    MENU.PRIMARY.keywords.forEach(k => { remainingText = remainingText.replace(k, ''); });
+
     MENU.SIDE_DISHES.forEach(side => {
         if (side.keywords.some(k => lowerText.includes(k))) {
             const qtyMatch = lowerText.match(new RegExp(`(\\d+)\\s*(${side.keywords.join('|')})`));
             const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
             items.push(`${qty}x ${side.name}`);
             total += side.price * qty;
+            
+            // Xóa từ khóa món thêm khỏi text để lộ ra ghi chú
+            side.keywords.forEach(k => { remainingText = remainingText.replace(k, ''); });
         }
     });
 
-    const phoneMatch = lowerText.match(/(0[3|5|7|8|9][0-9]{8})/);
-    const addressMatch = lowerText.match(/(đ\/c|địa chỉ|tới|đến|ở)\s+([^,.\n]+)/);
+    // Lọc bỏ các ký tự thừa, số lượng đã nhận diện để lấy ghi chú tinh khiết
+    let cleanNote = remainingText.replace(/\d+/g, '').replace(/x/g, '').replace(/[,.+]/g, '').trim();
 
     return { 
         items: items.join(', '), 
         total, 
-        note: text, 
-        detectedPhone: phoneMatch ? phoneMatch[1] : null,
-        detectedAddress: addressMatch ? addressMatch[2]?.trim() : null
+        note: cleanNote || "", // Ghi chú là những gì bot không hiểu
+        rawText: text 
     };
 };
 
@@ -95,10 +110,8 @@ bot.on('message', async (msg) => {
 
     if (!text || text.startsWith('/')) return;
 
-    console.log(`📩 Nhận tin nhắn từ [${name}]: ${text}`);
-
     try {
-        // 1. LƯU LOG ĐỂ HỌC TẬP
+        // 1. LƯU LOG ĐỂ HỌC TẬP (Nguồn dữ liệu quan trọng cho tương lai)
         await db.collection('learning_logs').add({
             zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
@@ -108,9 +121,16 @@ bot.on('message', async (msg) => {
         const sessionSnap = await sessionRef.get();
         let session = sessionSnap.exists ? sessionSnap.data() : { state: null, pendingOrder: null };
 
-        // A. XỬ LÝ LỆNH HỦY
+        // A. NHẬN DIỆN YÊU CẦU HỖ TRỢ (Chuyển qua Shop)
+        if (SUPPORT_KEYWORDS.some(k => text.toLowerCase().includes(k))) {
+            await sessionRef.delete();
+            bot.sendMessage(zaloId, "🤖 Tôi không hiểu ý của bạn, tôi sẽ chuyển cuộc hội thoại đến Shop. Vui lòng chờ trong giây lát!");
+            if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `⚠️ KHÁCH CẦN HỖ TRỢ TRỰC TIẾP:\n👤: ${name}\n💬: ${text}`);
+            return;
+        }
+
+        // B. XỬ LÝ LỆNH HỦY
         if (CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k))) {
-            console.log("👉 Nhánh: Hủy đơn");
             await sessionRef.delete();
             const orderQuery = await db.collection('orders').where("zaloId", "==", zaloId).orderBy("createdAt", "desc").limit(1).get();
             if (!orderQuery.empty) {
@@ -123,40 +143,28 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "✅ Đã xóa trạng thái đặt hàng hiện tại.");
         }
 
-        // B. NHẬN DIỆN ĐƠN HÀNG MỚI
+        // C. NHẬN DIỆN ĐƠN HÀNG MỚI
         const detected = advancedParse(text);
         if (detected.items) {
-            console.log("👉 Nhánh: Nhận diện món ăn");
             session.pendingOrder = { customer: name, items: detected.items, total: detected.total, note: detected.note, zaloId };
             
-            if (detected.detectedPhone) session.pendingOrder.phone = detected.detectedPhone;
-            if (detected.detectedAddress) session.pendingOrder.address = detected.detectedAddress;
-
             const userQuery = await db.collection('users').where("zaloId", "==", zaloId).limit(1).get();
             if (!userQuery.empty) {
                 const userData = userQuery.docs[0].data();
-                session.pendingOrder.phone = session.pendingOrder.phone || userQuery.docs[0].id;
-                session.pendingOrder.address = session.pendingOrder.address || userData.address;
-            }
-
-            if (session.pendingOrder.phone && session.pendingOrder.address) {
+                session.pendingOrder.phone = userQuery.docs[0].id;
+                session.pendingOrder.address = userData.address;
                 session.state = 'WAITING_CONFIRM';
                 await sessionRef.set(session);
-                return bot.sendMessage(zaloId, `🤖 Nhận đơn: ${session.pendingOrder.items}\n📍 Giao: ${session.pendingOrder.address}\n\nNhắn "Ok" để chốt đơn nhé!`);
-            } else if (!session.pendingOrder.phone) {
+                return bot.sendMessage(zaloId, `🤖 Nhận đơn: ${session.pendingOrder.items}\n🏠 Giao: ${userData.address}${session.pendingOrder.note ? '\n📝 Ghi chú: ' + session.pendingOrder.note : ''}\n\nNhắn "Ok" để chốt đơn.`);
+            } else {
                 session.state = 'WAITING_PHONE';
                 await sessionRef.set(session);
-                return bot.sendMessage(zaloId, `🤖 Shop nhận đơn: ${session.pendingOrder.items}. Cho quán xin SĐT nhận hàng nhé!`);
-            } else {
-                session.state = 'WAITING_ADDRESS';
-                await sessionRef.set(session);
-                return bot.sendMessage(zaloId, `🤖 Cho quán xin địa chỉ giao hàng cụ thể nhé.`);
+                return bot.sendMessage(zaloId, `🤖 Shop nhận đơn: ${session.pendingOrder.items}${session.pendingOrder.note ? '\n📝 Ghi chú: ' + session.pendingOrder.note : ''}\n\nCho quán xin SĐT nhận hàng nhé!`);
             }
         }
 
-        // C. XỬ LÝ THEO TRẠNG THÁI
+        // D. XỬ LÝ THEO TRẠNG THÁI
         if (session.state === 'WAITING_PHONE') {
-            console.log("👉 Nhánh: Đang đợi SĐT");
             const phone = text.replace(/\D/g, '');
             if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
             session.pendingOrder.phone = phone;
@@ -173,38 +181,33 @@ bot.on('message', async (msg) => {
         }
 
         if (session.state === 'WAITING_ADDRESS') {
-            console.log("👉 Nhánh: Đang đợi Địa chỉ");
             session.pendingOrder.address = text;
             session.state = 'WAITING_CONFIRM';
             await db.collection('users').doc(session.pendingOrder.phone).set({
                 fullName: name, address: text, zaloId, username: session.pendingOrder.phone
             }, { merge: true });
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, `Đã ghi nhận địa chỉ! Nhắn "Ok" để chốt đơn: ${session.pendingOrder.items}`);
+            return bot.sendMessage(zaloId, `Đã ghi nhận! Nhắn "Ok" để xác nhận đơn: ${session.pendingOrder.items}`);
         }
 
         if (text.toLowerCase() === 'ok' && session.state === 'WAITING_CONFIRM') {
-            console.log("👉 Nhánh: Xác nhận OK");
             const order = session.pendingOrder;
             const docRef = await db.collection('orders').add({
                 ...order, status: 'PENDING', total: order.total.toLocaleString() + 'đ', createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
             await sessionRef.delete();
             bot.sendMessage(zaloId, `✅ Xong! Đơn #${docRef.id.slice(-6).toUpperCase()} đang được làm.`);
-            if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `🔔 ĐƠN MỚI: ${order.items}\n📞 SĐT: ${order.phone}`);
+            if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `🔔 ĐƠN MỚI: ${order.items}\n📞 SĐT: ${order.phone}\n📝 Ghi chú: ${order.note}`);
             return;
         }
 
-        // D. XỬ LÝ CHÀO HỎI (QUAN TRỌNG: ĐÃ THÊM LẠI)
+        // E. CHÀO HỎI & FALLBACK
         if (GREETING_KEYWORDS.some(k => text.toLowerCase().includes(k))) {
-            console.log("👉 Nhánh: Chào hỏi");
-            await sessionRef.delete(); // Reset session khi chào lại
-            return bot.sendMessage(zaloId, `Xin chào ${name}. Cảm ơn bạn đã liên hệ với Shop PlantG. Bạn cần đặt món hay hỗ trợ gì ạ?`);
+            await sessionRef.delete();
+            return bot.sendMessage(zaloId, `Xin chào ${name}. Cảm ơn bạn đã liên hệ Shop PlantG. Bạn cần đặt cơm hay hỗ trợ gì ạ?`);
         }
 
-        // E. FALLBACK (NẾU KHÔNG HIỂU GÌ)
-        console.log("👉 Nhánh: Không hiểu (Fallback)");
-        return bot.sendMessage(zaloId, `🤖 Xin lỗi ${name}, Shop chưa hiểu ý bạn. Bạn muốn đặt cơm hay cần hỗ trợ gì ạ? (Gợi ý: Nhắn "Cho 1 phần cơm" để đặt hàng nhanh nhé)`);
+        return bot.sendMessage(zaloId, `🤖 Xin lỗi ${name}, Shop chưa rõ ý bạn. Bạn muốn đặt món hay cần gặp nhân viên hỗ trợ ạ?`);
 
     } catch (error) {
         console.error("❌ Lỗi xử lý tin nhắn:", error);
@@ -230,12 +233,6 @@ app.post('/webhook', (req, res) => {
     res.sendStatus(200);
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-    console.log(`🚀 Server đang lắng nghe tại cổng ${PORT}`);
-    if (process.env.WEBHOOK_URL) {
-        bot.setWebHook(process.env.WEBHOOK_URL, { secret_token: process.env.WEBHOOK_SECRET_TOKEN })
-            .then(() => console.log("🔗 Webhook đã được đăng ký thành công với Zalo."))
-            .catch(err => console.error("❌ Lỗi đăng ký Webhook:", err.message));
-    }
+app.listen(process.env.PORT || 10000, () => {
+    if (process.env.WEBHOOK_URL) bot.setWebHook(process.env.WEBHOOK_URL, { secret_token: process.env.WEBHOOK_SECRET_TOKEN });
 });
