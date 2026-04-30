@@ -32,6 +32,7 @@ const MENU = {
 };
 
 const CANCEL_KEYWORDS = ['hủy', 'huy', 'hủy đơn', 'huy don', 'không đặt nữa'];
+const GREETING_KEYWORDS = ['hi', 'hello', 'xin chào', 'chào', 'bắt đầu', 'alo', 'ê'];
 
 const app = express();
 app.use(express.json());
@@ -46,11 +47,9 @@ const advancedParse = (text) => {
     let total = 0;
     const lowerText = text.toLowerCase();
 
-    // 1. Tìm số lượng món chính (Nhận diện: 2p, 3 phần, 2 cơm, phần cơm...)
     const primaryQtyMatch = lowerText.match(/(\d+)\s*(p|phần|hộp|cơm|suất)/);
     let primaryQty = primaryQtyMatch ? parseInt(primaryQtyMatch[1]) : 0;
 
-    // Logic mặc định: Nếu nhắc đến "cơm/phần/hộp" mà không có số -> mặc định 1
     const defaultKeywords = ['phần cơm', 'hộp cơm', 'đặt cơm', 'phần', 'hộp', 'suất', '1p'];
     if (primaryQty === 0 && defaultKeywords.some(k => lowerText.includes(k))) {
         primaryQty = 1;
@@ -58,7 +57,6 @@ const advancedParse = (text) => {
 
     if (primaryQty > 0) {
         let itemName = MENU.PRIMARY.name;
-        // Nếu chỉ nói "cơm sườn" và không có chữ "trứng"
         if (lowerText.includes('cơm sườn') && !lowerText.includes('trứng')) {
             itemName = 'Cơm tấm sườn';
         }
@@ -66,7 +64,6 @@ const advancedParse = (text) => {
         total += MENU.PRIMARY.price * primaryQty;
     }
 
-    // 2. Xử lý món thêm
     MENU.SIDE_DISHES.forEach(side => {
         if (side.keywords.some(k => lowerText.includes(k))) {
             const qtyMatch = lowerText.match(new RegExp(`(\\d+)\\s*(${side.keywords.join('|')})`));
@@ -101,19 +98,19 @@ bot.on('message', async (msg) => {
     console.log(`📩 Nhận tin nhắn từ [${name}]: ${text}`);
 
     try {
-        // LƯU LOG ĐỂ HỌC TẬP
+        // 1. LƯU LOG ĐỂ HỌC TẬP
         await db.collection('learning_logs').add({
             zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // LẤY SESSION TỪ FIRESTORE
+        // 2. LẤY SESSION TỪ FIRESTORE
         const sessionRef = db.collection('bot_sessions').doc(zaloId);
         const sessionSnap = await sessionRef.get();
         let session = sessionSnap.exists ? sessionSnap.data() : { state: null, pendingOrder: null };
 
         // A. XỬ LÝ LỆNH HỦY
         if (CANCEL_KEYWORDS.some(k => text.toLowerCase().includes(k))) {
-            console.log(`🚫 Khách yêu cầu hủy: ${zaloId}`);
+            console.log("👉 Nhánh: Hủy đơn");
             await sessionRef.delete();
             const orderQuery = await db.collection('orders').where("zaloId", "==", zaloId).orderBy("createdAt", "desc").limit(1).get();
             if (!orderQuery.empty) {
@@ -126,10 +123,10 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "✅ Đã xóa trạng thái đặt hàng hiện tại.");
         }
 
-        // B. NHẬN DIỆN ĐƠN HÀNG (ƯU TIÊN)
+        // B. NHẬN DIỆN ĐƠN HÀNG MỚI
         const detected = advancedParse(text);
         if (detected.items) {
-            console.log(`🍱 Nhận diện món: ${detected.items}`);
+            console.log("👉 Nhánh: Nhận diện món ăn");
             session.pendingOrder = { customer: name, items: detected.items, total: detected.total, note: detected.note, zaloId };
             
             if (detected.detectedPhone) session.pendingOrder.phone = detected.detectedPhone;
@@ -159,6 +156,7 @@ bot.on('message', async (msg) => {
 
         // C. XỬ LÝ THEO TRẠNG THÁI
         if (session.state === 'WAITING_PHONE') {
+            console.log("👉 Nhánh: Đang đợi SĐT");
             const phone = text.replace(/\D/g, '');
             if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
             session.pendingOrder.phone = phone;
@@ -167,7 +165,7 @@ bot.on('message', async (msg) => {
                 session.pendingOrder.address = userSnap.data().address;
                 session.state = 'WAITING_CONFIRM';
                 await sessionRef.set(session);
-                return bot.sendMessage(zaloId, `Hệ thống nhận ra khách quen! Giao tới: ${userSnap.data().address} đúng không ạ? Nhắn "Ok" để chốt.`);
+                return bot.sendMessage(zaloId, `Nhận ra khách quen! Giao tới: ${userSnap.data().address} đúng không ạ? Nhắn "Ok" để chốt.`);
             }
             session.state = 'WAITING_ADDRESS';
             await sessionRef.set(session);
@@ -175,6 +173,7 @@ bot.on('message', async (msg) => {
         }
 
         if (session.state === 'WAITING_ADDRESS') {
+            console.log("👉 Nhánh: Đang đợi Địa chỉ");
             session.pendingOrder.address = text;
             session.state = 'WAITING_CONFIRM';
             await db.collection('users').doc(session.pendingOrder.phone).set({
@@ -185,6 +184,7 @@ bot.on('message', async (msg) => {
         }
 
         if (text.toLowerCase() === 'ok' && session.state === 'WAITING_CONFIRM') {
+            console.log("👉 Nhánh: Xác nhận OK");
             const order = session.pendingOrder;
             const docRef = await db.collection('orders').add({
                 ...order, status: 'PENDING', total: order.total.toLocaleString() + 'đ', createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -194,6 +194,18 @@ bot.on('message', async (msg) => {
             if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `🔔 ĐƠN MỚI: ${order.items}\n📞 SĐT: ${order.phone}`);
             return;
         }
+
+        // D. XỬ LÝ CHÀO HỎI (QUAN TRỌNG: ĐÃ THÊM LẠI)
+        if (GREETING_KEYWORDS.some(k => text.toLowerCase().includes(k))) {
+            console.log("👉 Nhánh: Chào hỏi");
+            await sessionRef.delete(); // Reset session khi chào lại
+            return bot.sendMessage(zaloId, `Xin chào ${name}. Cảm ơn bạn đã liên hệ với Shop PlantG. Bạn cần đặt món hay hỗ trợ gì ạ?`);
+        }
+
+        // E. FALLBACK (NẾU KHÔNG HIỂU GÌ)
+        console.log("👉 Nhánh: Không hiểu (Fallback)");
+        return bot.sendMessage(zaloId, `🤖 Xin lỗi ${name}, Shop chưa hiểu ý bạn. Bạn muốn đặt cơm hay cần hỗ trợ gì ạ? (Gợi ý: Nhắn "Cho 1 phần cơm" để đặt hàng nhanh nhé)`);
+
     } catch (error) {
         console.error("❌ Lỗi xử lý tin nhắn:", error);
     }
