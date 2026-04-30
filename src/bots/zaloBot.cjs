@@ -18,29 +18,29 @@ try {
     process.exit(1); 
 }
 const db = admin.firestore();
-
-// Thời điểm server bắt đầu chạy để tránh gửi lại tin nhắn cũ
 const serverStartTime = Date.now();
 
-// 2. CẤU HÌNH THỰC ĐƠN
+// 2. CẤU HÌNH THỰC ĐƠN HOÀN CHỈNH (Theo hình ảnh)
 const MENU = {
-    PRIMARY: { 
-        keywords: ['sườn trứng', 'suon trung', 'đầy đủ', '30k', '35k', 'phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm', '1p', '2p', '3p', '4p', '5p'], 
-        name: 'Cơm tấm sườn trứng', 
-        price: 35000 
-    },
-    SIDE_DISHES: [
-        { keywords: ['cơm thêm', 'thêm cơm', 'cơm k sườn'], name: 'Cơm thêm', price: 5000 },
-        { keywords: ['sườn thêm', 'miếng sườn', 'thêm sườn'], name: 'Sườn thêm', price: 10000 },
-        { keywords: ['trứng thêm', 'thêm trứng', 'trứng', 'lòng đào'], name: 'Trứng thêm', price: 5000 },
-        { keywords: ['canh thêm'], name: 'Canh thêm', price: 0 },
-        { keywords: ['nước mắm thêm', 'nc mắm', 'bịch nước mắm', 'mắm'], name: 'Nước mắm thêm', price: 0 }
+    MAIN: [
+        { keywords: ['sườn trứng', 'suon trung', 'đầy đủ', 'đầy đủ sườn trứng', 'st', 'đầy đủ'], name: 'Cơm tấm sườn trứng', price: 35000 },
+        { keywords: ['cơm sườn', 'com suon', 'suon nướng', 's'], name: 'Cơm tấm sườn', price: 35000 }
+    ],
+    EXTRA: [
+        { keywords: ['cơm thêm', 'thêm cơm', 'thêm 1 phần cơm','thêm 1 hộp cơm','thêm 1 suất cơm','thêm 1 bịch cơm'], name: 'Cơm thêm', price: 5000 },
+        { keywords: ['sườn thêm', 'thêm sườn', 'thêm 1 phần sườn','thêm sườn 1 phần'], name: 'Sườn thêm', price: 10000 },
+        { keywords: ['trứng thêm', 'thêm trứng', 'trứng ốp', 'thêm 1 phần trứng', 'thêm trứng 1 phần'], name: 'Trứng thêm', price: 5000 },
+        { keywords: ['canh thêm', 'thêm canh', 'thêm 1 phần canh', 'thêm canh 1 phần', 'thêm 1 bịch canh', 'thêm canh 1 bịch'], name: 'Canh thêm', price: 0 },
+        { keywords: ['cà chua thêm', 'ca chua', 'thêm 1 phần cà chua', 'thêm cà chua 1 phần', 'thêm 1 cái cà chua', 'thêm cà chua 1 cái'], name: 'Cà chua thêm', price: 0 },
+        { keywords: ['dưa chua thêm', 'dua chua', 'thêm 1 phần dưa chua', 'thêm dưa chua 1 phần'], name: 'Dưa chua thêm', price: 0 },
+        { keywords: ['dưa leo thêm', 'dua leo', 'thêm 1 phần dưa leo', 'thêm dưa leo 1 phần'], name: 'Dưa leo thêm', price: 0 },
+        { keywords: ['nước mắm thêm', 'thêm nc mắm', 'nước mắm thêm', 'thêm 1 bịch nước mắm'], name: 'Nước mắm thêm', price: 0 }
     ]
 };
 
-const SUPPORT_KEYWORDS = ['hỗ trợ', 'ho tro', 'cần hỗ trợ', 'nhân viên', 'tư vấn', 'shop ơi', 'ad ơi'];
-const MENU_KEYWORDS = ['menu', 'thực đơn', 'món ăn', 'xin menu', 'có món gì'];
-const GREETING_KEYWORDS = ['hello', 'hi', 'xin chào', 'chào', 'bắt đầu', 'alo', 'đặt cơm'];
+const SUPPORT_KEYWORDS = ['hỗ trợ', 'ho tro', 'cần hỗ trợ', 'nhân viên', 'tư vấn', 'shop ơi', 'ad ơi', 'sốp ơi', 'shop oi', 'sốp oi', 'dạ shop ơi', 'dạ sốp ơi', 'dạ shop oi', 'dạ sốp oi', 'help', 'support', 'customer service', 'cs', 'tư vấn giúp', 'hỗ trợ giúp', 'gặp nhân viên', 'gặp shop', 'gặp sốp', 'gặp ad', 'gặp nhân viên tư vấn', 'gặp shop tư vấn', 'gặp sốp tư vấn', 'gặp ad tư vấn'];
+const MENU_KEYWORDS = ['menu', 'thực đơn', 'món ăn', 'xin menu', 'có món gì', 'gửi menu', 'cho menu', 'xem menu', 'menu hôm nay', 'menu mới', 'thực đơn hôm nay', 'thực đơn mới', 'gửi thực đơn', 'cho thực đơn', 'xem thực đơn', 'thực đơn của quán', 'menu của quán', 'thực đơn của shop', 'menu của shop', 'thực đơn của sốp', 'menu của sốp', 'thực đơn của ad', 'menu của ad', 'gửi thực đơn của quán', 'gửi menu của quán', 'gửi thực đơn của shop', 'gửi menu của shop', 'gửi thực đơn của sốp', 'gửi menu của sốp', 'gửi thực đơn của ad', 'gửi menu của ad', 'thực đơn mới nhất', 'menu mới nhất', 'thực đơn cập nhật', 'menu cập nhật', 'thực đơn hôm nay', 'menu hôm nay', 'thực đơn mới hôm nay', 'menu mới hôm nay'];
+const GREETING_KEYWORDS = ['hello', 'hi', 'xin chào', 'chào', 'bắt đầu', 'alo', 'đặt cơm', 'shop ơi', 'sốp ơi', 'shop oi', 'sốp oi', 'dạ alo', 'dạ chào', 'dạ bắt đầu', 'Dạ shop ơi', 'Dạ sốp ơi', 'Dạ shop oi', 'Dạ sốp oi'];
 
 const app = express();
 app.use(express.json());
@@ -51,36 +51,41 @@ const ADMIN_ZALO_ID = String(process.env.ZALO_BOT_ADMIN_ID || 'a65dc2194697d3724
  * --- HÀM TRỢ GIÚP ---
  */
 const getPhoneByZaloId = async (zaloId) => {
-    try {
-        const userQuery = await db.collection('users').where("zaloId", "==", zaloId).limit(1).get();
-        if (!userQuery.empty) return userQuery.docs[0].id;
-        return null;
-    } catch (e) { return null; }
+    const userQuery = await db.collection('users').where("zaloId", "==", zaloId).limit(1).get();
+    if (!userQuery.empty) return userQuery.docs[0].id;
+    return null;
 };
 
+// Phân tích logic món ăn (Phân biệt Sườn và Sườn Trứng)
 const advancedParse = (text) => {
     let items = [];
     let total = 0;
     const lowerText = text.toLowerCase();
-    const primaryQtyMatch = lowerText.match(/(\d+)\s*(p|phần|hộp|cơm|suất)/);
-    let primaryQty = primaryQtyMatch ? parseInt(primaryQtyMatch[1]) : 0;
-    if (primaryQty === 0 && (lowerText.includes('phần') || lowerText.includes('hộp') || lowerText.includes('cơm'))) primaryQty = 1;
 
-    if (primaryQty > 0) {
-        let itemName = MENU.PRIMARY.name;
-        if (lowerText.includes('cơm sườn') && !lowerText.includes('trứng')) itemName = 'Cơm tấm sườn';
-        items.push(`${primaryQty}x ${itemName}`);
-        total += MENU.PRIMARY.price * primaryQty;
+    // 1. Nhận diện số lượng phần cơm chính
+    const qtyMatch = lowerText.match(/(\d+)\s*(p|phần|hộp|cơm|suất)/);
+    let qty = qtyMatch ? parseInt(qtyMatch[1]) : 0;
+    if (qty === 0 && (lowerText.includes('phần') || lowerText.includes('hộp') || lowerText.includes('cơm'))) qty = 1;
+
+    if (qty > 0) {
+        // Ưu tiên sườn trứng nếu có từ khóa "trứng" hoặc "đầy đủ"
+        const isEgg = lowerText.includes('trứng') || lowerText.includes('đầy đủ');
+        const dish = isEgg ? MENU.MAIN[0] : MENU.MAIN[1];
+        
+        items.push(`${qty}x ${dish.name}`);
+        total += dish.price * qty;
     }
 
-    MENU.SIDE_DISHES.forEach(side => {
-        if (side.keywords.some(k => lowerText.includes(k))) {
-            const qtyMatch = lowerText.match(new RegExp(`(\\d+)\\s*(${side.keywords.join('|')})`));
-            const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
-            items.push(`${qty}x ${side.name}`);
-            total += side.price * qty;
+    // 2. Nhận diện các món thêm/kèm
+    MENU.EXTRA.forEach(extra => {
+        if (extra.keywords.some(k => lowerText.includes(k))) {
+            const extraQtyMatch = lowerText.match(new RegExp(`(\\d+)\\s*(${extra.keywords.join('|')})`));
+            const eQty = extraQtyMatch ? parseInt(extraQtyMatch[1]) : 1;
+            items.push(`${eQty}x ${extra.name}`);
+            total += extra.price * eQty;
         }
     });
+
     return { items: items.join(', '), total, note: text };
 };
 
@@ -89,55 +94,71 @@ const advancedParse = (text) => {
  */
 bot.on('message', async (msg) => {
     const zaloId = String(msg.chat.id);
-    const text = msg.text?.trim();
-    const name = msg.from?.display_name || "bạn";
+    const text = msg.text?.trim() || "";
+    const name = msg.from?.display_name || "Khách hàng";
 
     if (!text || text.startsWith('/')) return;
 
-    // NẾU LÀ ADMIN NHẮN, CHỈ LOG VÀ DỪNG (Để tránh bot tự trả lời admin gây vòng lặp)
+    // Bỏ qua cơ chế Reply cũ trên Zalo - Nếu là Admin thì chỉ ghi nhận
     if (zaloId === ADMIN_ZALO_ID) {
-        console.log(`👤 Admin [${name}] nhắn: ${text}`);
-        return; 
+        console.log(`👤 Admin Zalo nhắn: ${text}`);
+        return;
     }
 
     try {
         const userPhone = await getPhoneByZaloId(zaloId);
         const chatIdentifier = userPhone || zaloId;
 
-        // Lưu vào support_chats để Admin thấy trên Web
+        // 1. Đồng bộ Fields lên support_chats (Để Web Admin nhận diện)
+        await db.collection('support_chats').doc(chatIdentifier).set({
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+            orderId: null,
+            unreadAdmin: true,
+            unreadUser: false,
+            userAvatar: "",
+            userName: name,
+            userPhone: userPhone || ""
+        }, { merge: true });
+
+        // 2. Lưu tin nhắn vào sub-collection
         await db.collection('support_chats').doc(chatIdentifier).collection('messages').add({
             sender: 'USER',
             message: text,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
+        // 3. Thông báo cho Admin qua Zalo (Ghi nhận thông tin, không Reply tại đây)
+        if (ADMIN_ZALO_ID) {
+            const adminMsg = `💬 TIN NHẮN MỚI\n━━━━━━━━━━━━━━━━\n👤 Khách: ${name}\n📞 SĐT: (${userPhone || 'Chưa có'})\n🆔: ${zaloId}\n💌 Nội dung:\n「 ${text} 」\n━━━━━━━━━━━━━━━━`;
+            await bot.sendMessage(ADMIN_ZALO_ID, adminMsg);
+        }
+
         const sessionRef = db.collection('bot_sessions').doc(zaloId);
         const sessionSnap = await sessionRef.get();
         let session = sessionSnap.exists ? sessionSnap.data() : { state: null, pendingOrder: null, tempPhone: null };
         const lowerText = text.toLowerCase();
 
-        // 1. KIỂM TRA ĐĂNG KÝ BẮT BUỘC
+        // 4. Luồng đăng ký bắt buộc
         if (!userPhone && !['WAITING_REG_PHONE', 'WAITING_REG_ADDRESS'].includes(session.state)) {
             session.state = 'WAITING_REG_PHONE';
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, `Chào mừng ${name}! 👋\nVui lòng nhập Số điện thoại để Shop hỗ trợ bạn đặt cơm nhé.`);
+            return bot.sendMessage(zaloId, `Chào mừng ${name}! 👋\nVui lòng nhập Số điện thoại để Shop hỗ trợ nhé.`);
         }
 
-        // 2. XỬ LÝ LUỒNG ĐĂNG KÝ
         if (session.state === 'WAITING_REG_PHONE') {
             const phone = text.replace(/\D/g, '');
-            if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ. Vui lòng nhập lại.");
+            if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
             const userSnap = await db.collection('users').doc(phone).get();
             if (userSnap.exists) {
                 await db.collection('users').doc(phone).update({ zaloId });
                 session.state = null;
                 await sessionRef.set(session);
-                return bot.sendMessage(zaloId, `✅ Đã nhận diện tài khoản ${phone}! Chào mừng bạn quay lại.`);
+                return bot.sendMessage(zaloId, `✅ Đã nhận diện tài khoản ${phone}!`);
             } else {
                 session.tempPhone = phone;
                 session.state = 'WAITING_REG_ADDRESS';
                 await sessionRef.set(session);
-                return bot.sendMessage(zaloId, `Cho quán xin ĐỊA CHỈ GIAO HÀNG để tạo tài khoản cho bạn nhé!`);
+                return bot.sendMessage(zaloId, `Cho quán xin ĐỊA CHỈ GIAO HÀNG để tạo tài khoản mới nhé!`);
             }
         }
 
@@ -149,72 +170,53 @@ bot.on('message', async (msg) => {
             session.state = null;
             session.tempPhone = null;
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, `🎉 Đăng ký thành công tài khoản ${newPhone}! Bạn có thể đặt cơm ngay.`);
+            return bot.sendMessage(zaloId, `🎉 Đăng ký thành công tài khoản ${newPhone}!`);
         }
 
-        // 3. XỬ LÝ LỆNH CHUNG
-        if (MENU_KEYWORDS.some(k => lowerText.includes(k))) {
-            return bot.sendMessage(zaloId, `🍱 THỰC ĐƠN: 1. Sườn trứng: 35k. Nhắn món bạn muốn đặt nhé!`);
-        }
-
-        if (SUPPORT_KEYWORDS.some(k => lowerText.includes(k))) {
-            return bot.sendMessage(zaloId, "🤖 Shop đã nhận được yêu cầu. Nhân viên sẽ hỗ trợ bạn ngay!");
-        }
-
-        // 4. NHẬN DIỆN ĐƠN HÀNG
+        // Xử lý món ăn và chốt đơn
         const detected = advancedParse(text);
         if (detected.items) {
             const userData = (await db.collection('users').doc(userPhone).get()).data();
             session.pendingOrder = { customer: name, items: detected.items, total: detected.total, note: text, zaloId, phone: userPhone, address: userData.address };
             session.state = 'WAITING_CONFIRM';
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, `📝 XÁC NHẬN: ${detected.items}\n📍 Giao: ${userData.address}\n👉 Nhắn "Ok" để chốt.`);
+            return bot.sendMessage(zaloId, `📝 XÁC NHẬN: ${detected.items}\n📍 Giao: ${userData.address}\n💰 Tổng: ${detected.total.toLocaleString()}đ\n👉 Nhắn "Ok" để chốt.`);
         }
 
         if (lowerText === 'ok' && session.state === 'WAITING_CONFIRM') {
             const order = session.pendingOrder;
             await db.collection('orders').add({ ...order, status: 'PENDING', total: order.total.toLocaleString() + 'đ', createdAt: admin.firestore.FieldValue.serverTimestamp() });
             await sessionRef.delete();
-            return bot.sendMessage(zaloId, `✅ Đã chốt đơn!`);
+            return bot.sendMessage(zaloId, `✅ Đã chốt đơn! Cảm ơn bạn.`);
         }
 
-        if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
-            return bot.sendMessage(zaloId, `Chào ${name}! Shop cơm PlantG nghe ạ. Nhắn "Menu" để xem món nhé.`);
-        }
-
-    } catch (error) { console.error("❌ Lỗi xử lý:", error); }
+    } catch (error) { console.error("❌ Lỗi:", error); }
 });
 
 /**
- * --- LẮNG NGHE CHAT TỪ WEB ADMIN (WEB -> ZALO) ---
+ * --- LẮNG NGHE CHAT TỪ WEB ADMIN (Gửi tin nhắn qua Zalo) ---
  */
 db.collectionGroup('messages').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach(async (change) => {
-        // Chỉ xử lý tin nhắn MỚI (added) gửi bởi ADMIN và phải có nội dung
         if (change.type === 'added') {
             const msgData = change.doc.data();
+            const isNew = msgData.timestamp && msgData.timestamp.toMillis() > serverStartTime;
             
-            // KIỂM TRA: Phải là Admin gửi && Tin nhắn mới tạo sau khi server khởi động && Có nội dung message
-            const isNewMessage = msgData.timestamp && msgData.timestamp.toMillis() > serverStartTime;
-            
-            if (msgData.sender === 'ADMIN' && isNewMessage) {
-                const messageContent = msgData.message || msgData.text; // Đề phòng web admin dùng trường 'text'
-                
-                if (!messageContent) return; // Không có nội dung thì bỏ qua
+            if (msgData.sender === 'ADMIN' && isNew) {
+                const messageContent = msgData.message || msgData.text; 
+                if (!messageContent) return;
 
                 const pathSegments = change.doc.ref.path.split('/');
                 const clientIdentifier = pathSegments[1]; 
 
                 try {
-                    let targetZaloId = null;
                     const userSnap = await db.collection('users').doc(clientIdentifier).get();
-                    targetZaloId = userSnap.exists ? userSnap.data().zaloId : clientIdentifier;
-
-                    if (targetZaloId) {
+                    const targetZaloId = userSnap.exists ? userSnap.data().zaloId : clientIdentifier;
+                    
+                    if (targetZaloId && targetZaloId !== ADMIN_ZALO_ID) {
                         await bot.sendMessage(targetZaloId, `💬 Shop phản hồi: ${messageContent}`);
-                        console.log(`✅ Đã gửi phản hồi tới khách: ${clientIdentifier}`);
                     }
-                } catch (err) { console.error("❌ Lỗi gửi tin Admin:", err.message); }
+                } catch (err) { console.error("❌ Lỗi Admin Chat:", err.message); }
             }
         }
     });
