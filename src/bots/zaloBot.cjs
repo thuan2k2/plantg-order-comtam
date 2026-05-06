@@ -62,7 +62,8 @@ const MENU = {
     ]
 };
 
-const CANCEL_KEYWORDS = ['hủy', 'huy', 'hủy đơn', 'huy don', 'không đặt nữa'];
+// CẬP NHẬT: Thêm biến thể Unicode của chữ "huỷ"
+const CANCEL_KEYWORDS = ['hủy', 'huỷ', 'huy', 'hủy đơn', 'huỷ đơn', 'huy don', 'không đặt nữa'];
 const SUPPORT_KEYWORDS = ['hỗ trợ', 'ho tro', 'cần hỗ trợ', 'nhân viên', 'tư vấn', 'shop ơi', 'ad ơi', 'chủ quán'];
 const CLOSE_SUPPORT_KEYWORDS = ['đóng chat', 'dong chat', 'đóng hỗ trợ', 'dong ho tro', 'kết thúc', 'ket thuc'];
 const GREETING_KEYWORDS = ['nay có bán không ạ','đặt cơm ạ','shop ơi','hello','hi','xin chào', 'chào', 'bắt đầu', 'alo shop', 'alo sốp', 'alo'];
@@ -99,7 +100,7 @@ const infoMsgText = `Bạn có thể nhắn các nội dung sau đây:\n` +
                     `- 🕒 "Lịch sử" để tra cứu lịch sử đơn hàng đã đặt\n` +
                     `- 🆘 "Hỗ trợ" để nhắn tin với Shop hoặc "Đóng hỗ trợ" để kết thúc\n` +
                     `- 🗑️ "Hủy" nếu muốn xóa đơn hàng đang tạo dở\n` +
-                    `- 📝 "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ (chỉ có thể thay đổi trên website)\n` +
+                    `- 📝 "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ (chỉ có thể thay đổi trên website: https://plantg.id.vn/)\n` +
                     `- 🔄 "Reset" để Đăng xuất hoặc "Reset All" để Xóa toàn bộ tài khoản.`;
 
 const shortcutMsgText = `📋 DANH SÁCH TỪ KHÓA VIẾT TẮT:\n\n` +
@@ -214,8 +215,8 @@ const formatConfirmMsg = (order) => {
            `💰 Tổng cộng: ${displayTotal}\n` +
            `--------------------------\n` +
            `👉 Nhắn "Ok" để chốt đơn.\n` +
-           `👉 Nhắn "Hủy" nếu muốn xóa thao tác này.\n` +
-           `👉 Truy cập "http://plantg.id.vn/" nếu muốn đổi SĐT/Địa chỉ.`;
+           `👉 Nhắn món mới nếu bạn muốn ghi đè đơn.\n` +
+           `👉 Nhắn "Hủy" nếu muốn xóa thao tác này.`;
 };
 
 /**
@@ -253,6 +254,10 @@ bot.on('message', async (msg) => {
         const userPhone = await getPhoneByZaloId(zaloId);
         const chatIdentifier = userPhone || zaloId;
 
+        // CẬP NHẬT: PHÁT HIỆN TIN NHẮN ĐẦU TIÊN CỦA USER MỚI
+        const logQuery = await db.collection('learning_logs').where("zaloId", "==", zaloId).limit(1).get();
+        const isFirstTime = logQuery.empty;
+
         await db.collection('learning_logs').add({ zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp() });
 
         const sessionRef = db.collection('bot_sessions').doc(zaloId);
@@ -260,6 +265,19 @@ bot.on('message', async (msg) => {
         let session = sessionSnap.exists ? sessionSnap.data() : { state: null, pendingOrder: null, supportMode: false };
         const lowerText = text.toLowerCase();
 
+        // ----------------------------------------------------------------
+        // 0. NẾU LÀ KHÁCH HÀNG MỚI (LẦN ĐẦU NHẮN TIN)
+        // ----------------------------------------------------------------
+        if (isFirstTime) {
+            if (sessionSnap.exists) await sessionRef.delete();
+            await bot.sendMessage(zaloId, `🎉 Xin chào ${name}. Chào mừng bạn đến với Shop PlantG!\n\n👉 Nhắn "Menu" để xem thực đơn.\n👉 Nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để Đăng nhập.\n👉 Nhắn "Viết tắt" để xem cách gọi món siêu tốc.`);
+            await bot.sendMessage(zaloId, infoMsgText);
+            return bot.sendMessage(zaloId, guideMsgText);
+        }
+
+        // ----------------------------------------------------------------
+        // 1. LUỒNG XÁC NHẬN XÓA TÀI KHOẢN (RESET ALL)
+        // ----------------------------------------------------------------
         if (session.state === 'WAITING_DELETE_ALL_CONFIRM') {
             if (lowerText === 'yes') {
                 if (userPhone) {
@@ -276,6 +294,9 @@ bot.on('message', async (msg) => {
             }
         }
 
+        // ----------------------------------------------------------------
+        // 2. LUỒNG XÁC NHẬN ĐĂNG XUẤT (RESET ĐĂNG NHẬP)
+        // ----------------------------------------------------------------
         if (session.state === 'WAITING_LOGOUT_CONFIRM') {
             if (lowerText === 'yes') {
                 if (userPhone) {
@@ -292,6 +313,9 @@ bot.on('message', async (msg) => {
             }
         }
 
+        // ----------------------------------------------------------------
+        // 3. YÊU CẦU CUNG CẤP SĐT CHO HỖ TRỢ TRỰC TUYẾN
+        // ----------------------------------------------------------------
         if (session.state === 'WAITING_PHONE_SUPPORT') {
             const phone = text.replace(/\D/g, '');
             if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ. Vui lòng nhập lại số chính xác (Kèm dấu \".\" ở cuối để tránh lỗi Zalo nhận diện).");
@@ -327,12 +351,18 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "✅ Đã đồng bộ tài khoản! Bộ phận hỗ trợ đã được kết nối, bạn cần Shop giúp gì ạ?");
         }
 
+        // ----------------------------------------------------------------
+        // 4. THOÁT CHẾ ĐỘ HỖ TRỢ (NGƯỜI DÙNG CHỦ ĐỘNG ĐÓNG)
+        // ----------------------------------------------------------------
         if (session.supportMode && CLOSE_SUPPORT_KEYWORDS.some(k => lowerText.includes(k))) {
             session.supportMode = false;
             await sessionRef.set(session);
             return bot.sendMessage(zaloId, "✅ Đã đóng hộp thoại Hỗ trợ. Bạn đã trở về trạng thái nhận đơn Bình thường!");
         }
 
+        // ----------------------------------------------------------------
+        // 5. KÍCH HOẠT CHẾ ĐỘ HỖ TRỢ
+        // ----------------------------------------------------------------
         let isSupportReq = SUPPORT_KEYWORDS.some(k => lowerText.includes(k));
 
         if (isSupportReq && !session.supportMode) {
@@ -348,6 +378,9 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, '⚠️ Lưu ý : Khách vui lòng nhắn "Đóng chat" để ngưng nhận Hỗ trợ và trở về trạng thái nhận đơn Bình thường!');
         }
 
+        // ----------------------------------------------------------------
+        // 6. CÁCH LY LOGIC KHI ĐANG HỖ TRỢ
+        // ----------------------------------------------------------------
         if (session.supportMode && userPhone) {
             await db.collection('support_chats').doc(userPhone).set({
                 userPhone: userPhone,
@@ -367,6 +400,9 @@ bot.on('message', async (msg) => {
             return; 
         }
 
+        // ----------------------------------------------------------------
+        // 7. ĐĂNG NHẬP BẰNG SĐT
+        // ----------------------------------------------------------------
         if (!session.state && !session.supportMode) {
             const cleanPhone = text.replace(/\D/g, '');
             if (/^(0\d{9}|\d{10})$/.test(cleanPhone)) {
@@ -383,7 +419,9 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // B. LỆNH ĐIỀU HƯỚNG CƠ BẢN
+        // ----------------------------------------------------------------
+        // B. LỆNH ĐIỀU HƯỚNG CƠ BẢN (CHỈ CHẠY KHI KHÔNG Ở CHẾ ĐỘ HỖ TRỢ)
+        // ----------------------------------------------------------------
 
         const isDeleteAll = DELETE_ALL_KEYWORDS.some(k => lowerText.includes(k));
         const isLogout = !isDeleteAll && LOGOUT_KEYWORDS.some(k => lowerText.includes(k));
@@ -446,7 +484,6 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "⚠️ Bạn chưa có thông tin trên hệ thống.");
         }
 
-        // TÍNH NĂNG ĐẶT LẠI ĐƠN HÀNG CŨ
         const isReorder = REORDER_KEYWORDS.some(k => lowerText.includes(k));
         if (isReorder) {
             if (!userPhone) return bot.sendMessage(zaloId, "⚠️ Bạn chưa đăng nhập. Vui lòng nhắn SĐT (kèm dấu \".\" ở cuối) để đăng nhập và xem lịch sử đơn hàng.");
@@ -476,7 +513,6 @@ bot.on('message', async (msg) => {
 
             const orderToReorder = ordersList[orderIndex];
             
-            // Xử lý giá trị total để gán vào pendingOrder dạng Number để hàm format không bị lỗi
             const numTotal = parseInt(String(orderToReorder.total).replace(/\D/g, '')) || 0;
             
             session.pendingOrder = { 
@@ -498,17 +534,18 @@ bot.on('message', async (msg) => {
                                `💰 Tổng cộng: ${displayTotal}\n` +
                                `📍 Địa chỉ: ${orderToReorder.address}\n\n` +
                                `👉 Nhắn "Ok" để chốt đặt ngay.\n` +
-                               `👉 Nhắn "Hủy" nếu muốn chọn món khác.`;
+                               `👉 Nhắn món mới nếu bạn muốn đổi sang món khác.`;
             return bot.sendMessage(zaloId, reorderMsg);
         }
 
+        // CẬP NHẬT: Ghi chú rõ việc hủy/đè đơn cho khách
         if (CANCEL_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
-            return bot.sendMessage(zaloId, "🚫 Đã hủy các thao tác đặt hàng trước đó. Bạn có thể bắt đầu lại từ đầu.");
+            return bot.sendMessage(zaloId, "🚫 Đã hủy đơn hàng đang tạo. Bạn có thể nhắn lại món mới để BOT ghi nhận thay thế nhé!");
         }
 
         if (MENU_KEYWORDS.some(k => lowerText.includes(k))) {
-            const menuMsg = `🍱 THỰC ĐƠN SHOP PLANTG\n--------------------------\n1. Cơm tấm sườn: 35.000đ\n2. Cơm tấm sườn trứng: 35.000đ\n3. Cơm thêm: 5.000đ\n4. Sườn thêm: 10.000đ\n5. Trứng thêm: 5.000đ\n 6. Các món ăn kèm thêm: Miễn phí (Có giới hạn)\n--------------------------\n👉 Nhắn món bạn muốn đặt ngay nhé!\n *Hãy ghi cụ thể tên món bạn muốn đặt kèm số lượng để BOT hiểu ngay nhé <3 Cám ơn Khách yêu ạ!.*`;
+            const menuMsg = `🍱 THỰC ĐƠN SHOP PLANTG\n--------------------------\n1. Cơm tấm sườn: 35.000đ\n2. Cơm tấm sườn trứng: 35.000đ\n3. Cơm thêm: 5.000đ\n4. Sườn thêm: 10.000đ\n5. Trứng thêm: 5.000đ\n6. Các món ăn kèm thêm: Miễn phí (Có giới hạn)\n--------------------------\n👉 Nhắn món bạn muốn đặt ngay nhé!\n *Hãy ghi cụ thể tên món bạn muốn đặt kèm số lượng để BOT hiểu ngay nhé <3 Cám ơn Khách yêu ạ!.*`;
             return bot.sendMessage(zaloId, menuMsg);
         }
 
@@ -603,9 +640,10 @@ bot.on('message', async (msg) => {
             return;
         }
 
+        // CẬP NHẬT: Thêm hiển thị "Hướng dẫn" và "Viết tắt" trong câu chào mặc định
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
-            await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! \n\nBạn nhắn "Menu" để xem món, nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
+            await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! \n\n👉 Nhắn "Menu" để xem món.\n👉 Nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để Đăng nhập.\n👉 Nhắn "Hướng dẫn" hoặc "Viết tắt" để xem cách dùng BOT nhanh nhất!`);
             return bot.sendMessage(zaloId, infoMsgText);
         }
 
