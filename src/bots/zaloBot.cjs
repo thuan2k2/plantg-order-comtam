@@ -508,7 +508,7 @@ bot.on('message', async (msg) => {
         }
 
         if (MENU_KEYWORDS.some(k => lowerText.includes(k))) {
-            const menuMsg = `🍱 THỰC ĐƠN SHOP PLANTG\n--------------------------\n1. ${MENU.MAIN[0].name}: ${MENU.MAIN[0].price.toLocaleString()}đ\n2. Cơm tấm sườn: 35.000đ\n3. Cơm thêm: 5.000đ\n4. Sườn thêm: 10.000đ\n5. Trứng thêm: 5.000đ\n 6. Các món ăn kèm thêm: Miễn phí (Có giới hạn)\n--------------------------\n👉 Nhắn món bạn muốn đặt ngay nhé!\n *Hãy ghi cụ thể tên món bạn muốn đặt kèm số lượng để BOT hiểu ngay nhé <3 Cám ơn Khách yêu ạ!.*`;
+            const menuMsg = `🍱 THỰC ĐƠN SHOP PLANTG\n--------------------------\n1. Cơm tấm sườn: 35.000đ\n2. Cơm tấm sườn trứng: 35.000đ\n3. Cơm thêm: 5.000đ\n4. Sườn thêm: 10.000đ\n5. Trứng thêm: 5.000đ\n 6. Các món ăn kèm thêm: Miễn phí (Có giới hạn)\n--------------------------\n👉 Nhắn món bạn muốn đặt ngay nhé!\n *Hãy ghi cụ thể tên món bạn muốn đặt kèm số lượng để BOT hiểu ngay nhé <3 Cám ơn Khách yêu ạ!.*`;
             return bot.sendMessage(zaloId, menuMsg);
         }
 
