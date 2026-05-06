@@ -112,7 +112,7 @@ bot.on('message', async (msg) => {
 
     if (!text || text.startsWith('/')) return;
 
-    // A. XỬ LÝ ADMIN REPLY (Trả lời khách từ Zalo)
+    // A. XỬ LÝ ADMIN REPLY (Trả lời khách từ Zalo của Admin)
     if (zaloId === ADMIN_ZALO_ID && msg.quote) {
         const quotedMsg = msg.quote.text || "";
         const targetIdMatch = quotedMsg.match(/🆔:\s*([a-zA-Z0-9.\-_]+)/);
@@ -121,11 +121,9 @@ bot.on('message', async (msg) => {
             const targetZaloId = targetIdMatch[1];
             await bot.sendMessage(targetZaloId, `💬 Phản hồi từ Shop: ${text}`);
 
-            // Tìm SĐT để thống nhất vị trí lưu trữ tin nhắn
             const phone = await getPhoneByZaloId(targetZaloId);
             const identifier = phone || targetZaloId;
 
-            // Lưu phản hồi của Admin vào cùng luồng hội thoại với khách
             await db.collection('support_chats').doc(identifier).collection('messages').add({
                 zaloId: targetZaloId,
                 sender: 'ADMIN',
@@ -137,17 +135,16 @@ bot.on('message', async (msg) => {
     }
 
     try {
-        // THỐNG NHẤT ID: Tìm SĐT để làm Document ID cho support_chats
         const userPhone = await getPhoneByZaloId(zaloId);
         const chatIdentifier = userPhone || zaloId;
 
-        // Lưu tin nhắn khách gửi vào sub-collection 'messages' dưới Document là SĐT (hoặc Zalo ID nếu chưa có SĐT)
+        // Lưu tin nhắn khách gửi vào Firestore
         await db.collection('support_chats').doc(chatIdentifier).collection('messages').add({
             zaloId,
             sender: 'USER',
             message: text,
             name: name,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
+            createdAt: admin.firestore.FieldValue.serverTimestamp() // Khớp với Web
         });
 
         await db.collection('learning_logs').add({ zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp() });
@@ -174,7 +171,7 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "📝 Vui lòng nhập Số điện thoại mới để quán cập nhật.");
         }
 
-        // C. THANH TOÁN (Tin nhắn text + Link ảnh QR)
+        // C. THANH TOÁN
         if (PAYMENT_BANK_KEYWORDS.some(k => lowerText.includes(k))) {
             await bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua STK: Ngân hàng TPBank 00006464313 - PHẠM ĐỨC THUẬN");
             return bot.sendMessage(zaloId, "🔗 Hoặc quét mã QR tại đây: https://img.vietqr.io/image/TPB-00006464313-qr_only.png");
@@ -232,15 +229,16 @@ bot.on('message', async (msg) => {
             session.pendingOrder.address = text;
             session.state = 'WAITING_CONFIRM';
             
-            // CẬP NHẬT: Đồng bộ dữ liệu Khách hàng mới tạo từ Zalo với cấu trúc hệ thống Web
+            // CẬP NHẬT: Đồng bộ dữ liệu Khách hàng mới + Cờ lastUpdateSource để qua mặt Anti-cheat
             await db.collection('users').doc(session.pendingOrder.phone).set({
                 fullName: name, 
                 address: text, 
                 zaloId, 
                 username: session.pendingOrder.phone,
-                role: 'user',           // Đồng bộ role
-                totalXu: 0,             // Đồng bộ trường Xu
-                walletBalance: 0,       // Khởi tạo ví
+                role: 'user',           
+                totalXu: 0,             
+                walletBalance: 0,       
+                lastUpdateSource: 'admin', // THÊM MỚI: Bỏ qua bẫy Anti-cheat khi tạo user
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
             
@@ -251,13 +249,13 @@ bot.on('message', async (msg) => {
         if (lowerText === 'ok' && session.state === 'WAITING_CONFIRM') {
             const order = session.pendingOrder;
             
-            // CẬP NHẬT: Đồng bộ định dạng trường dữ liệu đơn hàng
+            // CẬP NHẬT: Định dạng trường dữ liệu
             const docRef = await db.collection('orders').add({
                 ...order, 
                 status: 'PENDING', 
-                paymentMethod: 'CASH',          // Đồng bộ phương thức
-                paymentStatus: 'UNPAID',        // Đồng bộ trạng thái thanh toán
-                deliveryType: 'ASAP',           // Đơn giao ngay
+                paymentMethod: 'CASH',          
+                paymentStatus: 'UNPAID',        
+                deliveryType: 'ASAP',           
                 total: order.total.toLocaleString() + 'đ', 
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -279,14 +277,53 @@ bot.on('message', async (msg) => {
 });
 
 /**
- * --- THÔNG BÁO TRẠNG THÁI ---
+ * --- THÔNG BÁO TRẠNG THÁI TỪ WEB/HỆ THỐNG VỀ ZALO ---
  */
+
+// Lắng nghe trạng thái ĐƠN HÀNG
 db.collection('orders').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach(async (change) => {
         const order = change.doc.data();
         if (change.type === "modified" && order.zaloId) {
-            const statusMap = { 'PREPARING': '👨‍🍳 Đang chuẩn bị', 'SHIPPING': '🚚 Đang giao', 'COMPLETED': '✅ Đã xong', 'CANCELLED': '❌ Đã hủy' };
-            bot.sendMessage(order.zaloId, `🔔 Cập nhật đơn #${change.doc.id.slice(-6).toUpperCase()}: [${statusMap[order.status] || order.status}]`);
+            // SỬA: Đổi SHIPPING thành DELIVERING cho đồng bộ
+            const statusMap = { 'PREPARING': '👨‍🍳 Đang chuẩn bị', 'DELIVERING': '🚚 Đang giao', 'COMPLETED': '✅ Đã xong', 'CANCELLED': '❌ Đã hủy' };
+            if (statusMap[order.status]) {
+                bot.sendMessage(order.zaloId, `🔔 Cập nhật đơn #${change.doc.id.slice(-6).toUpperCase()}: [${statusMap[order.status]}]`);
+            }
+        }
+    });
+});
+
+// THÊM MỚI: Lắng nghe tin nhắn hỗ trợ từ Admin (trên Web) để đẩy về Zalo
+db.collection('support_chats').onSnapshot((snapshot) => {
+    snapshot.docChanges().forEach(async (change) => {
+        const data = change.doc.data();
+        // Kiểm tra cờ unreadUser (khi Admin gửi tin nhắn từ giao diện web, cờ này sẽ được set = true)
+        if (data.unreadUser === true) {
+            const phone = change.doc.id;
+            const userSnap = await db.collection('users').doc(phone).get();
+            
+            if (userSnap.exists && userSnap.data().zaloId) {
+                const zaloId = userSnap.data().zaloId;
+                
+                // Lấy tin nhắn mới nhất do ADMIN gửi chưa được push sang Zalo
+                const msgsSnap = await change.doc.ref.collection('messages')
+                    .where('sender', '==', 'ADMIN')
+                    .orderBy('createdAt', 'desc')
+                    .limit(1)
+                    .get();
+                    
+                if (!msgsSnap.empty) {
+                    const msgData = msgsSnap.docs[0].data();
+                    if (!msgData.sentToZalo) {
+                        bot.sendMessage(zaloId, `💬 Phản hồi từ Shop: ${msgData.text || msgData.message}`);
+                        // Gắn cờ để không bị gửi lại
+                        await msgsSnap.docs[0].ref.update({ sentToZalo: true });
+                        // Tắt cờ unreadUser để ngừng kích hoạt
+                        await change.doc.ref.update({ unreadUser: false });
+                    }
+                }
+            }
         }
     });
 });

@@ -1,9 +1,9 @@
-import { db } from '../firebase/config';
+import { db, functions } from '../firebase/config';
 import { 
   collection, doc, setDoc, updateDoc, getDoc,
   onSnapshot, query, orderBy, serverTimestamp, addDoc, getDocs, writeBatch 
 } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions'; 
+import { httpsCallable } from 'firebase/functions'; 
 
 const CHAT_COLLECTION = 'support_chats';
 
@@ -116,8 +116,6 @@ export const subscribeToAdminChats = (callback) => {
 // HỆ THỐNG GAMIFICATION & HÒM THƯ (GỌI CLOUD FUNCTIONS)
 // ============================================================================
 
-const functions = getFunctions();
-
 // 6. Giao tiếp với API Nhận đính kèm Hòm thư
 export const claimMailboxAttachment = async (phone, mailId) => {
   try {
@@ -156,10 +154,12 @@ export const resetTestingGamification = async (phone) => {
     await updateDoc(userRef, {
       lastDailyGift: null,
       lastCheckIn: null,
+      lastGiftDate: null,       // Reset thêm cờ dùng cho Auto Perk
+      lastCheckInDate: null,    // Reset thêm cờ dùng cho Auto Perk
       attendanceCount: 0, 
       checkInStreak: 0,   
       dailyCheckInHistory: [],
-      lastUpdateSource: 'admin', // ĐÃ THÊM: Để tránh bị hệ thống tự động Ban khi test
+      lastUpdateSource: 'admin', // Tránh bị hệ thống tự động Ban khi test
       updatedAt: serverTimestamp()
     });
     console.log("✅ Đã reset tiến trình test Gamification an toàn.");
@@ -173,7 +173,8 @@ export const resetTestingLuckyXu = async (phone) => {
     const userRef = doc(db, 'users', phone);
     await updateDoc(userRef, {
       lastLuckyReceived: null,
-      lastUpdateSource: 'admin', // ĐÃ THÊM: Tránh bị khóa khi test Lì xì
+      lastAutoLuckyDate: null,  // Reset cờ Auto Lucky Xu
+      lastUpdateSource: 'admin', // Tránh bị khóa khi test Lì xì
       updatedAt: serverTimestamp()
     });
     console.log("✅ Đã reset cờ Lucky Xu an toàn.");
