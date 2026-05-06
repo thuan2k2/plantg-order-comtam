@@ -180,7 +180,7 @@ const formatConfirmMsg = (order) => {
            `--------------------------\n` +
            `👉 Nhắn "Ok" để chốt đơn.\n` +
            `👉 Nhắn "Hủy" nếu muốn xóa thao tác này.\n` +
-           `👉 Nhắn "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ.`;
+           `👉 Nhắn "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ *Chỉ thực hiện được trên web!.`;
 };
 
 /**
@@ -365,6 +365,7 @@ bot.on('message', async (msg) => {
                     await bot.sendMessage(zaloId, "✅ Bạn đã đăng nhập thành công!");
                     await bot.sendMessage(zaloId, `🎉 Chào mừng ${userData.fullName || name} quay trở lại! Hạng hiện tại của bạn là: ${rankName}`);
                     return bot.sendMessage(zaloId, infoMsgText);
+                    return bot.sendMessage(zaloId, `*BOT có thể nhận diện sai đơn hàng và giá tiền! Nhưng đơn hàng vẫn thực hiện đúng theo ghi chú của bạn nhé!`);
                 }
             }
         }
@@ -532,6 +533,7 @@ bot.on('message', async (msg) => {
             await sessionRef.delete();
             await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
             return bot.sendMessage(zaloId, infoMsgText);
+            return bot.sendMessage(zaloId, `*BOT có thể nhận diện sai đơn hàng và giá tiền! Nhưng đơn hàng vẫn thực hiện đúng theo ghi chú của bạn nhé!`);
         }
 
     } catch (error) { console.error("❌ Lỗi:", error); }
