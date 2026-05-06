@@ -88,14 +88,14 @@ const ADMIN_ZALO_ID = String(process.env.ZALO_BOT_ADMIN_ID || 'a65dc2194697d3724
 
 // THÔNG ĐIỆP BẢNG THÔNG TIN
 const infoMsgText = `Bạn có thể nhắn các nội dung sau đây:\n` +
-                    `- "Menu" để xem Menu món ăn\n` +
-                    `- "Ck" để lấy thông tin hoặc mã chuyển khoản\n` +
-                    `- "Số dư" để kiểm tra số tiền Ví và số Xu hiện có\n` +
-                    `- "Lịch sử" để tra cứu lịch sử đơn hàng đã đặt\n` +
-                    `- "Hỗ trợ" để nhắn tin với Shop hoặc "Đóng hỗ trợ" để đóng chat với Shop\n` +
-                    `- "Hủy" nếu muốn xóa đơn hàng sai để đặt lại\n` +
-                    `- "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ\n` +
-                    `- "Reset" để Đăng xuất hoặc "Reset All" để Xóa toàn bộ tài khoản.`;
+                    `- 📖 "Menu" để xem Menu món ăn\n` +
+                    `- 📱 "Ck" để lấy thông tin hoặc mã chuyển khoản\n` +
+                    `- 🏦 "Số dư" để kiểm tra số tiền Ví và số Xu hiện có\n` +
+                    `- 🕒 "Lịch sử" để tra cứu lịch sử đơn hàng đã đặt\n` +
+                    `- 🆘 "Hỗ trợ" để nhắn tin với Shop hoặc "Đóng hỗ trợ" để đóng chat với Shop\n` +
+                    `- 🗑️ "Hủy" nếu muốn xóa đơn hàng sai để đặt lại\n` +
+                    `- 📝 "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ\n` +
+                    `- 🔄 "Reset" để Đăng xuất hoặc "Reset All" để Xóa toàn bộ tài khoản.`;
 
 /**
  * --- HÀM TRỢ GIÚP ---
@@ -180,7 +180,7 @@ const formatConfirmMsg = (order) => {
            `--------------------------\n` +
            `👉 Nhắn "Ok" để chốt đơn.\n` +
            `👉 Nhắn "Hủy" nếu muốn xóa thao tác này.\n` +
-           `👉 Nhắn "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ.`;
+           `👉 Truy cập "http://plantg.id.vn/" nếu muốn đổi SĐT/Địa chỉ.`;
 };
 
 /**
@@ -235,7 +235,7 @@ bot.on('message', async (msg) => {
                 }
                 await sessionRef.delete();
                 await bot.sendMessage(zaloId, "✅ Toàn bộ thông tin tài khoản đã được xóa khỏi hệ thống!");
-                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
+                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ!\n\nBạn nhắn "Menu" để xem món, nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
             } else if (lowerText === 'no') {
                 await sessionRef.delete();
                 return bot.sendMessage(zaloId, "❌ Đã hủy yêu cầu Xóa tài khoản toàn bộ.");
@@ -254,7 +254,7 @@ bot.on('message', async (msg) => {
                 }
                 await sessionRef.delete();
                 await bot.sendMessage(zaloId, "✅ Bạn đã Đăng xuất (Reset) thành công! Hiện tại bạn đang ở trạng thái khách vãng lai.");
-                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để đăng nhập lại hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
+                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! \n\nBạn nhắn "Menu" để xem món, nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để đăng nhập lại hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
             } else if (lowerText === 'no') {
                 await sessionRef.delete();
                 return bot.sendMessage(zaloId, "❌ Đã hủy yêu cầu Đăng xuất.");
@@ -533,7 +533,7 @@ bot.on('message', async (msg) => {
 
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
-            await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
+            await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! \n\nBạn nhắn "Menu" để xem món, nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
             return bot.sendMessage(zaloId, infoMsgText);
         }
 
