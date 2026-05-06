@@ -45,7 +45,7 @@ const getUserRank = (userData) => {
 // 2. CẤU HÌNH THỰC ĐƠN & TỪ KHÓA
 const MENU = {
     MAIN: [
-        { keywords: ['cơm thêm', 'thêm cơm', 'cơm không', 'cơm riêng', 'com khong', 'cơm ko'], name: 'Cơm thêm', price: 5000 },
+        { keywords: ['sườn trứng', 'suon trung', 'đầy đủ', 'cơm sườn trứng', 's trứng', 'st', 'com st', 'cơm st',], name: 'Cơm tấm sườn trứng', price: 35000 },
         { keywords: ['cơm sườn', 'com suon', 'cơm tấm sườn', 'sườn chả', 'sườn nướng', 'sườn', 'suon', 's'], name: 'Cơm tấm sườn', price: 35000 },
         { keywords: ['phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm'], name: 'Cơm tấm sườn trứng', price: 35000 } 
     ],
@@ -180,7 +180,7 @@ const formatConfirmMsg = (order) => {
            `--------------------------\n` +
            `👉 Nhắn "Ok" để chốt đơn.\n` +
            `👉 Nhắn "Hủy" nếu muốn xóa thao tác này.\n` +
-           `👉 Nhắn "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ *Chỉ thực hiện được trên web!.`;
+           `👉 Nhắn "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ.`;
 };
 
 /**
@@ -235,7 +235,7 @@ bot.on('message', async (msg) => {
                 }
                 await sessionRef.delete();
                 await bot.sendMessage(zaloId, "✅ Toàn bộ thông tin tài khoản đã được xóa khỏi hệ thống!");
-                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
+                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
             } else if (lowerText === 'no') {
                 await sessionRef.delete();
                 return bot.sendMessage(zaloId, "❌ Đã hủy yêu cầu Xóa tài khoản toàn bộ.");
@@ -254,7 +254,7 @@ bot.on('message', async (msg) => {
                 }
                 await sessionRef.delete();
                 await bot.sendMessage(zaloId, "✅ Bạn đã Đăng xuất (Reset) thành công! Hiện tại bạn đang ở trạng thái khách vãng lai.");
-                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT để đăng nhập lại hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
+                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để đăng nhập lại hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
             } else if (lowerText === 'no') {
                 await sessionRef.delete();
                 return bot.sendMessage(zaloId, "❌ Đã hủy yêu cầu Đăng xuất.");
@@ -268,7 +268,7 @@ bot.on('message', async (msg) => {
         // ----------------------------------------------------------------
         if (session.state === 'WAITING_PHONE_SUPPORT') {
             const phone = text.replace(/\D/g, '');
-            if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ. Vui lòng nhập lại số chính xác.");
+            if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ. Vui lòng nhập lại số chính xác (Kèm dấu \".\" ở cuối để tránh lỗi Zalo nhận diện).");
             
             const userSnap = await db.collection('users').doc(phone).get();
             if (!userSnap.exists) {
@@ -319,7 +319,7 @@ bot.on('message', async (msg) => {
             if (!userPhone) {
                 session.state = 'WAITING_PHONE_SUPPORT';
                 await sessionRef.set(session);
-                return bot.sendMessage(zaloId, "🤖 Để Shop hỗ trợ và đồng bộ thông tin tốt nhất, bạn vui lòng cung cấp Số Điện Thoại nhé!");
+                return bot.sendMessage(zaloId, "🤖 Để Shop hỗ trợ và đồng bộ thông tin tốt nhất, bạn vui lòng cung cấp Số Điện Thoại nhé! (Kèm dấu \".\" ở cuối để tránh Zalo lỗi, VD: 0987654321.)");
             }
             session.supportMode = true;
             await sessionRef.set(session);
@@ -351,11 +351,14 @@ bot.on('message', async (msg) => {
         }
 
         // ----------------------------------------------------------------
-        // 7. ĐĂNG NHẬP BẰNG SĐT 
+        // 7. ĐĂNG NHẬP BẰNG SĐT (Hỗ trợ bóc tách mọi ký tự đặc biệt)
         // ----------------------------------------------------------------
         if (!session.state && !session.supportMode) {
-            const cleanPhone = text.replace(/\s/g, '');
-            if (/^0\d{9}$/.test(cleanPhone)) {
+            // Lọc toàn bộ mọi ký tự không phải là số (dấu chấm, phẩy, khoảng trắng, chữ cái, gạch ngang...)
+            const cleanPhone = text.replace(/\D/g, '');
+            
+            // Nếu chuỗi còn lại chính xác là 10 số (Bao gồm đầu 0 hoặc theo định dạng ví dụ 1234567890)
+            if (/^(0\d{9}|\d{10})$/.test(cleanPhone)) {
                 const userSnap = await db.collection('users').doc(cleanPhone).get();
                 if (userSnap.exists) {
                     const userData = userSnap.data();
@@ -365,7 +368,6 @@ bot.on('message', async (msg) => {
                     await bot.sendMessage(zaloId, "✅ Bạn đã đăng nhập thành công!");
                     await bot.sendMessage(zaloId, `🎉 Chào mừng ${userData.fullName || name} quay trở lại! Hạng hiện tại của bạn là: ${rankName}`);
                     return bot.sendMessage(zaloId, infoMsgText);
-                    return bot.sendMessage(zaloId, `*BOT có thể nhận diện sai đơn hàng và giá tiền! Nhưng đơn hàng vẫn thực hiện đúng theo ghi chú của bạn nhé!`);
                 }
             }
         }
@@ -441,7 +443,7 @@ bot.on('message', async (msg) => {
         if (CHANGE_INFO_KEYWORDS.some(k => lowerText.includes(k))) {
             session.state = 'WAITING_PHONE';
             await sessionRef.set(session);
-            return bot.sendMessage(zaloId, "📝 Vui lòng nhập Số điện thoại mới để quán cập nhật.");
+            return bot.sendMessage(zaloId, "📝 Vui lòng nhập Số điện thoại mới để quán cập nhật. (Nên thêm dấu \".\" ở cuối SĐT, VD: 0987654321.)");
         }
 
         if (PAYMENT_BANK_KEYWORDS.some(k => lowerText.includes(k))) {
@@ -467,13 +469,13 @@ bot.on('message', async (msg) => {
             } else {
                 session.state = 'WAITING_PHONE';
                 await sessionRef.set(session);
-                return bot.sendMessage(zaloId, `🤖 Nhận đơn: ${detected.items}. Cho quán xin SĐT nhé! (Nếu Zalo hiện gửi kèm thông tin, ấn nút X phía trên rồi dán SĐT vào nha)`);
+                return bot.sendMessage(zaloId, `🤖 Nhận đơn: ${detected.items}. Cho quán xin SĐT nhé! (Thêm dấu "." ở cuối SĐT để tránh lỗi, VD: 0987654321.)`);
             }
         }
 
         if (session.state === 'WAITING_PHONE') {
             const phone = text.replace(/\D/g, '');
-            if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
+            if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ. Vui lòng nhập lại chính xác (Kèm dấu \".\" ở cuối).");
             session.pendingOrder.phone = phone;
             const userSnap = await db.collection('users').doc(phone).get();
             if (userSnap.exists) {
@@ -531,9 +533,8 @@ bot.on('message', async (msg) => {
 
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
-            await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
+            await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
             return bot.sendMessage(zaloId, infoMsgText);
-            return bot.sendMessage(zaloId, `*BOT có thể nhận diện sai đơn hàng và giá tiền! Nhưng đơn hàng vẫn thực hiện đúng theo ghi chú của bạn nhé!`);
         }
 
     } catch (error) { console.error("❌ Lỗi:", error); }
@@ -548,7 +549,6 @@ db.collection('orders').onSnapshot((snapshot) => {
         const order = change.doc.data();
         if (change.type === "modified" && order.zaloId) {
             
-            // CẬP NHẬT: Tự động cộng xu khi hoàn thành đơn (Chống X2 bằng Transaction)
             if (order.status === 'COMPLETED' && !order.xuRewarded) {
                 try {
                     await db.runTransaction(async (t) => {
@@ -558,7 +558,6 @@ db.collection('orders').onSnapshot((snapshot) => {
                         
                         const currentOrder = orderSnap.data();
                         
-                        // Kiểm tra lại lần nữa trong transaction để chống X2 nếu có nhiều luồng cùng chạy
                         if (currentOrder.xuRewarded) return;
                         
                         const numTotal = parseInt(String(currentOrder.total).replace(/\D/g, ''));
@@ -567,7 +566,6 @@ db.collection('orders').onSnapshot((snapshot) => {
                             rewardXu = Math.floor(numTotal / 1000) * 10;
                         }
 
-                        // Đánh dấu đơn này đã cộng xu
                         t.update(orderRef, { xuRewarded: true });
                         
                         if (rewardXu > 0 && currentOrder.phone) {
