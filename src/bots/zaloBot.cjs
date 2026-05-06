@@ -51,23 +51,22 @@ const MENU = {
         { keywords: ['phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm'], name: 'Cơm tấm sườn trứng', price: 35000 } 
     ],
     SIDES: [
-        { keywords: ['cơm thêm', 'thêm cơm'], name: 'Cơm thêm', price: 5000 },
         { keywords: ['sườn thêm', 'miếng sườn', 'thêm sườn'], name: 'Sườn thêm', price: 10000 },
         { keywords: ['trứng thêm', 'thêm trứng'], name: 'Trứng thêm', price: 5000 },
         { keywords: ['canh thêm', 'thêm canh'], name: 'Canh thêm', price: 0 },
-        { keywords: ['cà chua thêm', 'ca chua them'], name: 'Cà chua thêm', price: 0 },
+        { keywords: ['cà chua thêm', 'ca chua them', 'cà chua'], name: 'Cà chua thêm', price: 0 },
         { keywords: ['dưa chua thêm', 'dua chua them', 'đồ chua thêm'], name: 'Dưa chua thêm', price: 0 },
         { keywords: ['dưa leo thêm', 'dua leo them', 'thêm dưa chuột'], name: 'Dưa leo thêm', price: 0 },
         { keywords: ['nước mắm thêm', 'nuoc mam them', 'mắm thêm', 'thêm mắm'], name: 'Nước mắm thêm', price: 0 }
     ]
 };
 
-// CẬP NHẬT: Thêm biến thể Unicode của chữ "huỷ"
-const CANCEL_KEYWORDS = ['hủy', 'huỷ', 'huy', 'hủy đơn', 'huỷ đơn', 'huy don', 'không đặt nữa'];
+const CANCEL_KEYWORDS = ['hủy', 'huy', 'hủy đơn', 'huy don', 'không đặt nữa'];
 const SUPPORT_KEYWORDS = ['hỗ trợ', 'ho tro', 'cần hỗ trợ', 'nhân viên', 'tư vấn', 'shop ơi', 'ad ơi', 'chủ quán'];
 const CLOSE_SUPPORT_KEYWORDS = ['đóng chat', 'dong chat', 'đóng hỗ trợ', 'dong ho tro', 'kết thúc', 'ket thuc'];
 const GREETING_KEYWORDS = ['nay có bán không ạ','đặt cơm ạ','shop ơi','hello','hi','xin chào', 'chào', 'bắt đầu', 'alo shop', 'alo sốp', 'alo'];
 
+// Tách cơ chế Reset
 const LOGOUT_KEYWORDS = ['reset', 'xóa', 'xoa', 'đăng xuất', 'dang xuat'];
 const DELETE_ALL_KEYWORDS = ['reset all', 'xóa all', 'xoa all', 'delete all'];
 
@@ -100,7 +99,7 @@ const infoMsgText = `Bạn có thể nhắn các nội dung sau đây:\n` +
                     `- 🕒 "Lịch sử" để tra cứu lịch sử đơn hàng đã đặt\n` +
                     `- 🆘 "Hỗ trợ" để nhắn tin với Shop hoặc "Đóng hỗ trợ" để kết thúc\n` +
                     `- 🗑️ "Hủy" nếu muốn xóa đơn hàng đang tạo dở\n` +
-                    `- 📝 "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ (chỉ có thể thay đổi trên website: https://plantg.id.vn/)\n` +
+                    `- 📝 "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ (chỉ có thể thay đổi trên website)\n` +
                     `- 🔄 "Reset" để Đăng xuất hoặc "Reset All" để Xóa toàn bộ tài khoản.`;
 
 const shortcutMsgText = `📋 DANH SÁCH TỪ KHÓA VIẾT TẮT:\n\n` +
@@ -144,55 +143,66 @@ const getPhoneByZaloId = async (zaloId) => {
     return null;
 };
 
+// CẬP NHẬT: Phân tách món ăn bằng dấu "," hoặc "."
 const advancedParse = (text) => {
-    let items = [];
+    let itemsMap = {};
     let total = 0;
-    let foundMain = false;
     let hasValidItem = false;
     
-    let lowerText = text.toLowerCase().trim();
-    lowerText = lowerText.replace(/(\d+)([a-zA-Zà-ỹ]+)/g, '$1 $2');
-    
-    let primaryQty = 1; 
-    
-    const qtyMatch = lowerText.match(/(?:^|\s)(\d{1,2})\s*(p|phần|hộp|suất|cơm|c)?(?:$|\s)/);
-    if (qtyMatch) {
-        primaryQty = parseInt(qtyMatch[1]);
-        if(primaryQty > 50) primaryQty = 1; 
-    }
+    // Tách chuỗi thành mảng các phần tử dựa trên dấu phẩy hoặc dấu chấm
+    const parts = text.split(/[.,\n]/).map(p => p.trim()).filter(p => p.length > 0);
 
-    for (const main of MENU.MAIN) {
-        if (main.keywords.some(k => new RegExp(`(^|\\s)${k}($|\\s)`).test(lowerText))) {
-            items.push(`${primaryQty}x ${main.name}`);
-            total += main.price * primaryQty;
-            foundMain = true;
-            hasValidItem = true;
-            break; 
+    for (let part of parts) {
+        let lowerPart = part.toLowerCase();
+        lowerPart = lowerPart.replace(/(\d+)([a-zA-Zà-ỹ]+)/g, '$1 $2');
+        
+        let primaryQty = 1; 
+        
+        const qtyMatch = lowerPart.match(/(?:^|\s)(\d{1,2})\s*(p|phần|hộp|suất|cơm|c)?(?:$|\s)/);
+        if (qtyMatch) {
+            primaryQty = parseInt(qtyMatch[1]);
+            if(primaryQty > 50) primaryQty = 1; 
         }
-    }
 
-    if (!foundMain && qtyMatch && qtyMatch[2]) {
-        items.push(`${primaryQty}x Cơm tấm sườn trứng`);
-        total += 35000 * primaryQty;
-        hasValidItem = true;
-    }
+        let foundMain = false;
 
-    MENU.SIDES.forEach(side => {
-        const sideKeywordsRegex = new RegExp(`(?:^|\\s)(\\d{1,2})?\\s*(${side.keywords.join('|')})(?:$|\\s)`, 'i');
-        const match = lowerText.match(sideKeywordsRegex);
-        if (match) {
-            let qty = match[1] ? parseInt(match[1]) : 1;
-            if(qty > 50) qty = 1; 
-            items.push(`${qty}x ${side.name}`);
-            total += side.price * qty;
+        // Quét Món Chính cho phần cắt này
+        for (const main of MENU.MAIN) {
+            if (main.keywords.some(k => new RegExp(`(^|\\s)${k}($|\\s)`).test(lowerPart))) {
+                itemsMap[main.name] = (itemsMap[main.name] || 0) + primaryQty;
+                total += main.price * primaryQty;
+                foundMain = true;
+                hasValidItem = true;
+                break; 
+            }
+        }
+
+        // Nếu không có tên món cụ thể nhưng có "1p", "1 hộp" -> Mặc định Cơm Sườn Trứng
+        if (!foundMain && qtyMatch && qtyMatch[2]) {
+            itemsMap['Cơm tấm sườn trứng'] = (itemsMap['Cơm tấm sườn trứng'] || 0) + primaryQty;
+            total += 35000 * primaryQty;
             hasValidItem = true;
         }
-    });
+
+        // Quét Món Phụ cho phần cắt này
+        MENU.SIDES.forEach(side => {
+            const sideKeywordsRegex = new RegExp(`(?:^|\\s)(\\d{1,2})?\\s*(${side.keywords.join('|')})(?:$|\\s)`, 'i');
+            const match = lowerPart.match(sideKeywordsRegex);
+            if (match) {
+                let qty = match[1] ? parseInt(match[1]) : 1;
+                if(qty > 50) qty = 1; 
+                itemsMap[side.name] = (itemsMap[side.name] || 0) + qty;
+                total += side.price * qty;
+                hasValidItem = true;
+            }
+        });
+    }
 
     if (!hasValidItem) {
+        const lowerText = text.toLowerCase();
         const hasOrderIntent = ORDER_INTENT_KEYWORDS.some(k => new RegExp(`(^|\\s)${k}($|\\s)`).test(lowerText));
         const isJustShortNumber = /^\s*\d{1,2}\s*$/.test(lowerText); 
-        const hasNumberWithUnit = qtyMatch && qtyMatch[2];
+        const hasNumberWithUnit = lowerText.match(/(?:^|\s)(\d{1,2})\s*(p|phần|hộp|suất|cơm|c)(?:$|\s)/);
 
         if (hasOrderIntent || isJustShortNumber || hasNumberWithUnit) {
             return { items: "Giống Ghi chú", total: "Thanh toán sau", note: text };
@@ -200,7 +210,10 @@ const advancedParse = (text) => {
         return { items: null }; 
     }
 
-    return { items: items.join(', '), total, note: text };
+    // Gộp các món đã gom lại thành 1 chuỗi hoàn chỉnh
+    const itemsArr = Object.keys(itemsMap).map(key => `${itemsMap[key]}x ${key}`);
+
+    return { items: itemsArr.join(', '), total, note: text };
 };
 
 const formatConfirmMsg = (order) => {
@@ -254,7 +267,6 @@ bot.on('message', async (msg) => {
         const userPhone = await getPhoneByZaloId(zaloId);
         const chatIdentifier = userPhone || zaloId;
 
-        // CẬP NHẬT: PHÁT HIỆN TIN NHẮN ĐẦU TIÊN CỦA USER MỚI
         const logQuery = await db.collection('learning_logs').where("zaloId", "==", zaloId).limit(1).get();
         const isFirstTime = logQuery.empty;
 
@@ -401,11 +413,12 @@ bot.on('message', async (msg) => {
         }
 
         // ----------------------------------------------------------------
-        // 7. ĐĂNG NHẬP BẰNG SĐT
+        // 7. ĐĂNG NHẬP BẰNG SĐT (Chặn chữ cái để không trùng lặp lệnh)
         // ----------------------------------------------------------------
         if (!session.state && !session.supportMode) {
             const cleanPhone = text.replace(/\D/g, '');
-            if (/^(0\d{9}|\d{10})$/.test(cleanPhone)) {
+            // Ràng buộc: Đoạn tin nhắn không chứa chữ cái nào, và sau khi bỏ ký tự đặc biệt thì còn lại đúng 10 số
+            if (!/[\p{L}]/u.test(text) && /^(0\d{9}|\d{10})$/.test(cleanPhone)) {
                 const userSnap = await db.collection('users').doc(cleanPhone).get();
                 if (userSnap.exists) {
                     const userData = userSnap.data();
@@ -538,7 +551,6 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, reorderMsg);
         }
 
-        // CẬP NHẬT: Ghi chú rõ việc hủy/đè đơn cho khách
         if (CANCEL_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             return bot.sendMessage(zaloId, "🚫 Đã hủy đơn hàng đang tạo. Bạn có thể nhắn lại món mới để BOT ghi nhận thay thế nhé!");
@@ -640,7 +652,6 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // CẬP NHẬT: Thêm hiển thị "Hướng dẫn" và "Viết tắt" trong câu chào mặc định
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! \n\n👉 Nhắn "Menu" để xem món.\n👉 Nhắn SĐT (kèm dấu "." ở cuối, VD: 0987654321.) để Đăng nhập.\n👉 Nhắn "Hướng dẫn" hoặc "Viết tắt" để xem cách dùng BOT nhanh nhất!`);
