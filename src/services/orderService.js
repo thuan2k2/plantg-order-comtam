@@ -16,7 +16,7 @@ import {
   setDoc 
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { applyQuickBan } from './authService'; // MỚI: Import lệnh trừng phạt bảo mật
+import { applyQuickBan } from './authService'; // Lệnh trừng phạt bảo mật
 
 const COLLECTION_NAME = 'orders';
 const VOUCHER_COL = 'vouchers';
@@ -26,15 +26,6 @@ let isSubmittingOrder = false;
 // BỘ NHỚ THEO DÕI BẢO MẬT (Chống SPAM & Dò Mã)
 const spamTracker = {}; 
 const voucherBruteForceTracker = {};
-
-// Hàm Ghi Log An Toàn (Đảm bảo lỗi Log không làm sập giao dịch chính)
-const safeLogAdmin = async (logData) => {
-  try {
-    await addDoc(collection(db, 'admin_logs'), { ...logData, createdAt: serverTimestamp() });
-  } catch (error) {
-    console.warn("Cảnh báo: Không thể ghi log nhưng giao dịch đã hoàn tất thành công", error);
-  }
-};
 
 /**
  * ==========================================
@@ -62,17 +53,14 @@ export const createOrderSecure = async (orderData) => {
     const isWallet = orderData.paymentMethod === 'WALLET';
     const totalAmount = parseInt(orderData.total.replace(/\D/g, '')) || 0;
     
-    let pendingLog = null; 
-
     const result = await runTransaction(db, async (transaction) => {
       const userRef = doc(db, 'users', cleanPhone);
-      let currentBalance = 0;
 
       if (isWallet) {
         const userDoc = await transaction.get(userRef);
         if (!userDoc.exists()) throw new Error("Không tìm thấy thông tin ví!");
         
-        currentBalance = userDoc.data().walletBalance || 0;
+        const currentBalance = userDoc.data().walletBalance || 0;
 
         if (currentBalance < totalAmount) {
           // BẢO MẬT 2: PHÁT HIỆN HACK SỐ DƯ VÍ (Can thiệp frontend để hiện nút thanh toán)
@@ -80,22 +68,12 @@ export const createOrderSecure = async (orderData) => {
           throw new Error("Phát hiện can thiệp hệ thống! Tài khoản đã bị khóa vĩnh viễn.");
         }
 
-        // Cập nhật trừ tiền trong ví
+        // Cập nhật trừ tiền trong ví (Server tự động ghi log qua cờ lastUpdateSource)
         transaction.update(userRef, {
           walletBalance: increment(-totalAmount),
           lastUpdateSource: 'order_payment',
           updatedAt: serverTimestamp()
         });
-
-        pendingLog = {
-          type: 'BALANCE',
-          source: 'ORDER_PAYMENT',
-          targetPhone: cleanPhone,
-          assetType: 'wallet',
-          walletChange: -totalAmount,
-          walletBalance: currentBalance - totalAmount,
-          reason: 'Thanh toán đơn hàng'
-        };
       }
 
       const orderRef = doc(collection(db, COLLECTION_NAME));
@@ -113,11 +91,7 @@ export const createOrderSecure = async (orderData) => {
       return { id: orderRef.id };
     });
 
-    if (pendingLog) {
-      pendingLog.reason = `Thanh toán đơn hàng #${result.id.slice(-6).toUpperCase()}`;
-      safeLogAdmin(pendingLog);
-    }
-
+    // Trừ lượt sử dụng của Voucher
     if (orderData.usedVouchers && orderData.usedVouchers.length > 0) {
       for (const v of orderData.usedVouchers) {
         await updateDoc(doc(db, VOUCHER_COL, v.id), {
@@ -168,7 +142,6 @@ export const adminCreateOrder = async (orderData) => {
         address: orderData.address.trim(),
         username: cleanPhone,
         passcode: '123456', 
-        coins: 0,
         totalXu: 0,
         walletBalance: 0,
         createdAt: serverTimestamp(),
@@ -220,7 +193,6 @@ export const processWalletPayment = async (phone, amount) => {
   try {
     const cleanPhone = phone.trim();
     const userRef = doc(db, 'users', cleanPhone); 
-    let pendingLog = null;
 
     await runTransaction(db, async (transaction) => {
       const userSnap = await transaction.get(userRef);
@@ -238,14 +210,7 @@ export const processWalletPayment = async (phone, amount) => {
         lastUpdateSource: 'order_payment',
         updatedAt: serverTimestamp()
       });
-
-      pendingLog = {
-        type: 'BALANCE', source: 'ORDER_PAYMENT', targetPhone: cleanPhone, assetType: 'wallet',
-        walletChange: -amount, walletBalance: currentBalance - amount, reason: `Thanh toán bổ sung bằng Ví`
-      };
     });
-
-    if (pendingLog) safeLogAdmin(pendingLog);
 
     return { success: true };
   } catch (e) {
@@ -271,16 +236,11 @@ export const completeOrderWithBonus = async (order) => {
       const userSnap = await getDoc(userDocRef);
       
       if (userSnap.exists()) {
-        const currentXu = userSnap.data().totalXu || 0;
-
         await updateDoc(userDocRef, {
-          totalXu: increment(earnedXu), totalSpend: increment(totalAmount), 
-          lastUpdateSource: 'order_payment', updatedAt: serverTimestamp()
-        });
-
-        safeLogAdmin({
-          type: 'BALANCE', source: 'ORDER_BONUS', targetPhone: cleanPhone, assetType: 'xu',
-          walletChange: earnedXu, walletBalance: currentXu + earnedXu, reason: `Thưởng xu hoàn thành đơn #${order.id.slice(-6).toUpperCase()}`
+          totalXu: increment(earnedXu), 
+          totalSpend: increment(totalAmount), 
+          lastUpdateSource: 'order_payment', 
+          updatedAt: serverTimestamp()
         });
       }
     }
@@ -297,49 +257,12 @@ export const completeOrderWithBonus = async (order) => {
   }
 };
 
-// ==========================================
-// HÀM NHẬN XU TỪ PET
-// ==========================================
-export const claimPetReward = async (phone, minCoins = 1, maxCoins = 100) => {
-  try {
-    const cleanPhone = phone.trim();
-
-    // BẢO MẬT 4: PHÁT HIỆN BUG XU SỰ KIỆN (Truyền giá trị max siêu lớn)
-    if (maxCoins > 800 || minCoins < 0) {
-      applyQuickBan({ phone: cleanPhone, reason: 'Phát hiện can thiệp phần thưởng sự kiện (Bug Xu)', type: 'BUG_XU' });
-      return { success: false, error: "Lỗi dữ liệu! Hành vi bất thường đã bị ghi nhận." };
-    }
-
-    const userRef = doc(db, 'users', cleanPhone);
-    const userSnap = await getDoc(userRef);
-    const currentXu = userSnap.exists() ? (userSnap.data().totalXu || 0) : 0;
-
-    const rewardCoins = Math.floor(Math.random() * (maxCoins - minCoins + 1)) + minCoins;
-
-    await updateDoc(userRef, {
-      coins: increment(rewardCoins), totalXu: increment(rewardCoins),
-      lastPetInteraction: serverTimestamp(), lastUpdateSource: 'pet', updatedAt: serverTimestamp()
-    });
-
-    safeLogAdmin({
-      type: 'BALANCE', source: 'PET_REWARD', targetPhone: cleanPhone, assetType: 'xu',
-      walletChange: rewardCoins, walletBalance: currentXu + rewardCoins, reason: `Nhận xu ngẫu nhiên từ Thú cưng`
-    });
-
-    return { success: true, reward: rewardCoins };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-};
-
-
 /**
  * ==========================================
  * 3. QUẢN LÝ VOUCHER (ĐÃ NÂNG CẤP REAL-TIME)
  * ==========================================
  */
 
-// Hàm cũ (Dùng để lấy 1 lần, giữ lại để tương thích các File khác nếu cần)
 export const getMyVouchers = async (phone) => {
   try {
     const vouchersRef = collection(db, VOUCHER_COL);
@@ -359,7 +282,6 @@ export const getMyVouchers = async (phone) => {
   } catch (error) { return []; }
 };
 
-// Hàm cũ
 export const getAllVouchers = async () => {
   try {
     const q = query(collection(db, VOUCHER_COL), orderBy("createdAt", "desc"));
@@ -368,7 +290,6 @@ export const getAllVouchers = async () => {
   } catch (error) { return []; }
 };
 
-// MỚI: HÀM THEO DÕI VOUCHER CÁ NHÂN THEO THỜI GIAN THỰC (REAL-TIME)
 export const subscribeToMyVouchers = (phone, callback) => {
   if (!phone) return () => {};
   const q = query(collection(db, VOUCHER_COL), where("usageLimit", ">", 0));
@@ -377,10 +298,9 @@ export const subscribeToMyVouchers = (phone, callback) => {
     const now = new Date();
     const allVouchers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     
-    // JS Filter để tránh lỗi Composite Index trên Firebase
     const validVouchers = allVouchers.filter(v => {
-      if (v.expiry && v.expiry.toDate() < now) return false; // Hết hạn
-      if (v.assignedPhone && v.assignedPhone.trim() !== "" && v.assignedPhone !== phone.trim()) return false; // Của người khác
+      if (v.expiry && v.expiry.toDate() < now) return false; 
+      if (v.assignedPhone && v.assignedPhone.trim() !== "" && v.assignedPhone !== phone.trim()) return false; 
       return true;
     });
     
@@ -388,7 +308,6 @@ export const subscribeToMyVouchers = (phone, callback) => {
   });
 };
 
-// MỚI: HÀM THEO DÕI TOÀN BỘ VOUCHER (REAL-TIME CHO ADMIN)
 export const subscribeToAllVouchers = (callback) => {
   const q = query(collection(db, VOUCHER_COL), orderBy("createdAt", "desc"));
   return onSnapshot(q, (snapshot) => {
@@ -518,18 +437,10 @@ export const updateOrderStatus = async (orderId, newStatus) => {
           
           const userSnap = await getDoc(userDocRef);
           if (userSnap.exists()) {
-            const currentBalance = userSnap.data().walletBalance || 0;
-
             await updateDoc(userDocRef, {
                walletBalance: increment(totalAmount),
                lastUpdateSource: 'refund',
                updatedAt: serverTimestamp()
-            });
-
-            safeLogAdmin({
-              type: 'BALANCE', source: 'ORDER_REFUND', targetPhone: cleanPhone, assetType: 'wallet',
-              walletChange: totalAmount, walletBalance: currentBalance + totalAmount,
-              reason: `Hoàn tiền do Admin hủy đơn #${orderId.slice(-6).toUpperCase()}`
             });
           }
         }
@@ -621,16 +532,10 @@ export const requestCancelOrder = async (orderId, status, reason = "") => {
           
           const userSnap = await getDoc(userDocRef);
           if (userSnap.exists()) {
-            const currentBalance = userSnap.data().walletBalance || 0;
-
             await updateDoc(userDocRef, {
-               walletBalance: increment(totalAmount), lastUpdateSource: 'refund', updatedAt: serverTimestamp()
-            });
-
-            safeLogAdmin({
-              type: 'BALANCE', source: 'ORDER_REFUND', targetPhone: cleanPhone, assetType: 'wallet',
-              walletChange: totalAmount, walletBalance: currentBalance + totalAmount,
-              reason: `Hoàn tiền do khách tự hủy đơn #${orderId.slice(-6).toUpperCase()}`
+               walletBalance: increment(totalAmount), 
+               lastUpdateSource: 'refund', 
+               updatedAt: serverTimestamp()
             });
           }
         }

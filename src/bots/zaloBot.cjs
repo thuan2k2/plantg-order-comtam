@@ -231,17 +231,36 @@ bot.on('message', async (msg) => {
         if (session.state === 'WAITING_ADDRESS') {
             session.pendingOrder.address = text;
             session.state = 'WAITING_CONFIRM';
+            
+            // CẬP NHẬT: Đồng bộ dữ liệu Khách hàng mới tạo từ Zalo với cấu trúc hệ thống Web
             await db.collection('users').doc(session.pendingOrder.phone).set({
-                fullName: name, address: text, zaloId, username: session.pendingOrder.phone
+                fullName: name, 
+                address: text, 
+                zaloId, 
+                username: session.pendingOrder.phone,
+                role: 'user',           // Đồng bộ role
+                totalXu: 0,             // Đồng bộ trường Xu
+                walletBalance: 0,       // Khởi tạo ví
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
+            
             await sessionRef.set(session);
             return bot.sendMessage(zaloId, formatConfirmMsg(session.pendingOrder));
         }
 
         if (lowerText === 'ok' && session.state === 'WAITING_CONFIRM') {
             const order = session.pendingOrder;
+            
+            // CẬP NHẬT: Đồng bộ định dạng trường dữ liệu đơn hàng
             const docRef = await db.collection('orders').add({
-                ...order, status: 'PENDING', total: order.total.toLocaleString() + 'đ', createdAt: admin.firestore.FieldValue.serverTimestamp()
+                ...order, 
+                status: 'PENDING', 
+                paymentMethod: 'CASH',          // Đồng bộ phương thức
+                paymentStatus: 'UNPAID',        // Đồng bộ trạng thái thanh toán
+                deliveryType: 'ASAP',           // Đơn giao ngay
+                total: order.total.toLocaleString() + 'đ', 
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
             await sessionRef.delete();
             

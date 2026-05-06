@@ -112,6 +112,10 @@ const SecurityGuard = ({ phone }) => {
     };
 
     const detectDevToolsResize = () => {
+      // MỚI: Bỏ qua kiểm tra resize nếu đang dùng điện thoại hoặc máy tính bảng
+      const isMobileOrTablet = /Mobi|Android|Tablet|iPad|iPhone/i.test(navigator.userAgent);
+      if (isMobileOrTablet) return;
+
       const threshold = 160;
       const widthDiff = window.outerWidth - window.innerWidth;
       const heightDiff = window.outerHeight - window.innerHeight;

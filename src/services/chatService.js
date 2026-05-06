@@ -7,15 +7,6 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const CHAT_COLLECTION = 'support_chats';
 
-// Hàm Ghi Log An Toàn (Đảm bảo lỗi Log không làm sập giao dịch nhận quà)
-const safeLogAdmin = async (logData) => {
-  try {
-    await addDoc(collection(db, 'admin_logs'), { ...logData, createdAt: serverTimestamp() });
-  } catch (error) {
-    console.warn("Cảnh báo: Không thể ghi log nhưng giao dịch đã hoàn tất thành công", error);
-  }
-};
-
 /**
  * 1. Khởi tạo hoặc Cập nhật thông tin phòng chat lấy từ dữ liệu gốc 'users'
  * Hỗ trợ Zalo Bridge: Khởi tạo các cờ unread để Bot Zalo và Web Admin cùng theo dõi
@@ -122,7 +113,7 @@ export const subscribeToAdminChats = (callback) => {
 };
 
 // ============================================================================
-// HỆ THỐNG GAMIFICATION & HÒM THƯ (REAL-TIME LOGS)
+// HỆ THỐNG GAMIFICATION & HÒM THƯ (GỌI CLOUD FUNCTIONS)
 // ============================================================================
 
 const functions = getFunctions();
@@ -132,17 +123,6 @@ export const claimMailboxAttachment = async (phone, mailId) => {
   try {
     const claimFn = httpsCallable(functions, 'claimMailAttachment');
     const result = await claimFn({ phone, mailId });
-    
-    if (result.data && result.data.reward > 0) {
-      const userSnap = await getDoc(doc(db, 'users', phone));
-      const currentXu = userSnap.exists() ? (userSnap.data().totalXu || 0) : result.data.reward;
-      
-      safeLogAdmin({
-        type: 'BALANCE', source: 'mail', targetPhone: phone, assetType: 'xu',
-        walletChange: result.data.reward, walletBalance: currentXu, 
-        reason: `Nhận quà từ Hòm thư hệ thống`
-      });
-    }
     return result.data;
   } catch (error) { throw error; }
 };
@@ -152,17 +132,6 @@ export const claimDailyReward = async (phone) => {
   try {
     const giftFn = httpsCallable(functions, 'claimDailyGift');
     const result = await giftFn({ phone });
-    
-    if (result.data && result.data.reward > 0) {
-      const userSnap = await getDoc(doc(db, 'users', phone));
-      const currentXu = userSnap.exists() ? (userSnap.data().totalXu || 0) : result.data.reward;
-      
-      safeLogAdmin({
-        type: 'BALANCE', source: 'gift', targetPhone: phone, assetType: 'xu',
-        walletChange: result.data.reward, walletBalance: currentXu, 
-        reason: `Mở hộp quà may mắn hàng ngày`
-      });
-    }
     return result.data;
   } catch (error) { throw error; }
 };
@@ -172,17 +141,6 @@ export const claimDailyCheckIn = async (phone) => {
   try {
     const checkInFn = httpsCallable(functions, 'claimDailyCheckIn');
     const result = await checkInFn({ phone });
-    
-    if (result.data && result.data.reward > 0) {
-      const userSnap = await getDoc(doc(db, 'users', phone));
-      const currentXu = userSnap.exists() ? (userSnap.data().totalXu || 0) : result.data.reward;
-      
-      safeLogAdmin({
-        type: 'BALANCE', source: 'checkin', targetPhone: phone, assetType: 'xu',
-        walletChange: result.data.reward, walletBalance: currentXu, 
-        reason: `Thưởng điểm danh (Ngày ${result.data.streak || 1})`
-      });
-    }
     return result.data;
   } catch (error) { throw error; }
 };

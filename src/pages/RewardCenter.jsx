@@ -1,16 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, updateDoc, increment, collection, addDoc, serverTimestamp, runTransaction } from 'firebase/firestore';
-import { db } from '../firebase/config';
-
-// Hàm Ghi Log An Toàn (Đảm bảo lỗi Log không làm sập giao dịch đổi thưởng)
-const safeLogAdmin = async (logData) => {
-  try {
-    await addDoc(collection(db, 'admin_logs'), { ...logData, createdAt: serverTimestamp() });
-  } catch (error) {
-    console.warn("Cảnh báo: Không thể ghi log nhưng giao dịch đổi voucher đã hoàn tất thành công", error);
-  }
-};
+import { doc, onSnapshot } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase/config';
 
 const RewardCenter = () => {
   const navigate = useNavigate();
@@ -53,7 +45,7 @@ const RewardCenter = () => {
   const handleExchange = async (reward) => {
     if (isProcessing) return;
 
-    // Kiểm tra nhanh tại client
+    // Kiểm tra nhanh tại client trước khi gọi Server
     const currentXu = customerInfo?.totalXu || 0;
     if (currentXu < reward.cost) {
       alert("Số dư Xu không đủ để thực hiện đổi quà này!");
@@ -62,60 +54,29 @@ const RewardCenter = () => {
 
     if (window.confirm(`Xác nhận dùng ${reward.cost.toLocaleString()} Xu để đổi lấy ${reward.name}?`)) {
       setIsProcessing(true);
-      let pendingLog = null; // Biến tạm lưu thông tin log
       
       try {
-        const userRef = doc(db, 'users', phone.trim());
-        const voucherRef = doc(collection(db, 'vouchers'));
-
-        // SỬ DỤNG TRANSACTION: Đảm bảo trừ xu thành công thì mới sinh ra Voucher
-        await runTransaction(db, async (transaction) => {
-          const userDoc = await transaction.get(userRef);
-          if (!userDoc.exists()) throw "Người dùng không tồn tại!";
-
-          const totalXu = userDoc.data().totalXu || 0;
-          if (totalXu < reward.cost) throw "Số dư Xu đã thay đổi, không đủ để đổi quà!";
-
-          // 1. Trừ Xu của User (ĐÃ FIX LỖI: Dùng 'order_payment' để vượt qua bảo mật Cloud Functions)
-          transaction.update(userRef, {
-            totalXu: increment(-reward.cost),
-            lastUpdateSource: 'order_payment', // <-- Thay đổi quan trọng nhất ở đây
-            updatedAt: serverTimestamp()
-          });
-
-          // 2. Tạo Voucher mới gán cho SĐT này
-          const voucherCode = `DOI-${Math.random().toString(36).toUpperCase().slice(2, 7)}`;
-          transaction.set(voucherRef, {
-            code: voucherCode,
+        // ĐÃ FIX BẢO MẬT: Chuyển toàn bộ logic trừ xu và sinh mã về Cloud Functions
+        const exchangeVoucherFn = httpsCallable(functions, 'exchangeVoucher');
+        const result = await exchangeVoucherFn({
+          phone: phone.trim(),
+          reward: {
+            id: reward.id,
+            name: reward.name,
+            cost: reward.cost,
             value: reward.value,
-            type: reward.type,
-            assignedPhone: phone.trim(),
-            usageLimit: 1,
-            createdAt: serverTimestamp(),
-            description: `Đổi từ ${reward.cost.toLocaleString()} Xu`
-          });
-
-          // Chuẩn bị Dữ liệu Ghi Log (Log vẫn ghi rõ là exchange_voucher cho Admin dễ nhìn)
-          pendingLog = {
-            type: 'BALANCE',
-            source: 'exchange_voucher',
-            targetPhone: phone.trim(),
-            assetType: 'xu',
-            walletChange: -reward.cost,
-            walletBalance: totalXu - reward.cost,
-            reason: `Đổi Xu lấy Voucher: ${reward.name}`
-          };
+            type: reward.type
+          }
         });
 
-        // NẾU TRANSACTION THÀNH CÔNG -> GHI LOG
-        if (pendingLog) {
-          safeLogAdmin(pendingLog);
+        if (result.data.success) {
+          alert(`🎉 Đổi quà thành công! Mã Voucher của bạn là: ${result.data.voucherCode} (Kiểm tra trong Kho mã khi đặt hàng)`);
+        } else {
+          alert(`❌ Đổi quà thất bại: ${result.data.error}`);
         }
-
-        alert(`🎉 Đổi quà thành công! Mã Voucher của bạn là: DOI-... (Kiểm tra trong Kho mã khi đặt hàng)`);
       } catch (error) {
         console.error("Lỗi đổi quà:", error);
-        alert(typeof error === 'string' ? error : "Có lỗi xảy ra trong quá trình giao dịch.");
+        alert(error.message || "Có lỗi xảy ra trong quá trình giao dịch với máy chủ.");
       } finally {
         setIsProcessing(false);
       }
@@ -192,7 +153,7 @@ const RewardCenter = () => {
           <ul className="text-[11px] text-blue-800 dark:text-blue-300 space-y-2 font-bold leading-relaxed">
             <li className="flex gap-2"><span>•</span> <span>Xu được tự động cộng khi đơn hàng chuyển sang trạng thái "Hoàn thành".</span></li>
             <li className="flex gap-2"><span>•</span> <span>Voucher sau khi đổi sẽ có hiệu lực ngay lập tức trong "Kho mã" của bạn.</span></li>
-            <li className="flex gap-2"><span>•</span> <span>Hệ thống sử dụng bảo mật Transaction để đảm bảo số dư Xu luôn chính xác.</span></li>
+            <li className="flex gap-2"><span>•</span> <span>Hệ thống sử dụng bảo mật Server-side để đảm bảo số dư Xu luôn chính xác.</span></li>
             <li className="flex gap-2 text-orange-600 dark:text-orange-400"><span>•</span> <span>Lưu ý: Xu không có giá trị quy đổi thành tiền mặt hoặc chuyển nhượng.</span></li>
           </ul>
         </div>

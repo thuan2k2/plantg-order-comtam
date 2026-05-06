@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db, functions } from '../firebase/config';
+import { functions } from '../firebase/config';
 import { httpsCallable } from 'firebase/functions'; // GỌI CLOUD FUNCTION ĐỂ BẢO MẬT XU
 
 // CÁC MẨU CHUYỆN NHỎ

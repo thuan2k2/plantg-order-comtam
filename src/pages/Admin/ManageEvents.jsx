@@ -7,12 +7,12 @@ const ManageEvents = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [newTime, setNewTime] = useState("");
 
-  // Cấu trúc dữ liệu mặc định nếu database chưa có
+  // Cấu trúc dữ liệu mặc định nếu database chưa có (ĐÃ ĐỒNG BỘ totalXu)
   const defaultData = {
     luckyXu: { min: 10, max: 100, duration: 15, activeTimes: [] },
     dailyBox: { min: 10, max: 50 },
-    attendance: { coins: 10 },
-    newUserReward: { enabled: true, coins: 1000 } // MỚI: Quà người mới
+    attendance: { totalXu: 10 },
+    newUserReward: { enabled: true, totalXu: 1000 } // MỚI: Quà người mới
   };
 
   const [formData, setFormData] = useState(defaultData);
@@ -235,14 +235,14 @@ const ManageEvents = () => {
             <div className="relative">
               <input 
                 type="number" min="1"
-                value={formData.attendance.coins} 
-                onChange={(e) => setFormData({...formData, attendance: {...formData.attendance, coins: Number(e.target.value)}})}
+                value={formData.attendance.totalXu} 
+                onChange={(e) => setFormData({...formData, attendance: {...formData.attendance, totalXu: Number(e.target.value)}})}
                 className="w-full p-4 bg-gray-50 dark:bg-gray-700 dark:text-white rounded-2xl border-none font-black text-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all pl-12" 
               />
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl">🪙</span>
             </div>
             <p className="text-xs font-bold text-blue-600 dark:text-blue-400 mt-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl">
-              👉 Ngày 7: <span className="font-black">{formData.attendance.coins * 10} Xu</span>
+              👉 Ngày 7: <span className="font-black">{formData.attendance.totalXu * 10} Xu</span>
             </p>
           </div>
         </div>
@@ -277,8 +277,8 @@ const ManageEvents = () => {
               <div className="relative">
                 <input 
                   type="number" min="0"
-                  value={formData.newUserReward.coins} 
-                  onChange={(e) => setFormData({...formData, newUserReward: {...formData.newUserReward, coins: Number(e.target.value)}})}
+                  value={formData.newUserReward.totalXu} 
+                  onChange={(e) => setFormData({...formData, newUserReward: {...formData.newUserReward, totalXu: Number(e.target.value)}})}
                   disabled={!formData.newUserReward.enabled}
                   className={`w-full p-4 rounded-2xl border-none font-black text-lg focus:ring-2 focus:ring-purple-500 outline-none transition-all pl-12 ${formData.newUserReward.enabled ? 'bg-gray-50 dark:bg-gray-700 dark:text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'}`} 
                 />

@@ -58,7 +58,7 @@ export const registerUser = async (userData) => {
       
       passcode: userData.passcode || "123456", 
       walletBalance: 0,    
-      totalXu: 0,          
+      totalXu: 0,          // Sử dụng totalXu thống nhất
       totalSpend: 0,       
       avatarUrl: "",      
       addresses: userData.address ? [{ id: Date.now(), detail: userData.address, isDefault: true }] : []
@@ -134,39 +134,13 @@ export const applyQuickBan = async ({ phone, reason, type = 'F12' }) => {
   if (!phone) return;
   try {
     const rule = SECURITY_RULES[type] || SECURITY_RULES['F12'];
-    
-    // 1. Tính toán thời gian cấm thực tế
-    let banUntil = null;
-    if (rule.days === 'permanent') {
-      banUntil = 'permanent';
-    } else {
-      banUntil = new Date().getTime() + (rule.days * 24 * 60 * 60 * 1000);
-    }
+    const banDays = rule.days === 'permanent' ? 36500 : rule.days; // 100 năm nếu vĩnh viễn
 
-    // 2. Cập nhật trực tiếp vào Firestore (User sẽ bị văng ra ngay lập tức do SecurityGuard lắng nghe real-time)
-    const userRef = doc(db, COLLECTION_NAME, phone);
-    await updateDoc(userRef, {
-      isBanned: true,
-      banUntil: banUntil,
-      banReason: reason,
-      updatedAt: serverTimestamp()
-    });
-
-    // 3. Gọi Cloud Functions (để xử lý các tác vụ ngầm như thu hồi xu, chặn IP nếu cần)
+    // ĐÃ FIX: Chuyển hoàn toàn việc xử lý ban và ghi log lên Server (Cloud Functions)
     const applyBanFn = httpsCallable(functions, 'applyQuickBan');
-    await applyBanFn({ phone, reason, days: rule.days === 'permanent' ? 9999 : rule.days });
+    await applyBanFn({ phone, reason, days: banDays });
     
-    // 4. GHI LOG VÀO NHẬT KÝ HỆ THỐNG
-    await addDoc(collection(db, 'admin_logs'), {
-      type: 'SECURITY',
-      source: 'F12_HACK_DETECTED',
-      action: rule.action,
-      targetPhone: phone,
-      reason: reason,
-      createdAt: serverTimestamp()
-    });
-
-    console.warn(`Đã thực thi lệnh cấm [${type}] SĐT ${phone} do: ${reason}`);
+    console.warn(`Đã gửi yêu cầu cấm [${type}] lên Server cho SĐT ${phone} do: ${reason}`);
   } catch (e) {
     console.error("Lỗi thực thi lệnh Cấm:", e);
   }
@@ -321,6 +295,7 @@ export const adminUpdateBalance = async (userId, type, amount, note = "") => {
     const userSnap = await getDoc(userRef);
     const userData = userSnap.exists() ? userSnap.data() : {};
     
+    // ĐÃ CHUẨN HÓA: Sử dụng totalXu
     const field = type === 'wallet' ? 'walletBalance' : 'totalXu';
     const currentBalance = userData[field] || 0;
     
@@ -334,7 +309,7 @@ export const adminUpdateBalance = async (userId, type, amount, note = "") => {
         note,
         at: new Date()
       },
-      lastUpdateSource: 'admin',
+      lastUpdateSource: 'admin', // Giúp vượt qua hệ thống giám sát Anti-Cheat
       updatedAt: serverTimestamp()
     });
 

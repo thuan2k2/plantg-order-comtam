@@ -11,7 +11,7 @@ const AdminLogs = () => {
   const [userHistory, setUserHistory] = useState([]); 
   const [isLoading, setIsLoading] = useState(true);
   
-  // MỚI: State quản lý các Log được chọn để xóa
+  // State quản lý các Log được chọn để xóa
   const [selectedLogs, setSelectedLogs] = useState([]);
 
   // Hàm tính toán thời gian bắt đầu lọc
@@ -27,7 +27,7 @@ const AdminLogs = () => {
     return new Date(0); 
   };
 
-  // MỚI: Sử dụng onSnapshot để cập nhật Real-time thay vì getDocs
+  // Sử dụng onSnapshot để cập nhật Real-time thay vì getDocs
   useEffect(() => {
     setIsLoading(true);
     const startDate = getStartDate(timeFilter);
@@ -73,7 +73,7 @@ const AdminLogs = () => {
     return () => unsubscribe();
   }, [activeTab, timeFilter, searchPhone]);
 
-  // --- MỚI: CÁC HÀM XỬ LÝ XÓA LOG ---
+  // --- CÁC HÀM XỬ LÝ XÓA LOG ---
   const handleSelectLog = (id) => {
     setSelectedLogs(prev => prev.includes(id) ? prev.filter(logId => logId !== id) : [...prev, id]);
   };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase/config';
-import { claimDailyReward, claimDailyCheckIn } from '../services/chatService';
+import { db, functions } from '../firebase/config';
+import { httpsCallable } from 'firebase/functions'; // GỌI CLOUD FUNCTION ĐỂ BẢO MẬT
 
 const Gamification = () => {
   const [userData, setUserData] = useState(null);
@@ -98,12 +98,18 @@ const Gamification = () => {
     setIsGiftLoading(true);
     
     try {
-      const result = await claimDailyReward(phone);
-      // Hiển thị thông báo với số xu Backend trả về
-      setRewardMessage(`🎉 Chúc mừng! Bạn nhận được ${result.reward} xu từ hộp quà bí ẩn.`);
+      // ĐÃ FIX: Chuyển sang gọi thẳng Cloud Function
+      const claimDailyGiftFn = httpsCallable(functions, 'claimDailyGift');
+      const result = await claimDailyGiftFn({ phone });
       
-      // Tự động tắt thông báo sau 3 giây
-      setTimeout(() => setRewardMessage(null), 3000);
+      if (result.data.success) {
+        // Hiển thị thông báo với số xu Backend trả về
+        setRewardMessage(`🎉 Chúc mừng! Bạn nhận được ${result.data.reward} xu từ hộp quà bí ẩn.`);
+        // Tự động tắt thông báo sau 3 giây
+        setTimeout(() => setRewardMessage(null), 3000);
+      } else {
+        alert(result.data.error || "Không thể nhận quà.");
+      }
     } catch (error) {
       alert(error.message || "Có lỗi xảy ra, vui lòng thử lại.");
     } finally {
@@ -117,9 +123,16 @@ const Gamification = () => {
     setIsCheckInLoading(true);
     
     try {
-      const result = await claimDailyCheckIn(phone);
-      setRewardMessage(`📅 Điểm danh ngày ${result.streak} thành công! Nhận ${result.reward} xu.`);
-      setTimeout(() => setRewardMessage(null), 3000);
+      // ĐÃ FIX: Chuyển sang gọi thẳng Cloud Function
+      const claimDailyCheckInFn = httpsCallable(functions, 'claimDailyCheckIn');
+      const result = await claimDailyCheckInFn({ phone });
+
+      if (result.data.success) {
+        setRewardMessage(`📅 Điểm danh ngày ${result.data.streak} thành công! Nhận ${result.data.reward} xu.`);
+        setTimeout(() => setRewardMessage(null), 3000);
+      } else {
+        alert(result.data.error || "Không thể điểm danh.");
+      }
     } catch (error) {
       alert(error.message || "Có lỗi xảy ra, vui lòng thử lại.");
     } finally {

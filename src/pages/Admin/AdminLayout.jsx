@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore'; 
-import { db } from '../../firebase/config'; 
+// Giữ lại Firestore cho các tác vụ khác nếu cần, nhưng thay bằng RTDB cho trạng thái Online
+import { doc, setDoc, serverTimestamp as firestoreTimestamp } from 'firebase/firestore'; 
+// MỚI: Import Realtime Database để xử lý onDisconnect
+import { ref, set, onDisconnect, serverTimestamp as rtdbTimestamp } from 'firebase/database';
+import { db, rtdb } from '../../firebase/config'; 
 import { logoutAdmin } from '../../services/authService';
 import { subscribeToAdminChats } from '../../services/chatService'; 
 import { useSettings } from '../../contexts/SettingsContext'; 
@@ -15,37 +18,46 @@ const AdminLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [unreadChatCount, setUnreadChatCount] = useState(0); 
 
-  // --- THEO DÕI TRẠNG THÁI ONLINE/OFFLINE CỦA ADMIN ---
+  // --- MỚI: THEO DÕI TRẠNG THÁI ONLINE BẰNG REALTIME DATABASE (onDisconnect) ---
   useEffect(() => {
-    const adminStatusRef = doc(db, 'system', 'admin_status');
+    // Chúng ta tạo một node trong RTDB để theo dõi trạng thái
+    const adminStatusRef = ref(rtdb, 'system/admin_status');
     
-    // 1. Khi Component mount (Admin vào trang), set isOnline = true
-    const setOnline = async () => {
-      try {
-        await setDoc(adminStatusRef, { 
-          isOnline: true, 
-          lastActive: serverTimestamp() 
-        }, { merge: true });
-      } catch (error) {
-        console.error("Lỗi cập nhật trạng thái Online:", error);
-      }
-    };
-    setOnline();
+    // Đăng ký lệnh onDisconnect VỚI SERVER FIREBASE
+    // Khi bị ngắt kết nối (tắt tab, mất mạng), server sẽ TỰ ĐỘNG chạy lệnh này
+    onDisconnect(adminStatusRef).set({
+      isOnline: false,
+      lastActive: rtdbTimestamp()
+    }).then(() => {
+      // Sau khi đăng ký onDisconnect thành công, chúng ta mới set trạng thái thành true
+      set(adminStatusRef, {
+        isOnline: true,
+        lastActive: rtdbTimestamp()
+      });
+      
+      // Đồng bộ sang Firestore (vì các trang cũ của bạn đang đọc từ Firestore)
+      // Để triệt để nhất, bạn nên chuyển cả việc đọc trạng thái ở Home.jsx sang RTDB
+      // Tuy nhiên, để tương thích tạm thời, chúng ta vẫn ghi vào Firestore khi online
+      setDoc(doc(db, 'system', 'admin_status'), { 
+        isOnline: true, 
+        lastActive: firestoreTimestamp() 
+      }, { merge: true });
+    }).catch((error) => {
+      console.error("Lỗi thiết lập onDisconnect:", error);
+    });
 
-    // 2. Hàm set Offline
-    const setOffline = () => {
-      const data = JSON.stringify({ isOnline: false });
-      const blob = new Blob([data], { type: 'application/json' });
-      setDoc(adminStatusRef, { isOnline: false, lastActive: serverTimestamp() }, { merge: true }).catch(e => console.log(e));
-    };
-
-    // 3. Lắng nghe sự kiện người dùng đóng tab / tải lại trang
-    window.addEventListener('beforeunload', setOffline);
-    
-    // Cleanup: Khi Admin nhấn Logout hoặc rời khỏi trang React Router
+    // Cleanup khi component bị hủy (VD: Đăng xuất)
     return () => {
-      setOffline();
-      window.removeEventListener('beforeunload', setOffline);
+      // Khi rời trang một cách chủ động, set luôn thành offline
+      set(adminStatusRef, {
+        isOnline: false,
+        lastActive: rtdbTimestamp()
+      });
+      // Đồng bộ Firestore
+      setDoc(doc(db, 'system', 'admin_status'), { 
+        isOnline: false, 
+        lastActive: firestoreTimestamp() 
+      }, { merge: true });
     };
   }, []);
 
@@ -69,8 +81,10 @@ const AdminLayout = () => {
   const handleLogout = async () => {
     if (window.confirm("Bạn có chắc chắn muốn thoát quyền Quản trị viên không?")) {
       try {
-        const adminStatusRef = doc(db, 'system', 'admin_status');
-        await setDoc(adminStatusRef, { isOnline: false, lastActive: serverTimestamp() }, { merge: true });
+        // Chủ động set offline khi đăng xuất
+        const adminStatusRef = ref(rtdb, 'system/admin_status');
+        await set(adminStatusRef, { isOnline: false, lastActive: rtdbTimestamp() });
+        await setDoc(doc(db, 'system', 'admin_status'), { isOnline: false, lastActive: firestoreTimestamp() }, { merge: true });
 
         const result = await logoutAdmin();
         if (result.success) {
@@ -111,7 +125,6 @@ const AdminLayout = () => {
     { path: '/admin/users', label: 'Khách hàng', icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
     )},
-    // --- BỔ SUNG: TRANG QUẢN LÝ RANK ---
     { path: '/admin/ranks', label: 'Quản lý Hạng (Rank)', icon: (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
     )},

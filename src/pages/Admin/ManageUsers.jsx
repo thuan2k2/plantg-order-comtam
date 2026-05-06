@@ -7,8 +7,6 @@ import {
   resetPasscodeByAdmin, 
   adminUpdateBalance 
 } from '../../services/authService';
-
-// ĐÃ THAY ĐỔI: Sử dụng hàm subscribeToAllVouchers (Real-time) thay cho getAllVouchers
 import { createVoucher, deleteVoucher, subscribeToAllVouchers } from '../../services/orderService';
 
 const ManageUsers = () => {
@@ -29,7 +27,6 @@ const ManageUsers = () => {
   const [customBanDate, setCustomBanDate] = useState('');
   const [banReasonInput, setBanReasonInput] = useState(''); 
 
-  // SỬ DỤNG REAL-TIME LISTENER THAY VÌ LẤY 1 LẦN
   useEffect(() => {
     setIsLoading(true);
     
@@ -89,7 +86,7 @@ const ManageUsers = () => {
     const action = prompt(`ĐIỀU CHỈNH ${label.toUpperCase()} CỦA ${user.fullName.toUpperCase()}\n\nHiện tại: ${current.toLocaleString()}\n\n- Nhập số dương để CỘNG (VD: 50000)\n- Nhập số âm có dấu trừ ở trước để TRỪ (VD: -20000)\n\nNhập số lượng:`);
 
     if (action) {
-      const value = parseInt(action); // Lấy cả dấu âm/dương
+      const value = parseInt(action); 
       if (isNaN(value) || value === 0) {
         return alert("Số lượng không hợp lệ! Vui lòng nhập số khác 0.");
       }
@@ -230,7 +227,6 @@ const ManageUsers = () => {
     
     const res = await createVoucher(vData);
     if (res.success) {
-      // ĐÃ FIX: Chỉ cần báo thành công và clear form, Firebase Listener sẽ tự update giao diện.
       setNewVoucher({ code: '', value: 0, type: 'CASH', usageLimit: 1 });
       alert(`Đã tặng Voucher cho ${voucherModalUser.fullName}`);
     }
@@ -239,7 +235,6 @@ const ManageUsers = () => {
   const handleDeleteUserVoucher = async (vId) => {
     if (window.confirm("Xóa Voucher này của khách?")) {
       await deleteVoucher(vId);
-      // ĐÃ FIX: Không cần setAllVouchers thủ công nữa, Firebase Listener sẽ lo.
     }
   };
 

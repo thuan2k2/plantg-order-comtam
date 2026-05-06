@@ -32,8 +32,8 @@ const Order = () => {
   const [myVouchers, setMyVouchers] = useState([]); 
   const [showVoucherList, setShowVoucherList] = useState(false); 
 
-  // STATE lưu trữ cấu hình hệ thống từ Admin
-  const [sysConfig, setSysConfig] = useState({ isOpen: true, minOrder: 0 });
+  // STATE lưu trữ cấu hình hệ thống từ Admin (Đã bổ sung openTime và closeTime)
+  const [sysConfig, setSysConfig] = useState({ isOpen: true, minOrder: 0, openTime: '06:00', closeTime: '22:00' });
   const [showClosingPopup, setShowClosingPopup] = useState(false); 
 
   // STATE: Quản lý Passcode Ví
@@ -83,7 +83,7 @@ const Order = () => {
     };
   }, [userPhoneParam, navigate]);
 
-  // ĐỒNG BỘ REAL-TIME THÔNG TIN USER (VÍ TIỀN, ĐỊA CHỈ)
+  // ĐỒNG BỘ REAL-TIME THÔNG TIN USER (VÍ TIỀN, XU, ĐỊA CHỈ)
   useEffect(() => {
     let unsubUser = () => {};
 
@@ -113,7 +113,8 @@ const Order = () => {
               phone: userData.username, 
               address: userData.address,
               addresses: userData.addresses || [], 
-              walletBalance: userData.walletBalance || 0 
+              walletBalance: userData.walletBalance || 0,
+              totalXu: userData.totalXu || 0 // MỚI: Bổ sung lấy totalXu
             });
 
             // Tự động set địa chỉ được chọn (Chỉ set nếu khách chưa tự chọn)
@@ -261,17 +262,32 @@ const Order = () => {
        return alert("Vui lòng chọn hoặc nhập địa chỉ giao hàng!");
     }
 
-    // Kiểm tra giờ hẹn nếu là đơn SCHEDULED
+    // MỚI: Bổ sung chặt chẽ logic kiểm tra giờ hẹn nếu là đơn SCHEDULED
     if (isScheduled) {
        if (!deliveryTime) return alert("Vui lòng chọn giờ bạn muốn nhận cơm!");
        
-       const selectedDate = new Date();
+       const selectedDate = new Date(); // Lấy ngày giờ hiện tại
        const [hours, minutes] = deliveryTime.split(':');
        selectedDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0);
        
        const now = new Date();
+       // 1. Chặn chọn giờ trong quá khứ hoặc giờ đã trôi qua trong ngày
        if (selectedDate <= now) {
          return alert("Giờ hẹn giao phải muộn hơn giờ hiện hành!");
+       }
+
+       // 2. Chặn giờ hẹn nằm ngoài giờ hoạt động (openTime -> closeTime)
+       if (sysConfig.openTime && sysConfig.closeTime) {
+         const [openH, openM] = sysConfig.openTime.split(':').map(Number);
+         const [closeH, closeM] = sysConfig.closeTime.split(':').map(Number);
+         
+         const selectedMins = parseInt(hours, 10) * 60 + parseInt(minutes, 10);
+         const openMins = openH * 60 + openM;
+         const closeMins = closeH * 60 + closeM;
+
+         if (selectedMins < openMins || selectedMins > closeMins) {
+           return alert(`Quán chỉ nhận đơn giao trong khoảng giờ hoạt động từ ${sysConfig.openTime} đến ${sysConfig.closeTime}. Vui lòng chọn lại!`);
+         }
        }
     }
 
@@ -311,7 +327,6 @@ const Order = () => {
       usedVouchers,
       paymentMethod: selectedPaymentMethod,
       
-      // MỚI: Thêm thông tin loại đơn hàng và giờ hẹn
       deliveryType: isScheduled ? 'SCHEDULED' : 'ASAP',
       scheduledTime: isScheduled ? deliveryTime : null
     };
@@ -399,8 +414,13 @@ const Order = () => {
               <div className="text-xs font-black text-blue-700 dark:text-blue-400 uppercase">
                 Chào {customerInfo.name}!
               </div>
-              <div className="text-[10px] font-black text-green-600 bg-green-100 px-2 py-1 rounded-lg transition-all">
-                Ví: {(customerInfo.walletBalance || 0).toLocaleString()}đ
+              <div className="flex gap-2">
+                <div className="text-[10px] font-black text-green-600 bg-green-100 px-2 py-1 rounded-lg transition-all">
+                  Ví: {(customerInfo.walletBalance || 0).toLocaleString()}đ
+                </div>
+                <div className="text-[10px] font-black text-orange-600 bg-orange-100 px-2 py-1 rounded-lg transition-all">
+                  Xu: {(customerInfo.totalXu || 0).toLocaleString()}
+                </div>
               </div>
             </div>
             {/* Hiển thị địa chỉ sẽ giao tới ở trang chủ đặt hàng */}

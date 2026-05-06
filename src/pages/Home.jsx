@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, getDoc, updateDoc, increment } from 'firebase/firestore'; 
-import { db } from '../firebase/config';
+// MỚI: Thêm import Realtime Database để lắng nghe trạng thái Admin
+import { ref, onValue } from 'firebase/database';
+import { db, rtdb } from '../firebase/config';
 import UsernamePopup from '../components/UsernamePopup';
 import { useSettings } from '../contexts/SettingsContext'; 
 import { getUserByPhone } from '../services/authService'; 
@@ -81,8 +83,11 @@ const Home = () => {
       });
     }, 60000);
 
-    const unsubAdminStatus = onSnapshot(doc(db, 'system', 'admin_status'), (docSnap) => {
-      if (docSnap.exists()) setIsAdminOnline(docSnap.data().isOnline || false);
+    // MỚI: Lắng nghe trạng thái Admin từ Realtime Database thay vì Firestore
+    const adminStatusRef = ref(rtdb, 'system/admin_status');
+    const unsubAdminStatus = onValue(adminStatusRef, (snapshot) => {
+      const data = snapshot.val();
+      setIsAdminOnline(data?.isOnline || false);
     });
 
     const unsubEvents = onSnapshot(doc(db, 'system', 'events'), (docSnap) => {
@@ -144,7 +149,7 @@ const Home = () => {
 
     return () => {
       unsubConfig();
-      unsubAdminStatus();
+      unsubAdminStatus(); // Hủy lắng nghe RTDB
       unsubEvents();
       clearInterval(openStatusTimer);
       if (typeof cleanupUser === 'function') cleanupUser();
@@ -202,11 +207,10 @@ const Home = () => {
       if (totalClaimed > 0) {
         try {
           const userRef = doc(db, 'users', savedPhone);
-          // ĐÃ SỬA: Bổ sung lastUpdateSource chống cấm oan
+          // ĐÃ ĐỒNG BỘ: Chỉ cập nhật totalXu, bỏ qua trường coins cũ
           await updateDoc(userRef, {
             ...updates,
             totalXu: increment(totalClaimed),
-            coins: increment(totalClaimed),
             lastUpdateSource: 'lucky' 
           });
 
@@ -277,10 +281,9 @@ const Home = () => {
         const randomXu = Math.floor(Math.random() * (max - min + 1)) + min;
         const currentXu = userDbData.totalXu || userDbData.coins || 0;
 
-        // ĐÃ SỬA: Bổ sung lastUpdateSource cho Lì Xì thủ công
+        // ĐÃ ĐỒNG BỘ: Chỉ sử dụng totalXu, loại bỏ trường coins cũ
         await updateDoc(userRef, {
           totalXu: currentXu + randomXu,
-          coins: currentXu + randomXu,
           lastLuckyReceived: timeKey,
           lastUpdateSource: 'lucky'
         });
