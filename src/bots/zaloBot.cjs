@@ -268,7 +268,7 @@ bot.on('message', async (msg) => {
         }
 
         // ----------------------------------------------------------------
-        // 5. CÁCH LY LOGIC KHI ĐANG HỖ TRỢ (QUAN TRỌNG)
+        // 5. CÁCH LY LOGIC KHI ĐANG HỖ TRỢ
         // ----------------------------------------------------------------
         if (session.supportMode && userPhone) {
             await db.collection('support_chats').doc(userPhone).set({
@@ -286,8 +286,6 @@ bot.on('message', async (msg) => {
                 name: name,
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
-            
-            // Return ngay tại đây. Các lệnh Đặt Hàng, Menu phía dưới SẼ BỊ BỎ QUA hoàn toàn.
             return; 
         }
 
@@ -316,7 +314,6 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "📝 Vui lòng nhập Số điện thoại mới để quán cập nhật.");
         }
 
-        // C. THANH TOÁN
         if (PAYMENT_BANK_KEYWORDS.some(k => lowerText.includes(k))) {
             await bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua STK: Ngân hàng TPBank 00006464313 - PHẠM ĐỨC THUẬN");
             return bot.sendMessage(zaloId, "🔗 Hoặc quét mã QR tại đây: https://img.vietqr.io/image/TPB-00006464313-qr_only.png");
@@ -326,7 +323,6 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "💵 Đã ghi nhận hình thức thanh toán Tiền mặt (COD).");
         }
 
-        // E. NHẬN DIỆN ĐƠN HÀNG THÔNG MINH
         const detected = advancedParse(text);
         if (detected.items) {
             session.pendingOrder = { customer: name, items: detected.items, total: detected.total, note: detected.note, zaloId };
@@ -345,7 +341,6 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // F. LUỒNG NHẬP LIỆU ĐƠN HÀNG
         if (session.state === 'WAITING_PHONE') {
             const phone = text.replace(/\D/g, '');
             if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
@@ -382,7 +377,6 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, formatConfirmMsg(session.pendingOrder));
         }
 
-        // CHỐT ĐƠN VÀ LƯU DATABASE
         if (lowerText === 'ok' && session.state === 'WAITING_CONFIRM') {
             const order = session.pendingOrder;
             const dbTotal = order.total === "Thanh toán sau" ? "Thanh toán sau" : order.total.toLocaleString() + 'đ';
@@ -405,7 +399,6 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // LỜI CHÀO
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món nhé.`);
@@ -430,15 +423,41 @@ db.collection('orders').onSnapshot((snapshot) => {
     });
 });
 
-// ĐỒNG BỘ TIN NHẮN TỪ ADMIN WEB -> ZALO BẰNG createdAt VÀ sendzaloId
+// LẮNG NGHE CHAT ĐỂ ĐỒNG BỘ ZALO (GỘP CẢ 2 TÍNH NĂNG isClosed VÀ sendzaloId)
 db.collection('support_chats').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach((change) => {
         const data = change.doc.data();
-        
+        const phone = change.doc.id;
+        let zaloId = data.zaloId;
+
+        // 1. XỬ LÝ LỆNH ĐÓNG CHAT TỪ ADMIN (isClosed: true)
+        if (data.isClosed === true) {
+            setTimeout(async () => {
+                try {
+                    if (!zaloId) {
+                        const userSnap = await db.collection('users').doc(phone).get();
+                        if (userSnap.exists) zaloId = userSnap.data().zaloId;
+                    }
+                    if (zaloId) {
+                        const sessionRef = db.collection('bot_sessions').doc(zaloId);
+                        const sessionSnap = await sessionRef.get();
+                        
+                        // Tự động tắt supportMode và báo cho khách
+                        if (sessionSnap.exists && sessionSnap.data().supportMode) {
+                            await sessionRef.update({ supportMode: false });
+                            await bot.sendMessage(zaloId, "✅ Đã đóng hộp thoại Hỗ trợ. Bạn đã trở về trạng thái nhận đơn Bình thường!");
+                        }
+                    }
+                    // Gỡ cờ sau khi xử lý xong
+                    await change.doc.ref.update({ isClosed: admin.firestore.FieldValue.delete() });
+                } catch (err) {
+                    console.error("Lỗi xử lý đóng chat Zalo:", err);
+                }
+            }, 500);
+        }
+
+        // 2. ĐỒNG BỘ TIN NHẮN TỪ ADMIN WEB -> ZALO BẰNG createdAt VÀ sendzaloId
         if ((change.type === 'added' || change.type === 'modified') && data.unreadUser === true) {
-            const phone = change.doc.id;
-            let zaloId = data.zaloId;
-            
             setTimeout(async () => {
                 try {
                     if (!zaloId) {

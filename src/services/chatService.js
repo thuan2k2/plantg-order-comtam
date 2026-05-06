@@ -94,6 +94,7 @@ export const closeChat = async (chatId) => {
     batch.update(chatDocRef, {
       unreadUser: false,
       unreadAdmin: false,
+      isClosed: true, // THÊM MỚI: Tín hiệu để Zalo Bot biết và ngắt chế độ hỗ trợ của khách
       lastUpdated: serverTimestamp()
     });
     
