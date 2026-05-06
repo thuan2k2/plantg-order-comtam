@@ -19,13 +19,12 @@ try {
 }
 const db = admin.firestore();
 
-// 2. CẤU HÌNH THỰC ĐƠN & TỪ KHÓA (CẬP NHẬT THEO MENU THỰC TẾ)
+// 2. CẤU HÌNH THỰC ĐƠN & TỪ KHÓA (CẬP NHẬT THEO YÊU CẦU MỚI)
 const MENU = {
     MAIN: [
-        { keywords: ['sườn trứng', 'suon trung', 'đầy đủ', 'cơm sườn trứng', 'cơm st', 'cơm st',], name: 'Cơm tấm sườn trứng', price: 35000 },
-        { keywords: ['cơm sườn', 'com suon', 'cơm tấm sườn', 'sườn chả', 'sườn nướng'], name: 'Cơm tấm sườn', price: 35000 },
-        // Mặc định nếu chỉ nói "1 phần", "1 hộp"
-        { keywords: ['phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm', '1p', '2p', '3p', '4p', '5p'], name: 'Cơm tấm sườn trứng', price: 35000 } 
+        { keywords: ['sườn trứng', 'suon trung', 'đầy đủ', 'cơm sườn trứng', 's trứng', 'st', 'com st', 'cơm st',], name: 'Cơm tấm sườn trứng', price: 35000 },
+        { keywords: ['cơm sườn', 'com suon', 'cơm tấm sườn', 'sườn chả', 'sườn nướng', 'sườn', 'suon', 's'], name: 'Cơm tấm sườn', price: 35000 },
+        { keywords: ['phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm'], name: 'Cơm tấm sườn trứng', price: 35000 } 
     ],
     SIDES: [
         { keywords: ['cơm thêm', 'thêm cơm'], name: 'Cơm thêm', price: 5000 },
@@ -65,23 +64,28 @@ const getPhoneByZaloId = async (zaloId) => {
     return null;
 };
 
-// CẢI TIẾN CƠ CHẾ PARSE MENU
+// CẢI TIẾN CƠ CHẾ PARSE MENU & SỐ LƯỢNG KÈM FALLBACK
 const advancedParse = (text) => {
     let items = [];
     let total = 0;
     let foundMain = false;
     let hasValidItem = false;
-    const lowerText = text.toLowerCase();
-
-    let primaryQty = 1; 
-    const qtyMatch = lowerText.match(/(\d+)\s*(p|phần|hộp|suất|cơm|c)/);
+    
+    // Tách số lượng bị dính liền chữ (VD: 1p -> 1 p, 2hộp -> 2 hộp)
+    let lowerText = text.toLowerCase().trim();
+    lowerText = lowerText.replace(/(\d+)([a-zA-Zà-ỹ]+)/g, '$1 $2');
+    
+    let primaryQty = 1; // Mặc định là 1 nếu khách không nhập số
+    
+    // Tìm số lượng (VD: "1", "2 p", "1 phần")
+    const qtyMatch = lowerText.match(/(?:^|\s)(\d+)\s*(p|phần|hộp|suất|cơm|c)?(?:$|\s)/);
     if (qtyMatch) {
         primaryQty = parseInt(qtyMatch[1]);
     }
 
-    // 1. Tìm món chính
+    // 1. Tìm món chính (Sử dụng Regex ranh giới từ để tránh nhận nhầm s trong từ khác)
     for (const main of MENU.MAIN) {
-        if (main.keywords.some(k => lowerText.includes(k))) {
+        if (main.keywords.some(k => new RegExp(`(^|\\s)${k}($|\\s)`).test(lowerText))) {
             items.push(`${primaryQty}x ${main.name}`);
             total += main.price * primaryQty;
             foundMain = true;
@@ -90,8 +94,8 @@ const advancedParse = (text) => {
         }
     }
 
-    // Nếu không nói rõ tên món nhưng nói số lượng (VD: "cho a 2 phần")
-    if (!foundMain && qtyMatch) {
+    // Nếu không nói rõ tên món nhưng nói số lượng (VD: "cho a 2 phần", "1p")
+    if (!foundMain && qtyMatch && qtyMatch[2]) {
         items.push(`${primaryQty}x Cơm tấm sườn trứng`);
         total += 35000 * primaryQty;
         hasValidItem = true;
@@ -99,7 +103,7 @@ const advancedParse = (text) => {
 
     // 2. Tìm món phụ
     MENU.SIDES.forEach(side => {
-        const sideKeywordsRegex = new RegExp(`(\\d+)?\\s*(${side.keywords.join('|')})`, 'i');
+        const sideKeywordsRegex = new RegExp(`(?:^|\\s)(\\d+)?\\s*(${side.keywords.join('|')})(?:$|\\s)`, 'i');
         const match = lowerText.match(sideKeywordsRegex);
         if (match) {
             let qty = match[1] ? parseInt(match[1]) : 1;
@@ -110,13 +114,14 @@ const advancedParse = (text) => {
         }
     });
 
-    // 3. FALLBACK: NẾU KHÔNG NHẬN DIỆN ĐƯỢC NHƯNG CÓ Ý ĐỊNH ĐẶT HÀNG
+    // 3. FALLBACK: KHÔNG NHẬN DIỆN ĐƯỢC MÓN NHƯNG LÀ Ý ĐỊNH ĐẶT HÀNG
     if (!hasValidItem) {
-        const hasOrderIntent = ORDER_INTENT_KEYWORDS.some(k => lowerText.includes(k));
-        if (hasOrderIntent) {
+        const hasOrderIntent = ORDER_INTENT_KEYWORDS.some(k => new RegExp(`(^|\\s)${k}($|\\s)`).test(lowerText));
+        // Nếu có chữ "đặt", "ship" HOẶC khách nhập "1", "2" cộc lốc
+        if (hasOrderIntent || qtyMatch) {
             return { items: "Giống Ghi chú", total: "Thanh toán sau", note: text };
         }
-        return { items: null }; // Trả về null để không trigger luồng đặt hàng
+        return { items: null }; 
     }
 
     return { items: items.join(', '), total, note: text };
@@ -134,7 +139,7 @@ const formatConfirmMsg = (order) => {
            `💰 Tổng cộng: ${displayTotal}\n` +
            `--------------------------\n` +
            `👉 Nhắn "Ok" để chốt đơn.\n` +
-           `👉 Nhắn "Hủy" nếu muốn chọn món lại từ đầu.\n` +
+           `👉 Nhắn "Hủy" nếu muốn xóa thao tác này.\n` +
            `👉 Nhắn "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ.`;
 };
 
@@ -172,8 +177,8 @@ bot.on('message', async (msg) => {
 
     try {
         const userPhone = await getPhoneByZaloId(zaloId);
+        const chatIdentifier = userPhone || zaloId;
 
-        // Lưu lại log để huấn luyện AI
         await db.collection('learning_logs').add({ zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp() });
 
         const sessionRef = db.collection('bot_sessions').doc(zaloId);
@@ -246,7 +251,6 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "⚠️ THÔNG BÁO: Bạn đang yêu cầu Xóa toàn bộ thông tin tài khoản.\n👉 Hãy nhắn \"YES\" để xác nhận hoặc \"NO\" để hủy yêu cầu Reset.\n\nSau khi xác nhận, thông tin của bạn sẽ KHÔNG CÒN lưu trên hệ thống!");
         }
 
-        // XỬ LÝ LỆNH HỦY
         if (CANCEL_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             return bot.sendMessage(zaloId, "🚫 Đã hủy các thao tác đặt hàng trước đó. Bạn có thể bắt đầu lại từ đầu.");
@@ -307,7 +311,7 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "💵 Đã ghi nhận hình thức thanh toán Tiền mặt (COD).");
         }
 
-        // E. NHẬN DIỆN ĐƠN HÀNG THÔNG MINH
+        // E. NHẬN DIỆN ĐƠN HÀNG THÔNG MINH (Kèm Fallback)
         const detected = advancedParse(text);
         if (detected.items) {
             session.pendingOrder = { customer: name, items: detected.items, total: detected.total, note: detected.note, zaloId };
@@ -386,7 +390,7 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // LỜI CHÀO
+        // LỜI CHÀO NẾU KHÔNG KHỚP GÌ CẢ VÀ ĐANG RẢNH
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món nhé.`);
@@ -411,47 +415,61 @@ db.collection('orders').onSnapshot((snapshot) => {
     });
 });
 
-// CẬP NHẬT: Fix lỗi đồng bộ tin nhắn Admin gửi từ Web
+// FIX CƠ CHẾ ĐỒNG BỘ TIN NHẮN TỪ ADMIN WEB -> ZALO BẰNG BATCH VÀ DELAY
 db.collection('support_chats').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach((change) => {
         const data = change.doc.data();
         
-        // Bắt chính xác sự thay đổi khi Admin gửi tin nhắn và set unreadUser = true
         if ((change.type === 'added' || change.type === 'modified') && data.unreadUser === true) {
             const phone = change.doc.id;
             
-            // Dùng setTimeout (800ms) để chờ hệ thống Web ghi hoàn tất tin nhắn vào subcollection
+            // Lấy zaloId ngay từ support_chats thay vì tra user collection (Giúp bot phản hồi siêu tốc)
+            let zaloId = data.zaloId;
+            
             setTimeout(async () => {
                 try {
-                    const userSnap = await db.collection('users').doc(phone).get();
+                    // Fallback lấy zaloId nếu lỡ trong support_chats không có
+                    if (!zaloId) {
+                        const userSnap = await db.collection('users').doc(phone).get();
+                        if (userSnap.exists) zaloId = userSnap.data().zaloId;
+                    }
                     
-                    if (userSnap.exists && userSnap.data().zaloId) {
-                        const zaloId = userSnap.data().zaloId;
-                        
+                    if (zaloId) {
+                        // Lấy tối đa 5 tin nhắn gần nhất chưa đọc
                         const msgsSnap = await db.collection('support_chats').doc(phone).collection('messages')
                             .where('sender', '==', 'ADMIN')
                             .orderBy('createdAt', 'desc')
-                            .limit(1)
+                            .limit(5)
                             .get();
                             
                         if (!msgsSnap.empty) {
-                            const msgDoc = msgsSnap.docs[0];
-                            const msgData = msgDoc.data();
+                            const batch = db.batch();
+                            let sent = false;
                             
-                            // Nếu tin nhắn chưa được đẩy về Zalo thì mới xử lý
-                            if (!msgData.sentToZalo) {
-                                await bot.sendMessage(zaloId, `💬 Phản hồi từ Shop: ${msgData.text || msgData.message}`);
-                                
-                                // Cập nhật cờ để tránh gửi trùng
-                                await msgDoc.ref.update({ sentToZalo: true });
-                                await db.collection('support_chats').doc(phone).update({ unreadUser: false });
+                            // Gửi từ cũ tới mới để không bị ngược đoạn chat
+                            const msgs = msgsSnap.docs.map(d => d).reverse();
+                            
+                            for (let msgDoc of msgs) {
+                                const msgData = msgDoc.data();
+                                // Chỉ gửi các tin nhắn chưa được đánh dấu là sentToZalo
+                                if (!msgData.sentToZalo) {
+                                    await bot.sendMessage(zaloId, `💬 Phản hồi từ Shop: ${msgData.text || msgData.message}`);
+                                    batch.update(msgDoc.ref, { sentToZalo: true });
+                                    sent = true;
+                                }
+                            }
+                            
+                            // Sau khi gửi xong, gỡ cờ unreadUser bằng Batch để đồng bộ với Web
+                            if (sent) {
+                                batch.update(change.doc.ref, { unreadUser: false });
+                                await batch.commit();
                             }
                         }
                     }
                 } catch (err) {
                     console.error("Lỗi đồng bộ phản hồi Admin:", err);
                 }
-            }, 800);
+            }, 1000); // Tăng delay lên xíu để đảm bảo Web ghi message xong mới lấy
         }
     });
 });
