@@ -19,7 +19,7 @@ try {
 }
 const db = admin.firestore();
 
-// 2. CẤU HÌNH THỰC ĐƠN & TỪ KHÓA (CẬP NHẬT THEO YÊU CẦU MỚI)
+// 2. CẤU HÌNH THỰC ĐƠN & TỪ KHÓA
 const MENU = {
     MAIN: [
         { keywords: ['sườn trứng', 'suon trung', 'đầy đủ', 'cơm sườn trứng', 's trứng', 'st', 'com st', 'cơm st',], name: 'Cơm tấm sườn trứng', price: 35000 },
@@ -64,26 +64,27 @@ const getPhoneByZaloId = async (zaloId) => {
     return null;
 };
 
-// CẢI TIẾN CƠ CHẾ PARSE MENU & SỐ LƯỢNG KÈM FALLBACK
+// CẢI TIẾN CƠ CHẾ PARSE: PHÂN BIỆT SĐT VÀ SỐ LƯỢNG
 const advancedParse = (text) => {
     let items = [];
     let total = 0;
     let foundMain = false;
     let hasValidItem = false;
     
-    // Tách số lượng bị dính liền chữ (VD: 1p -> 1 p, 2hộp -> 2 hộp)
+    // Tách số lượng bị dính liền chữ (VD: 1p -> 1 p)
     let lowerText = text.toLowerCase().trim();
     lowerText = lowerText.replace(/(\d+)([a-zA-Zà-ỹ]+)/g, '$1 $2');
     
-    let primaryQty = 1; // Mặc định là 1 nếu khách không nhập số
+    let primaryQty = 1; 
     
-    // Tìm số lượng (VD: "1", "2 p", "1 phần")
-    const qtyMatch = lowerText.match(/(?:^|\s)(\d+)\s*(p|phần|hộp|suất|cơm|c)?(?:$|\s)/);
+    // CẬP NHẬT TRỌNG TÂM: Chỉ nhận diện những số nhỏ (1 đến 2 chữ số). Tránh bắt nhầm các đoạn SĐT.
+    const qtyMatch = lowerText.match(/(?:^|\s)(\d{1,2})\s*(p|phần|hộp|suất|cơm|c)?(?:$|\s)/);
     if (qtyMatch) {
         primaryQty = parseInt(qtyMatch[1]);
+        if(primaryQty > 50) primaryQty = 1; // Giới hạn nếu ai cố tình spam số ảo
     }
 
-    // 1. Tìm món chính (Sử dụng Regex ranh giới từ để tránh nhận nhầm s trong từ khác)
+    // 1. Tìm món chính
     for (const main of MENU.MAIN) {
         if (main.keywords.some(k => new RegExp(`(^|\\s)${k}($|\\s)`).test(lowerText))) {
             items.push(`${primaryQty}x ${main.name}`);
@@ -94,7 +95,7 @@ const advancedParse = (text) => {
         }
     }
 
-    // Nếu không nói rõ tên món nhưng nói số lượng (VD: "cho a 2 phần", "1p")
+    // Nếu không có tên món nhưng lại nói số lượng kèm đơn vị (VD: "2 p")
     if (!foundMain && qtyMatch && qtyMatch[2]) {
         items.push(`${primaryQty}x Cơm tấm sườn trứng`);
         total += 35000 * primaryQty;
@@ -103,22 +104,30 @@ const advancedParse = (text) => {
 
     // 2. Tìm món phụ
     MENU.SIDES.forEach(side => {
-        const sideKeywordsRegex = new RegExp(`(?:^|\\s)(\\d+)?\\s*(${side.keywords.join('|')})(?:$|\\s)`, 'i');
+        // CẬP NHẬT TRỌNG TÂM: Món phụ cũng chỉ được nhận diện với số lượng tối đa 2 chữ số (\d{1,2})
+        const sideKeywordsRegex = new RegExp(`(?:^|\\s)(\\d{1,2})?\\s*(${side.keywords.join('|')})(?:$|\\s)`, 'i');
         const match = lowerText.match(sideKeywordsRegex);
         if (match) {
             let qty = match[1] ? parseInt(match[1]) : 1;
-            if(qty > 10) qty = 1; // Chống spam số lượng ảo
+            if(qty > 50) qty = 1; 
             items.push(`${qty}x ${side.name}`);
             total += side.price * qty;
             hasValidItem = true;
         }
     });
 
-    // 3. FALLBACK: KHÔNG NHẬN DIỆN ĐƯỢC MÓN NHƯNG LÀ Ý ĐỊNH ĐẶT HÀNG
+    // 3. FALLBACK CẢI TIẾN: Tránh bắt lầm SĐT
     if (!hasValidItem) {
         const hasOrderIntent = ORDER_INTENT_KEYWORDS.some(k => new RegExp(`(^|\\s)${k}($|\\s)`).test(lowerText));
-        // Nếu có chữ "đặt", "ship" HOẶC khách nhập "1", "2" cộc lốc
-        if (hasOrderIntent || qtyMatch) {
+        
+        // Tin nhắn chỉ toàn bộ là 1-2 chữ số (VD: "1", "2")
+        const isJustShortNumber = /^\s*\d{1,2}\s*$/.test(lowerText); 
+        
+        // Tin nhắn có số kèm đơn vị (VD: "1p", "2hộp")
+        const hasNumberWithUnit = qtyMatch && qtyMatch[2];
+
+        // Ràng buộc chặt chẽ: Fallback chỉ kích hoạt khi thực sự là Đơn Ngoại Lệ, không kích hoạt khi khách gửi SĐT (VD: 0987654321)
+        if (hasOrderIntent || isJustShortNumber || hasNumberWithUnit) {
             return { items: "Giống Ghi chú", total: "Thanh toán sau", note: text };
         }
         return { items: null }; 
@@ -390,7 +399,7 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // LỜI CHÀO NẾU KHÔNG KHỚP GÌ CẢ VÀ ĐANG RẢNH
+        // LỜI CHÀO
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món nhé.`);
@@ -415,27 +424,37 @@ db.collection('orders').onSnapshot((snapshot) => {
     });
 });
 
-// FIX CƠ CHẾ ĐỒNG BỘ TIN NHẮN TỪ ADMIN WEB -> ZALO BẰNG BATCH VÀ DELAY
+// ĐỒNG BỘ TIN NHẮN TỪ ADMIN WEB -> ZALO
 db.collection('support_chats').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach((change) => {
         const data = change.doc.data();
         
         if ((change.type === 'added' || change.type === 'modified') && data.unreadUser === true) {
             const phone = change.doc.id;
-            
-            // Lấy zaloId ngay từ support_chats thay vì tra user collection (Giúp bot phản hồi siêu tốc)
             let zaloId = data.zaloId;
             
             setTimeout(async () => {
                 try {
-                    // Fallback lấy zaloId nếu lỡ trong support_chats không có
                     if (!zaloId) {
                         const userSnap = await db.collection('users').doc(phone).get();
                         if (userSnap.exists) zaloId = userSnap.data().zaloId;
                     }
                     
                     if (zaloId) {
-                        // Lấy tối đa 5 tin nhắn gần nhất chưa đọc
+                        // 1. Lấy mốc thời gian (createdAt) của tin nhắn USER mới nhất
+                        const userMsgsSnap = await db.collection('support_chats').doc(phone).collection('messages')
+                            .where('sender', '==', 'USER')
+                            .orderBy('createdAt', 'desc')
+                            .limit(1)
+                            .get();
+                            
+                        let lastUserTime = 0;
+                        if (!userMsgsSnap.empty) {
+                            const uData = userMsgsSnap.docs[0].data();
+                            lastUserTime = uData.createdAt ? uData.createdAt.toMillis() : 0;
+                        }
+
+                        // 2. Lấy các tin nhắn phản hồi gần nhất của ADMIN
                         const msgsSnap = await db.collection('support_chats').doc(phone).collection('messages')
                             .where('sender', '==', 'ADMIN')
                             .orderBy('createdAt', 'desc')
@@ -445,21 +464,26 @@ db.collection('support_chats').onSnapshot((snapshot) => {
                         if (!msgsSnap.empty) {
                             const batch = db.batch();
                             let sent = false;
+                            const expectedFlag = `ok_${zaloId}`;
                             
-                            // Gửi từ cũ tới mới để không bị ngược đoạn chat
                             const msgs = msgsSnap.docs.map(d => d).reverse();
                             
                             for (let msgDoc of msgs) {
                                 const msgData = msgDoc.data();
-                                // Chỉ gửi các tin nhắn chưa được đánh dấu là sentToZalo
-                                if (!msgData.sentToZalo) {
+                                const adminTime = msgData.createdAt ? msgData.createdAt.toMillis() : Date.now();
+                                
+                                // 3. SO SÁNH: Thời gian Admin gửi phải mới hơn/bằng tin nhắn khách 
+                                // VÀ chưa có cờ sendzaloId xác nhận đã gửi
+                                if (adminTime >= lastUserTime && msgData.sendzaloId !== expectedFlag) {
                                     await bot.sendMessage(zaloId, `💬 Phản hồi từ Shop: ${msgData.text || msgData.message}`);
-                                    batch.update(msgDoc.ref, { sentToZalo: true });
+                                    
+                                    // Cập nhật trường sendzaloId để đánh dấu hoàn tất
+                                    batch.update(msgDoc.ref, { sendzaloId: expectedFlag });
                                     sent = true;
                                 }
                             }
                             
-                            // Sau khi gửi xong, gỡ cờ unreadUser bằng Batch để đồng bộ với Web
+                            // Gỡ cờ unreadUser cho Web Admin
                             if (sent) {
                                 batch.update(change.doc.ref, { unreadUser: false });
                                 await batch.commit();
@@ -469,7 +493,7 @@ db.collection('support_chats').onSnapshot((snapshot) => {
                 } catch (err) {
                     console.error("Lỗi đồng bộ phản hồi Admin:", err);
                 }
-            }, 1000); // Tăng delay lên xíu để đảm bảo Web ghi message xong mới lấy
+            }, 1000); 
         }
     });
 });
