@@ -22,7 +22,7 @@ const db = admin.firestore();
 // 2. CẤU HÌNH THỰC ĐƠN & TỪ KHÓA
 const MENU = {
     PRIMARY: { 
-        keywords: ['sườn trứng', 'suon trung', 'đầy đủ', '30k', '35k', 'phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm', '1p', '2p', '3p', '4p', '5p'], 
+        keywords: ['1p cơm','1p sườn trứng','cơm sườn trứng','cơm tấm sườn trứng','sườn trứng', 'suon trung', 'đầy đủ', '30k', '35k', 'phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm', '1p', '2p', '3p', '4p', '5p'], 
         name: 'Cơm tấm sườn trứng', 
         price: 35000 
     },
@@ -123,10 +123,11 @@ bot.on('message', async (msg) => {
             const phone = await getPhoneByZaloId(targetZaloId);
             const identifier = phone || targetZaloId;
 
+            // ĐỒNG BỘ: Sửa 'message' thành 'text'
             await db.collection('support_chats').doc(identifier).collection('messages').add({
                 zaloId: targetZaloId,
                 sender: 'ADMIN',
-                message: text,
+                text: text, 
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
             });
             return;
@@ -135,19 +136,17 @@ bot.on('message', async (msg) => {
 
     try {
         const userPhone = await getPhoneByZaloId(zaloId);
-        const chatIdentifier = userPhone || zaloId;
 
         // Lưu lại log để huấn luyện AI (Không thông báo cho Admin)
         await db.collection('learning_logs').add({ zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp() });
 
         const sessionRef = db.collection('bot_sessions').doc(zaloId);
         const sessionSnap = await sessionRef.get();
-        // MỚI: Thêm supportMode vào khởi tạo Session
         let session = sessionSnap.exists ? sessionSnap.data() : { state: null, pendingOrder: null, supportMode: false };
         const lowerText = text.toLowerCase();
 
         // ----------------------------------------------------------------
-        // MỚI: LUỒNG XÁC NHẬN RESET TÀI KHOẢN (Ưu tiên cao nhất)
+        // MỚI: LUỒNG XÁC NHẬN RESET TÀI KHOẢN
         // ----------------------------------------------------------------
         if (session.state === 'WAITING_RESET_CONFIRM') {
             if (lowerText === 'yes') {
@@ -165,6 +164,47 @@ bot.on('message', async (msg) => {
             }
         }
 
+        // ----------------------------------------------------------------
+        // MỚI: YÊU CẦU CUNG CẤP SĐT CHO HỖ TRỢ TRỰC TUYẾN
+        // ----------------------------------------------------------------
+        if (session.state === 'WAITING_PHONE_SUPPORT') {
+            const phone = text.replace(/\D/g, '');
+            if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ. Vui lòng nhập lại số chính xác.");
+            
+            // Tìm hoặc tạo tài khoản để đồng bộ
+            const userSnap = await db.collection('users').doc(phone).get();
+            if (!userSnap.exists) {
+                await db.collection('users').doc(phone).set({
+                    fullName: name, 
+                    zaloId, 
+                    username: phone,
+                    role: 'user',           
+                    totalXu: 0,             
+                    walletBalance: 0,       
+                    lastUpdateSource: 'admin', 
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+            } else {
+                await db.collection('users').doc(phone).update({ zaloId });
+            }
+
+            session.state = null;
+            session.supportMode = true;
+            await sessionRef.set(session);
+            
+            // Khởi tạo gốc chat để Web Admin đọc được
+            await db.collection('support_chats').doc(phone).set({
+                userPhone: phone,
+                userName: name,
+                zaloId: zaloId,
+                unreadAdmin: true,
+                lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            return bot.sendMessage(zaloId, "✅ Đã đồng bộ tài khoản! Bộ phận hỗ trợ đã được kết nối, bạn cần Shop giúp gì ạ?");
+        }
+
+
         // B. LỆNH ĐIỀU HƯỚNG CƠ BẢN
         if (RESET_KEYWORDS.some(k => lowerText.includes(k))) {
             session.state = 'WAITING_RESET_CONFIRM';
@@ -172,7 +212,7 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "⚠️ THÔNG BÁO: Bạn đang yêu cầu Xóa toàn bộ thông tin tài khoản.\n👉 Hãy nhắn \"YES\" để xác nhận hoặc \"NO\" để hủy yêu cầu Reset.\n\nSau khi xác nhận, thông tin của bạn sẽ KHÔNG CÒN lưu trên hệ thống!");
         }
 
-        // MỚI: XỬ LÝ LỆNH HỦY (Xóa đơn đang thao tác dở)
+        // XỬ LÝ LỆNH HỦY
         if (CANCEL_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             return bot.sendMessage(zaloId, "🚫 Đã hủy các thao tác đặt hàng trước đó. Bạn có thể bắt đầu lại từ đầu.");
@@ -190,26 +230,40 @@ bot.on('message', async (msg) => {
         }
 
         // ----------------------------------------------------------------
-        // MỚI: CHẾ ĐỘ HỖ TRỢ (Lưu support_chats & Gọi Admin)
+        // CHẾ ĐỘ HỖ TRỢ (Lưu support_chats & Gọi Admin)
         // ----------------------------------------------------------------
         let isSupportReq = SUPPORT_KEYWORDS.some(k => lowerText.includes(k));
 
         if (isSupportReq && !session.supportMode) {
+            // Ép buộc nhập SĐT nếu là khách vãng lai
+            if (!userPhone) {
+                session.state = 'WAITING_PHONE_SUPPORT';
+                await sessionRef.set(session);
+                return bot.sendMessage(zaloId, "🤖 Để Shop hỗ trợ và đồng bộ thông tin tốt nhất, bạn vui lòng cung cấp Số Điện Thoại nhé!");
+            }
             session.supportMode = true;
             await sessionRef.set(session);
             bot.sendMessage(zaloId, "🤖 Shop đã nhận được yêu cầu. Nhân viên sẽ hỗ trợ bạn ngay giây lát!");
         }
 
-        // CHỈ LƯU VÀ THÔNG BÁO ADMIN KHI ĐANG Ở TRONG CHẾ ĐỘ HỖ TRỢ
-        if (session.supportMode || isSupportReq) {
-            await db.collection('support_chats').doc(chatIdentifier).collection('messages').add({
+        // ĐỒNG BỘ: Chỉ lưu và thông báo Admin khi khách CÓ SĐT và ĐANG CẦN HỖ TRỢ
+        if ((session.supportMode || isSupportReq) && userPhone) {
+            // Bắt buộc set lại thông tin gốc để Web Admin render được
+            await db.collection('support_chats').doc(userPhone).set({
+                userPhone: userPhone,
+                userName: name,
+                zaloId: zaloId,
+                unreadAdmin: true,
+                lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            await db.collection('support_chats').doc(userPhone).collection('messages').add({
                 zaloId,
                 sender: 'USER',
-                message: text,
+                text: text, // SỬA: Đổi từ message thành text
                 name: name,
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
-            // Không return ở đây để khách vẫn có thể tiếp tục đặt món nếu muốn
         }
 
         // C. THANH TOÁN
@@ -241,7 +295,7 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // F. LUỒNG NHẬP LIỆU (SĐT & ĐỊA CHỈ)
+        // F. LUỒNG NHẬP LIỆU ĐƠN HÀNG (SĐT & ĐỊA CHỈ)
         if (session.state === 'WAITING_PHONE') {
             const phone = text.replace(/\D/g, '');
             if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
