@@ -19,6 +19,29 @@ try {
 }
 const db = admin.firestore();
 
+// HỆ THỐNG PHÂN HẠNG TÀI KHOẢN (RANK)
+const RANK_TIERS = [
+    { id: 'CHALLENGER', name: 'Thách Đấu', min: 2400000 },
+    { id: 'WARLORD', name: 'Chiến Tướng', min: 2100000 },
+    { id: 'MASTER', name: 'Cao Thủ', min: 1800000 },
+    { id: 'VETERAN', name: 'Tinh Anh', min: 1500000 },
+    { id: 'DIAMOND', name: 'Kim Cương', min: 1200000 },
+    { id: 'PLATINUM', name: 'Bạch Kim', min: 900000 },
+    { id: 'GOLD', name: 'Vàng', min: 600000 },
+    { id: 'SILVER', name: 'Bạc', min: 300000 },
+    { id: 'BRONZE', name: 'Đồng', min: 0 }
+];
+
+const getUserRank = (userData) => {
+    if (userData.manualRankId) {
+        const rank = RANK_TIERS.find(r => r.id === userData.manualRankId);
+        if (rank) return rank.name;
+    }
+    const totalSpend = Number(userData.totalSpend || 0);
+    const rank = RANK_TIERS.find(r => totalSpend >= r.min);
+    return rank ? rank.name : 'Đồng';
+};
+
 // 2. CẤU HÌNH THỰC ĐƠN & TỪ KHÓA
 const MENU = {
     MAIN: [
@@ -208,7 +231,7 @@ bot.on('message', async (msg) => {
                 }
                 await sessionRef.delete();
                 await bot.sendMessage(zaloId, "✅ Toàn bộ thông tin đã được xóa khỏi hệ thống!");
-                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món nhé.`);
+                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
             } else if (lowerText === 'no') {
                 await sessionRef.delete();
                 return bot.sendMessage(zaloId, "❌ Đã hủy yêu cầu xóa tài khoản.");
@@ -282,6 +305,9 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, 'Lưu ý : Khách vui lòng nhắn "Đóng chat" để ngưng nhận Hỗ trợ và trở về trạng thái nhận đơn Bình thường!');
         }
 
+        // ----------------------------------------------------------------
+        // 5. CÁCH LY LOGIC KHI ĐANG HỖ TRỢ
+        // ----------------------------------------------------------------
         if (session.supportMode && userPhone) {
             await db.collection('support_chats').doc(userPhone).set({
                 userPhone: userPhone,
@@ -299,6 +325,27 @@ bot.on('message', async (msg) => {
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
             return; 
+        }
+
+        // ----------------------------------------------------------------
+        // 6. ĐĂNG NHẬP BẰNG SĐT 
+        // ----------------------------------------------------------------
+        if (!session.state && !session.supportMode) {
+            const cleanPhone = text.replace(/\s/g, '');
+            // Nhận diện nếu người dùng nhắn chính xác 1 chuỗi 10 chữ số bắt đầu bằng số 0
+            if (/^0\d{9}$/.test(cleanPhone)) {
+                const userSnap = await db.collection('users').doc(cleanPhone).get();
+                if (userSnap.exists) {
+                    const userData = userSnap.data();
+                    // Cập nhật Zalo ID vào tài khoản
+                    await db.collection('users').doc(cleanPhone).update({ zaloId: zaloId });
+                    
+                    const rankName = getUserRank(userData);
+                    await bot.sendMessage(zaloId, "✅ Bạn đã đăng nhập thành công!");
+                    await bot.sendMessage(zaloId, `🎉 Chào mừng ${userData.fullName || name} quay trở lại! Hạng hiện tại của bạn là: ${rankName}`);
+                    return bot.sendMessage(zaloId, infoMsgText);
+                }
+            }
         }
 
         // ----------------------------------------------------------------
@@ -456,7 +503,7 @@ bot.on('message', async (msg) => {
         // LỜI CHÀO MỚI (CÓ ĐÍNH KÈM THÔNG TIN)
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
-            await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
+            await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
             return bot.sendMessage(zaloId, infoMsgText);
         }
 
