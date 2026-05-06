@@ -50,7 +50,7 @@ const MENU = {
         { keywords: ['phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm'], name: 'Cơm tấm sườn trứng', price: 35000 } 
     ],
     SIDES: [
-        { keywords: ['cơm thêm', 'thêm cơm'], name: 'Cơm thêm', price: 5000 },
+        { keywords: ['cơm thêm', 'thêm cơm', 'cơm không', 'cơm riêng', 'com khong', 'cơm ko'], name: 'Cơm thêm', price: 5000 },
         { keywords: ['sườn thêm', 'miếng sườn', 'thêm sườn'], name: 'Sườn thêm', price: 10000 },
         { keywords: ['trứng thêm', 'thêm trứng'], name: 'Trứng thêm', price: 5000 },
         { keywords: ['canh thêm', 'thêm canh'], name: 'Canh thêm', price: 0 },
@@ -65,14 +65,17 @@ const CANCEL_KEYWORDS = ['hủy', 'huy', 'hủy đơn', 'huy don', 'không đặ
 const SUPPORT_KEYWORDS = ['hỗ trợ', 'ho tro', 'cần hỗ trợ', 'nhân viên', 'tư vấn', 'shop ơi', 'ad ơi', 'chủ quán'];
 const CLOSE_SUPPORT_KEYWORDS = ['đóng chat', 'dong chat', 'đóng hỗ trợ', 'dong ho tro', 'kết thúc', 'ket thuc'];
 const GREETING_KEYWORDS = ['nay có bán không ạ','đặt cơm ạ','shop ơi','hello','hi','xin chào', 'chào', 'bắt đầu', 'alo shop', 'alo sốp', 'alo'];
-const RESET_KEYWORDS = ['reset', 'xóa hết', 'làm lại'];
+
+// CẬP NHẬT: Tách cơ chế Reset
+const LOGOUT_KEYWORDS = ['reset', 'xóa', 'xoa', 'đăng xuất', 'dang xuat'];
+const DELETE_ALL_KEYWORDS = ['reset all', 'xóa all', 'xoa all', 'delete all'];
+
 const CHANGE_INFO_KEYWORDS = ['thay đổi thông tin', 'đổi địa chỉ', 'đổi sđt', 'cập nhật thông tin'];
 const MENU_KEYWORDS = ['menu', 'thực đơn', 'món ăn', 'xin menu', 'có món gì'];
 const PAYMENT_BANK_KEYWORDS = ['chuyển khoản', 'ck', 'banking', 'qr'];
 const PAYMENT_CASH_KEYWORDS = ['tiền mặt', 'ship cod', 'cod'];
 const ORDER_INTENT_KEYWORDS = ['đặt', 'cho', 'mua', 'ship', 'giao', 'lấy', 'order'];
 
-// THÊM TỪ KHÓA CHO CÁC TÍNH NĂNG MỚI
 const INFO_KEYWORDS = ['thông tin', 'thong tin', 'hướng dẫn', 'huong dan', 'help'];
 const BALANCE_KEYWORDS = ['số dư', 'so du', 'ví', 'xu'];
 const HISTORY_KEYWORDS = ['lịch sử', 'lich su'];
@@ -82,7 +85,6 @@ app.use(express.json());
 const bot = new ZaloBot(process.env.BOT_TOKEN, { polling: false });
 const ADMIN_ZALO_ID = String(process.env.ZALO_BOT_ADMIN_ID || 'a65dc2194697d372478').trim();
 
-// THÔNG ĐIỆP BẢNG THÔNG TIN
 const infoMsgText = `Bạn có thể nhắn các nội dung sau đây:\n` +
                     `- "Menu" để xem Menu món ăn\n` +
                     `- "Ck" để lấy thông tin hoặc mã chuyển khoản\n` +
@@ -91,7 +93,7 @@ const infoMsgText = `Bạn có thể nhắn các nội dung sau đây:\n` +
                     `- "Hỗ trợ" để nhắn tin với Shop hoặc "Đóng hỗ trợ" để đóng chat với Shop\n` +
                     `- "Hủy" nếu muốn xóa đơn hàng sai để đặt lại\n` +
                     `- "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ\n` +
-                    `- "Reset" để Xóa tài khoản và thiết lập lại từ đầu.`;
+                    `- "Reset" để Đăng xuất hoặc "Reset All" để Xóa toàn bộ tài khoản.`;
 
 /**
  * --- HÀM TRỢ GIÚP ---
@@ -222,26 +224,45 @@ bot.on('message', async (msg) => {
         const lowerText = text.toLowerCase();
 
         // ----------------------------------------------------------------
-        // 1. LUỒNG XÁC NHẬN RESET TÀI KHOẢN
+        // 1. LUỒNG XÁC NHẬN XÓA TÀI KHOẢN (RESET ALL)
         // ----------------------------------------------------------------
-        if (session.state === 'WAITING_RESET_CONFIRM') {
+        if (session.state === 'WAITING_DELETE_ALL_CONFIRM') {
             if (lowerText === 'yes') {
                 if (userPhone) {
                     await db.collection('users').doc(userPhone).delete(); 
                 }
                 await sessionRef.delete();
-                await bot.sendMessage(zaloId, "✅ Toàn bộ thông tin đã được xóa khỏi hệ thống!");
+                await bot.sendMessage(zaloId, "✅ Toàn bộ thông tin tài khoản đã được xóa khỏi hệ thống!");
                 return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
             } else if (lowerText === 'no') {
                 await sessionRef.delete();
-                return bot.sendMessage(zaloId, "❌ Đã hủy yêu cầu xóa tài khoản.");
+                return bot.sendMessage(zaloId, "❌ Đã hủy yêu cầu Xóa tài khoản toàn bộ.");
             } else {
-                return bot.sendMessage(zaloId, "⚠️ Vui lòng nhắn YES để xác nhận xóa, hoặc NO để hủy.");
+                return bot.sendMessage(zaloId, "⚠️ Vui lòng nhắn YES để xác nhận Xóa toàn bộ, hoặc NO để hủy.");
             }
         }
 
         // ----------------------------------------------------------------
-        // 2. YÊU CẦU CUNG CẤP SĐT CHO HỖ TRỢ TRỰC TUYẾN
+        // 2. LUỒNG XÁC NHẬN ĐĂNG XUẤT (RESET ĐĂNG NHẬP)
+        // ----------------------------------------------------------------
+        if (session.state === 'WAITING_LOGOUT_CONFIRM') {
+            if (lowerText === 'yes') {
+                if (userPhone) {
+                    await db.collection('users').doc(userPhone).update({ zaloId: admin.firestore.FieldValue.delete() }); 
+                }
+                await sessionRef.delete();
+                await bot.sendMessage(zaloId, "✅ Bạn đã Đăng xuất (Reset) thành công! Hiện tại bạn đang ở trạng thái khách vãng lai.");
+                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT để đăng nhập lại hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
+            } else if (lowerText === 'no') {
+                await sessionRef.delete();
+                return bot.sendMessage(zaloId, "❌ Đã hủy yêu cầu Đăng xuất.");
+            } else {
+                return bot.sendMessage(zaloId, "⚠️ Vui lòng nhắn YES để xác nhận Đăng xuất, hoặc NO để hủy.");
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // 3. YÊU CẦU CUNG CẤP SĐT CHO HỖ TRỢ TRỰC TUYẾN
         // ----------------------------------------------------------------
         if (session.state === 'WAITING_PHONE_SUPPORT') {
             const phone = text.replace(/\D/g, '');
@@ -279,7 +300,7 @@ bot.on('message', async (msg) => {
         }
 
         // ----------------------------------------------------------------
-        // 3. THOÁT CHẾ ĐỘ HỖ TRỢ (NGƯỜI DÙNG CHỦ ĐỘNG ĐÓNG)
+        // 4. THOÁT CHẾ ĐỘ HỖ TRỢ (NGƯỜI DÙNG CHỦ ĐỘNG ĐÓNG)
         // ----------------------------------------------------------------
         if (session.supportMode && CLOSE_SUPPORT_KEYWORDS.some(k => lowerText.includes(k))) {
             session.supportMode = false;
@@ -288,7 +309,7 @@ bot.on('message', async (msg) => {
         }
 
         // ----------------------------------------------------------------
-        // 4. KÍCH HOẠT CHẾ ĐỘ HỖ TRỢ
+        // 5. KÍCH HOẠT CHẾ ĐỘ HỖ TRỢ
         // ----------------------------------------------------------------
         let isSupportReq = SUPPORT_KEYWORDS.some(k => lowerText.includes(k));
 
@@ -306,7 +327,7 @@ bot.on('message', async (msg) => {
         }
 
         // ----------------------------------------------------------------
-        // 5. CÁCH LY LOGIC KHI ĐANG HỖ TRỢ
+        // 6. CÁCH LY LOGIC KHI ĐANG HỖ TRỢ
         // ----------------------------------------------------------------
         if (session.supportMode && userPhone) {
             await db.collection('support_chats').doc(userPhone).set({
@@ -328,16 +349,14 @@ bot.on('message', async (msg) => {
         }
 
         // ----------------------------------------------------------------
-        // 6. ĐĂNG NHẬP BẰNG SĐT 
+        // 7. ĐĂNG NHẬP BẰNG SĐT 
         // ----------------------------------------------------------------
         if (!session.state && !session.supportMode) {
             const cleanPhone = text.replace(/\s/g, '');
-            // Nhận diện nếu người dùng nhắn chính xác 1 chuỗi 10 chữ số bắt đầu bằng số 0
             if (/^0\d{9}$/.test(cleanPhone)) {
                 const userSnap = await db.collection('users').doc(cleanPhone).get();
                 if (userSnap.exists) {
                     const userData = userSnap.data();
-                    // Cập nhật Zalo ID vào tài khoản
                     await db.collection('users').doc(cleanPhone).update({ zaloId: zaloId });
                     
                     const rankName = getUserRank(userData);
@@ -352,12 +371,26 @@ bot.on('message', async (msg) => {
         // B. LỆNH ĐIỀU HƯỚNG CƠ BẢN (CHỈ CHẠY KHI KHÔNG Ở CHẾ ĐỘ HỖ TRỢ)
         // ----------------------------------------------------------------
 
-        // GỌI BẢNG THÔNG TIN
+        // PHÂN LOẠI CÁC TỪ KHÓA RESET
+        const isDeleteAll = DELETE_ALL_KEYWORDS.some(k => lowerText.includes(k));
+        const isLogout = !isDeleteAll && LOGOUT_KEYWORDS.some(k => lowerText.includes(k));
+
+        if (isDeleteAll) {
+            session.state = 'WAITING_DELETE_ALL_CONFIRM';
+            await sessionRef.set(session);
+            return bot.sendMessage(zaloId, "⚠️ THÔNG BÁO: Bạn đang yêu cầu Xóa toàn bộ thông tin tài khoản.\n👉 Hãy nhắn \"YES\" để xác nhận hoặc \"NO\" để hủy yêu cầu.\n\nSau khi xác nhận, thông tin của bạn sẽ KHÔNG CÒN lưu trên hệ thống!");
+        }
+
+        if (isLogout) {
+            session.state = 'WAITING_LOGOUT_CONFIRM';
+            await sessionRef.set(session);
+            return bot.sendMessage(zaloId, "⚠️ THÔNG BÁO: Bạn đang yêu cầu Đăng xuất (Gỡ liên kết SĐT khỏi Zalo này).\n👉 Hãy nhắn \"YES\" để xác nhận hoặc \"NO\" để hủy yêu cầu.");
+        }
+
         if (INFO_KEYWORDS.some(k => lowerText.includes(k))) {
             return bot.sendMessage(zaloId, infoMsgText);
         }
 
-        // TÍNH NĂNG TRA CỨU SỐ DƯ
         if (BALANCE_KEYWORDS.some(k => lowerText.includes(k))) {
             if (userPhone) {
                 const uSnap = await db.collection('users').doc(userPhone).get();
@@ -371,7 +404,6 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "⚠️ Bạn chưa có thông tin trên hệ thống. Hãy bắt đầu bằng cách đặt 1 đơn hàng nhé!");
         }
 
-        // TÍNH NĂNG TRA CỨU LỊCH SỬ
         if (HISTORY_KEYWORDS.some(k => lowerText.includes(k))) {
             if (userPhone) {
                 const ordersSnap = await db.collection('orders')
@@ -391,12 +423,6 @@ bot.on('message', async (msg) => {
                 return bot.sendMessage(zaloId, histMsg.trim());
             }
             return bot.sendMessage(zaloId, "⚠️ Bạn chưa có thông tin trên hệ thống.");
-        }
-
-        if (RESET_KEYWORDS.some(k => lowerText.includes(k))) {
-            session.state = 'WAITING_RESET_CONFIRM';
-            await sessionRef.set(session);
-            return bot.sendMessage(zaloId, "⚠️ THÔNG BÁO: Bạn đang yêu cầu Xóa toàn bộ thông tin tài khoản.\n👉 Hãy nhắn \"YES\" để xác nhận hoặc \"NO\" để hủy yêu cầu Reset.\n\nSau khi xác nhận, thông tin của bạn sẽ KHÔNG CÒN lưu trên hệ thống!");
         }
 
         if (CANCEL_KEYWORDS.some(k => lowerText.includes(k))) {
@@ -500,7 +526,6 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        // LỜI CHÀO MỚI (CÓ ĐÍNH KÈM THÔNG TIN)
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món, nhắn SĐT để đăng nhập ngay hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
@@ -518,9 +543,41 @@ db.collection('orders').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach(async (change) => {
         const order = change.doc.data();
         if (change.type === "modified" && order.zaloId) {
-            const statusMap = { 'PREPARING': '👨‍🍳 Đang chuẩn bị', 'DELIVERING': '🚚 Đang giao', 'COMPLETED': '✅ Đã xong', 'CANCELLED': '❌ Đã hủy' };
-            if (statusMap[order.status]) {
-                bot.sendMessage(order.zaloId, `🔔 Cập nhật đơn #${change.doc.id.slice(-6).toUpperCase()}: [${statusMap[order.status]}]`);
+            
+            // CẬP NHẬT: Tự động cộng xu khi hoàn thành đơn & Báo cáo
+            if (order.status === 'COMPLETED' && !order.xuRewarded) {
+                // Tách phần số từ chuỗi "35,000đ"
+                const numTotal = parseInt(String(order.total).replace(/\D/g, ''));
+                let rewardXu = 0;
+                
+                if (!isNaN(numTotal) && numTotal > 0) {
+                    rewardXu = Math.floor(numTotal / 1000) * 10;
+                }
+
+                if (rewardXu > 0) {
+                    // Update cờ trước để tránh cộng đúp nếu lỗi bất ngờ
+                    await change.doc.ref.update({ xuRewarded: true });
+                    
+                    if (order.phone) {
+                        await db.collection('users').doc(order.phone).update({
+                            totalXu: admin.firestore.FieldValue.increment(rewardXu),
+                            lastUpdateSource: 'order_payment',
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        }).catch(e => console.error("Lỗi cộng xu:", e));
+                    }
+                    
+                    const orderId = change.doc.id.slice(-6).toUpperCase();
+                    const msg = `🔔 Cập nhật đơn #${orderId}: [✅ Đã xong]\n🎉 Đơn hàng #${orderId} đã Hoàn thành. Bạn đã được cộng: ${rewardXu} Xu vào tài khoản.`;
+                    bot.sendMessage(order.zaloId, msg);
+                } else {
+                    bot.sendMessage(order.zaloId, `🔔 Cập nhật đơn #${change.doc.id.slice(-6).toUpperCase()}: [✅ Đã xong]`);
+                }
+            } 
+            else if (order.status !== 'COMPLETED') {
+                const statusMap = { 'PREPARING': '👨‍🍳 Đang chuẩn bị', 'DELIVERING': '🚚 Đang giao', 'CANCELLED': '❌ Đã hủy' };
+                if (statusMap[order.status]) {
+                    bot.sendMessage(order.zaloId, `🔔 Cập nhật đơn #${change.doc.id.slice(-6).toUpperCase()}: [${statusMap[order.status]}]`);
+                }
             }
         }
     });
