@@ -40,6 +40,7 @@ const MENU = {
 
 const CANCEL_KEYWORDS = ['hủy', 'huy', 'hủy đơn', 'huy don', 'không đặt nữa'];
 const SUPPORT_KEYWORDS = ['hỗ trợ', 'ho tro', 'cần hỗ trợ', 'nhân viên', 'tư vấn', 'shop ơi', 'ad ơi', 'chủ quán'];
+const CLOSE_SUPPORT_KEYWORDS = ['đóng chat', 'dong chat', 'đóng hỗ trợ', 'dong ho tro', 'kết thúc', 'ket thuc'];
 const GREETING_KEYWORDS = ['nay có bán không ạ','đặt cơm ạ','shop ơi','hello','hi','xin chào', 'chào', 'bắt đầu', 'alo shop', 'alo sốp', 'alo'];
 const RESET_KEYWORDS = ['reset', 'xóa hết', 'làm lại'];
 const CHANGE_INFO_KEYWORDS = ['thay đổi thông tin', 'đổi địa chỉ', 'đổi sđt', 'cập nhật thông tin'];
@@ -47,12 +48,27 @@ const MENU_KEYWORDS = ['menu', 'thực đơn', 'món ăn', 'xin menu', 'có món
 const PAYMENT_BANK_KEYWORDS = ['chuyển khoản', 'ck', 'banking', 'qr'];
 const PAYMENT_CASH_KEYWORDS = ['tiền mặt', 'ship cod', 'cod'];
 const ORDER_INTENT_KEYWORDS = ['đặt', 'cho', 'mua', 'ship', 'giao', 'lấy', 'order'];
-const CLOSE_SUPPORT_KEYWORDS = ['đóng chat', 'dong chat', 'đóng hỗ trợ', 'dong ho tro', 'kết thúc', 'ket thuc'];
+
+// THÊM TỪ KHÓA CHO CÁC TÍNH NĂNG MỚI
+const INFO_KEYWORDS = ['thông tin', 'thong tin', 'hướng dẫn', 'huong dan', 'help'];
+const BALANCE_KEYWORDS = ['số dư', 'so du', 'ví', 'xu'];
+const HISTORY_KEYWORDS = ['lịch sử', 'lich su'];
 
 const app = express();
 app.use(express.json());
 const bot = new ZaloBot(process.env.BOT_TOKEN, { polling: false });
 const ADMIN_ZALO_ID = String(process.env.ZALO_BOT_ADMIN_ID || 'a65dc2194697d372478').trim();
+
+// THÔNG ĐIỆP BẢNG THÔNG TIN
+const infoMsgText = `Bạn có thể nhắn các nội dung sau đây:\n` +
+                    `- "Menu" để xem Menu món ăn\n` +
+                    `- "Ck" để lấy thông tin hoặc mã chuyển khoản\n` +
+                    `- "Số dư" để kiểm tra số tiền Ví và số Xu hiện có\n` +
+                    `- "Lịch sử" để tra cứu lịch sử đơn hàng đã đặt\n` +
+                    `- "Hỗ trợ" để nhắn tin với Shop hoặc "Đóng hỗ trợ" để đóng chat với Shop\n` +
+                    `- "Hủy" nếu muốn xóa đơn hàng sai để đặt lại\n` +
+                    `- "Thay đổi thông tin" nếu muốn đổi SĐT/Địa chỉ\n` +
+                    `- "Reset" để Xóa tài khoản và thiết lập lại từ đầu.`;
 
 /**
  * --- HÀM TRỢ GIÚP ---
@@ -150,7 +166,6 @@ bot.on('message', async (msg) => {
 
     if (!text || text.startsWith('/')) return;
 
-    // A. XỬ LÝ ADMIN REPLY
     if (zaloId === ADMIN_ZALO_ID && msg.quote) {
         const quotedMsg = msg.quote.text || "";
         const targetIdMatch = quotedMsg.match(/🆔:\s*([a-zA-Z0-9.\-_]+)/);
@@ -267,9 +282,6 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, 'Lưu ý : Khách vui lòng nhắn "Đóng chat" để ngưng nhận Hỗ trợ và trở về trạng thái nhận đơn Bình thường!');
         }
 
-        // ----------------------------------------------------------------
-        // 5. CÁCH LY LOGIC KHI ĐANG HỖ TRỢ
-        // ----------------------------------------------------------------
         if (session.supportMode && userPhone) {
             await db.collection('support_chats').doc(userPhone).set({
                 userPhone: userPhone,
@@ -292,6 +304,48 @@ bot.on('message', async (msg) => {
         // ----------------------------------------------------------------
         // B. LỆNH ĐIỀU HƯỚNG CƠ BẢN (CHỈ CHẠY KHI KHÔNG Ở CHẾ ĐỘ HỖ TRỢ)
         // ----------------------------------------------------------------
+
+        // GỌI BẢNG THÔNG TIN
+        if (INFO_KEYWORDS.some(k => lowerText.includes(k))) {
+            return bot.sendMessage(zaloId, infoMsgText);
+        }
+
+        // TÍNH NĂNG TRA CỨU SỐ DƯ
+        if (BALANCE_KEYWORDS.some(k => lowerText.includes(k))) {
+            if (userPhone) {
+                const uSnap = await db.collection('users').doc(userPhone).get();
+                if (uSnap.exists) {
+                    const uData = uSnap.data();
+                    const wallet = uData.walletBalance ? uData.walletBalance.toLocaleString() : '0';
+                    const xu = uData.totalXu ? uData.totalXu.toLocaleString() : '0';
+                    return bot.sendMessage(zaloId, `💳 THÔNG TIN TÀI KHOẢN\n👤 Khách hàng: ${name}\n📞 SĐT: ${userPhone}\n------------------\n💰 Số dư ví: ${wallet}đ\n🪙 Số Xu: ${xu} Xu`);
+                }
+            }
+            return bot.sendMessage(zaloId, "⚠️ Bạn chưa có thông tin trên hệ thống. Hãy bắt đầu bằng cách đặt 1 đơn hàng nhé!");
+        }
+
+        // TÍNH NĂNG TRA CỨU LỊCH SỬ
+        if (HISTORY_KEYWORDS.some(k => lowerText.includes(k))) {
+            if (userPhone) {
+                const ordersSnap = await db.collection('orders')
+                    .where('phone', '==', userPhone)
+                    .orderBy('createdAt', 'desc')
+                    .limit(3)
+                    .get();
+                if (ordersSnap.empty) {
+                    return bot.sendMessage(zaloId, "📭 Bạn chưa có đơn hàng nào.");
+                }
+                let histMsg = "🕒 LỊCH SỬ 3 ĐƠN GẦN NHẤT:\n--------------------------\n";
+                ordersSnap.forEach(doc => {
+                    const o = doc.data();
+                    const statusMap = { 'PENDING': '🕒 Chờ xác nhận', 'PREPARING': '👨‍🍳 Đang chuẩn bị', 'DELIVERING': '🚚 Đang giao', 'COMPLETED': '✅ Đã xong', 'CANCELLED': '❌ Đã hủy' };
+                    histMsg += `🆔 #${doc.id.slice(-6).toUpperCase()} | 💰 ${o.total}\n🍱 Món: ${o.items}\n🔔 Trạng thái: ${statusMap[o.status] || o.status}\n\n`;
+                });
+                return bot.sendMessage(zaloId, histMsg.trim());
+            }
+            return bot.sendMessage(zaloId, "⚠️ Bạn chưa có thông tin trên hệ thống.");
+        }
+
         if (RESET_KEYWORDS.some(k => lowerText.includes(k))) {
             session.state = 'WAITING_RESET_CONFIRM';
             await sessionRef.set(session);
@@ -399,9 +453,11 @@ bot.on('message', async (msg) => {
             return;
         }
 
+        // LỜI CHÀO MỚI (CÓ ĐÍNH KÈM THÔNG TIN)
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
-            return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món nhé.`);
+            await bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món hoặc nhắn "Thông tin" để hiển thị Menu Hỗ trợ nhé.`);
+            return bot.sendMessage(zaloId, infoMsgText);
         }
 
     } catch (error) { console.error("❌ Lỗi:", error); }
@@ -423,14 +479,12 @@ db.collection('orders').onSnapshot((snapshot) => {
     });
 });
 
-// LẮNG NGHE CHAT ĐỂ ĐỒNG BỘ ZALO (GỘP CẢ 2 TÍNH NĂNG isClosed VÀ sendzaloId)
 db.collection('support_chats').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach((change) => {
         const data = change.doc.data();
         const phone = change.doc.id;
         let zaloId = data.zaloId;
 
-        // 1. XỬ LÝ LỆNH ĐÓNG CHAT TỪ ADMIN (isClosed: true)
         if (data.isClosed === true) {
             setTimeout(async () => {
                 try {
@@ -442,13 +496,11 @@ db.collection('support_chats').onSnapshot((snapshot) => {
                         const sessionRef = db.collection('bot_sessions').doc(zaloId);
                         const sessionSnap = await sessionRef.get();
                         
-                        // Tự động tắt supportMode và báo cho khách
                         if (sessionSnap.exists && sessionSnap.data().supportMode) {
                             await sessionRef.update({ supportMode: false });
                             await bot.sendMessage(zaloId, "✅ Đã đóng hộp thoại Hỗ trợ. Bạn đã trở về trạng thái nhận đơn Bình thường!");
                         }
                     }
-                    // Gỡ cờ sau khi xử lý xong
                     await change.doc.ref.update({ isClosed: admin.firestore.FieldValue.delete() });
                 } catch (err) {
                     console.error("Lỗi xử lý đóng chat Zalo:", err);
@@ -456,7 +508,6 @@ db.collection('support_chats').onSnapshot((snapshot) => {
             }, 500);
         }
 
-        // 2. ĐỒNG BỘ TIN NHẮN TỪ ADMIN WEB -> ZALO BẰNG createdAt VÀ sendzaloId
         if ((change.type === 'added' || change.type === 'modified') && data.unreadUser === true) {
             setTimeout(async () => {
                 try {
@@ -497,7 +548,6 @@ db.collection('support_chats').onSnapshot((snapshot) => {
                                 
                                 if (adminTime >= lastUserTime && msgData.sendzaloId !== expectedFlag) {
                                     await bot.sendMessage(zaloId, `💬 Phản hồi từ Shop: ${msgData.text || msgData.message}`);
-                                    
                                     batch.update(msgDoc.ref, { sendzaloId: expectedFlag });
                                     sent = true;
                                 }
