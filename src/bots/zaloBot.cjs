@@ -52,11 +52,10 @@ const ADMIN_ZALO_ID = String(process.env.ZALO_BOT_ADMIN_ID || 'a65dc2194697d3724
 /**
  * --- HÀM TRỢ GIÚP ---
  */
-// Hàm tra cứu SĐT từ Zalo ID để thống nhất Document ID
 const getPhoneByZaloId = async (zaloId) => {
     const userQuery = await db.collection('users').where("zaloId", "==", zaloId).limit(1).get();
     if (!userQuery.empty) {
-        return userQuery.docs[0].id; // ID của document trong collection users chính là SĐT
+        return userQuery.docs[0].id;
     }
     return null;
 };
@@ -138,26 +137,45 @@ bot.on('message', async (msg) => {
         const userPhone = await getPhoneByZaloId(zaloId);
         const chatIdentifier = userPhone || zaloId;
 
-        // Lưu tin nhắn khách gửi vào Firestore
-        await db.collection('support_chats').doc(chatIdentifier).collection('messages').add({
-            zaloId,
-            sender: 'USER',
-            message: text,
-            name: name,
-            createdAt: admin.firestore.FieldValue.serverTimestamp() // Khớp với Web
-        });
-
+        // Lưu lại log để huấn luyện AI (Không thông báo cho Admin)
         await db.collection('learning_logs').add({ zaloId, text, name, timestamp: admin.firestore.FieldValue.serverTimestamp() });
 
         const sessionRef = db.collection('bot_sessions').doc(zaloId);
         const sessionSnap = await sessionRef.get();
-        let session = sessionSnap.exists ? sessionSnap.data() : { state: null, pendingOrder: null };
+        // MỚI: Thêm supportMode vào khởi tạo Session
+        let session = sessionSnap.exists ? sessionSnap.data() : { state: null, pendingOrder: null, supportMode: false };
         const lowerText = text.toLowerCase();
 
-        // B. LỆNH ĐIỀU HƯỚNG
-        if (RESET_KEYWORDS.includes(lowerText)) {
+        // ----------------------------------------------------------------
+        // MỚI: LUỒNG XÁC NHẬN RESET TÀI KHOẢN (Ưu tiên cao nhất)
+        // ----------------------------------------------------------------
+        if (session.state === 'WAITING_RESET_CONFIRM') {
+            if (lowerText === 'yes') {
+                if (userPhone) {
+                    await db.collection('users').doc(userPhone).delete(); // Xóa data trên Firebase
+                }
+                await sessionRef.delete();
+                await bot.sendMessage(zaloId, "✅ Toàn bộ thông tin đã được xóa khỏi hệ thống!");
+                return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món nhé.`);
+            } else if (lowerText === 'no') {
+                await sessionRef.delete();
+                return bot.sendMessage(zaloId, "❌ Đã hủy yêu cầu xóa tài khoản.");
+            } else {
+                return bot.sendMessage(zaloId, "⚠️ Vui lòng nhắn YES để xác nhận xóa, hoặc NO để hủy.");
+            }
+        }
+
+        // B. LỆNH ĐIỀU HƯỚNG CƠ BẢN
+        if (RESET_KEYWORDS.some(k => lowerText.includes(k))) {
+            session.state = 'WAITING_RESET_CONFIRM';
+            await sessionRef.set(session);
+            return bot.sendMessage(zaloId, "⚠️ THÔNG BÁO: Bạn đang yêu cầu Xóa toàn bộ thông tin tài khoản.\n👉 Hãy nhắn \"YES\" để xác nhận hoặc \"NO\" để hủy yêu cầu Reset.\n\nSau khi xác nhận, thông tin của bạn sẽ KHÔNG CÒN lưu trên hệ thống!");
+        }
+
+        // MỚI: XỬ LÝ LỆNH HỦY (Xóa đơn đang thao tác dở)
+        if (CANCEL_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
-            return bot.sendMessage(zaloId, "🔄 Đã xóa thông tin phiên đặt hàng. Bạn có thể bắt đầu lại ngay.");
+            return bot.sendMessage(zaloId, "🚫 Đã hủy các thao tác đặt hàng trước đó. Bạn có thể bắt đầu lại từ đầu.");
         }
 
         if (MENU_KEYWORDS.some(k => lowerText.includes(k))) {
@@ -171,6 +189,29 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "📝 Vui lòng nhập Số điện thoại mới để quán cập nhật.");
         }
 
+        // ----------------------------------------------------------------
+        // MỚI: CHẾ ĐỘ HỖ TRỢ (Lưu support_chats & Gọi Admin)
+        // ----------------------------------------------------------------
+        let isSupportReq = SUPPORT_KEYWORDS.some(k => lowerText.includes(k));
+
+        if (isSupportReq && !session.supportMode) {
+            session.supportMode = true;
+            await sessionRef.set(session);
+            bot.sendMessage(zaloId, "🤖 Shop đã nhận được yêu cầu. Nhân viên sẽ hỗ trợ bạn ngay giây lát!");
+        }
+
+        // CHỈ LƯU VÀ THÔNG BÁO ADMIN KHI ĐANG Ở TRONG CHẾ ĐỘ HỖ TRỢ
+        if (session.supportMode || isSupportReq) {
+            await db.collection('support_chats').doc(chatIdentifier).collection('messages').add({
+                zaloId,
+                sender: 'USER',
+                message: text,
+                name: name,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            // Không return ở đây để khách vẫn có thể tiếp tục đặt món nếu muốn
+        }
+
         // C. THANH TOÁN
         if (PAYMENT_BANK_KEYWORDS.some(k => lowerText.includes(k))) {
             await bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua STK: Ngân hàng TPBank 00006464313 - PHẠM ĐỨC THUẬN");
@@ -179,14 +220,6 @@ bot.on('message', async (msg) => {
 
         if (PAYMENT_CASH_KEYWORDS.some(k => lowerText.includes(k))) {
             return bot.sendMessage(zaloId, "💵 Đã ghi nhận hình thức thanh toán Tiền mặt (COD).");
-        }
-
-        // D. HỖ TRỢ TRỰC TIẾP
-        if (SUPPORT_KEYWORDS.some(k => lowerText.includes(k))) {
-            await sessionRef.delete();
-            bot.sendMessage(zaloId, "🤖 Shop đã nhận được yêu cầu. Nhân viên sẽ hỗ trợ bạn ngay giây lát!");
-            if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `⚠️ KHÁCH CẦN HỖ TRỢ\n🆔: ${zaloId}\n👤: ${name}\n💬: ${text}`);
-            return;
         }
 
         // E. NHẬN DIỆN ĐƠN HÀNG
@@ -208,7 +241,7 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // F. LUỒNG NHẬP LIỆU
+        // F. LUỒNG NHẬP LIỆU (SĐT & ĐỊA CHỈ)
         if (session.state === 'WAITING_PHONE') {
             const phone = text.replace(/\D/g, '');
             if (phone.length < 10) return bot.sendMessage(zaloId, "⚠️ SĐT không hợp lệ.");
@@ -229,7 +262,6 @@ bot.on('message', async (msg) => {
             session.pendingOrder.address = text;
             session.state = 'WAITING_CONFIRM';
             
-            // CẬP NHẬT: Đồng bộ dữ liệu Khách hàng mới + Cờ lastUpdateSource để qua mặt Anti-cheat
             await db.collection('users').doc(session.pendingOrder.phone).set({
                 fullName: name, 
                 address: text, 
@@ -238,7 +270,7 @@ bot.on('message', async (msg) => {
                 role: 'user',           
                 totalXu: 0,             
                 walletBalance: 0,       
-                lastUpdateSource: 'admin', // THÊM MỚI: Bỏ qua bẫy Anti-cheat khi tạo user
+                lastUpdateSource: 'admin', 
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
             
@@ -246,10 +278,10 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, formatConfirmMsg(session.pendingOrder));
         }
 
+        // CHỐT ĐƠN
         if (lowerText === 'ok' && session.state === 'WAITING_CONFIRM') {
             const order = session.pendingOrder;
             
-            // CẬP NHẬT: Định dạng trường dữ liệu
             const docRef = await db.collection('orders').add({
                 ...order, 
                 status: 'PENDING', 
@@ -268,6 +300,7 @@ bot.on('message', async (msg) => {
             return;
         }
 
+        // LỜI CHÀO NẾU KHÔNG KHỚP LỆNH NÀO TRÊN
         if (GREETING_KEYWORDS.some(k => lowerText.includes(k))) {
             await sessionRef.delete();
             return bot.sendMessage(zaloId, `Xin chào ${name}. Shop PlantG nghe ạ! Bạn nhắn "Menu" để xem món nhé.`);
@@ -280,12 +313,10 @@ bot.on('message', async (msg) => {
  * --- THÔNG BÁO TRẠNG THÁI TỪ WEB/HỆ THỐNG VỀ ZALO ---
  */
 
-// Lắng nghe trạng thái ĐƠN HÀNG
 db.collection('orders').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach(async (change) => {
         const order = change.doc.data();
         if (change.type === "modified" && order.zaloId) {
-            // SỬA: Đổi SHIPPING thành DELIVERING cho đồng bộ
             const statusMap = { 'PREPARING': '👨‍🍳 Đang chuẩn bị', 'DELIVERING': '🚚 Đang giao', 'COMPLETED': '✅ Đã xong', 'CANCELLED': '❌ Đã hủy' };
             if (statusMap[order.status]) {
                 bot.sendMessage(order.zaloId, `🔔 Cập nhật đơn #${change.doc.id.slice(-6).toUpperCase()}: [${statusMap[order.status]}]`);
@@ -294,11 +325,9 @@ db.collection('orders').onSnapshot((snapshot) => {
     });
 });
 
-// THÊM MỚI: Lắng nghe tin nhắn hỗ trợ từ Admin (trên Web) để đẩy về Zalo
 db.collection('support_chats').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach(async (change) => {
         const data = change.doc.data();
-        // Kiểm tra cờ unreadUser (khi Admin gửi tin nhắn từ giao diện web, cờ này sẽ được set = true)
         if (data.unreadUser === true) {
             const phone = change.doc.id;
             const userSnap = await db.collection('users').doc(phone).get();
@@ -306,7 +335,6 @@ db.collection('support_chats').onSnapshot((snapshot) => {
             if (userSnap.exists && userSnap.data().zaloId) {
                 const zaloId = userSnap.data().zaloId;
                 
-                // Lấy tin nhắn mới nhất do ADMIN gửi chưa được push sang Zalo
                 const msgsSnap = await change.doc.ref.collection('messages')
                     .where('sender', '==', 'ADMIN')
                     .orderBy('createdAt', 'desc')
@@ -317,9 +345,7 @@ db.collection('support_chats').onSnapshot((snapshot) => {
                     const msgData = msgsSnap.docs[0].data();
                     if (!msgData.sentToZalo) {
                         bot.sendMessage(zaloId, `💬 Phản hồi từ Shop: ${msgData.text || msgData.message}`);
-                        // Gắn cờ để không bị gửi lại
                         await msgsSnap.docs[0].ref.update({ sentToZalo: true });
-                        // Tắt cờ unreadUser để ngừng kích hoạt
                         await change.doc.ref.update({ unreadUser: false });
                     }
                 }
