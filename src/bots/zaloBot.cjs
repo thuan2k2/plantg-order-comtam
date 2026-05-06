@@ -47,6 +47,7 @@ const MENU_KEYWORDS = ['menu', 'thực đơn', 'món ăn', 'xin menu', 'có món
 const PAYMENT_BANK_KEYWORDS = ['chuyển khoản', 'ck', 'banking', 'qr'];
 const PAYMENT_CASH_KEYWORDS = ['tiền mặt', 'ship cod', 'cod'];
 const ORDER_INTENT_KEYWORDS = ['đặt', 'cho', 'mua', 'ship', 'giao', 'lấy', 'order'];
+const CLOSE_SUPPORT_KEYWORDS = ['đóng chat', 'dong chat', 'đóng hỗ trợ', 'dong ho tro', 'kết thúc', 'ket thuc'];
 
 const app = express();
 app.use(express.json());
@@ -64,27 +65,23 @@ const getPhoneByZaloId = async (zaloId) => {
     return null;
 };
 
-// CẢI TIẾN CƠ CHẾ PARSE: PHÂN BIỆT SĐT VÀ SỐ LƯỢNG
 const advancedParse = (text) => {
     let items = [];
     let total = 0;
     let foundMain = false;
     let hasValidItem = false;
     
-    // Tách số lượng bị dính liền chữ (VD: 1p -> 1 p)
     let lowerText = text.toLowerCase().trim();
     lowerText = lowerText.replace(/(\d+)([a-zA-Zà-ỹ]+)/g, '$1 $2');
     
     let primaryQty = 1; 
     
-    // CẬP NHẬT TRỌNG TÂM: Chỉ nhận diện những số nhỏ (1 đến 2 chữ số). Tránh bắt nhầm các đoạn SĐT.
     const qtyMatch = lowerText.match(/(?:^|\s)(\d{1,2})\s*(p|phần|hộp|suất|cơm|c)?(?:$|\s)/);
     if (qtyMatch) {
         primaryQty = parseInt(qtyMatch[1]);
-        if(primaryQty > 50) primaryQty = 1; // Giới hạn nếu ai cố tình spam số ảo
+        if(primaryQty > 50) primaryQty = 1; 
     }
 
-    // 1. Tìm món chính
     for (const main of MENU.MAIN) {
         if (main.keywords.some(k => new RegExp(`(^|\\s)${k}($|\\s)`).test(lowerText))) {
             items.push(`${primaryQty}x ${main.name}`);
@@ -95,16 +92,13 @@ const advancedParse = (text) => {
         }
     }
 
-    // Nếu không có tên món nhưng lại nói số lượng kèm đơn vị (VD: "2 p")
     if (!foundMain && qtyMatch && qtyMatch[2]) {
         items.push(`${primaryQty}x Cơm tấm sườn trứng`);
         total += 35000 * primaryQty;
         hasValidItem = true;
     }
 
-    // 2. Tìm món phụ
     MENU.SIDES.forEach(side => {
-        // CẬP NHẬT TRỌNG TÂM: Món phụ cũng chỉ được nhận diện với số lượng tối đa 2 chữ số (\d{1,2})
         const sideKeywordsRegex = new RegExp(`(?:^|\\s)(\\d{1,2})?\\s*(${side.keywords.join('|')})(?:$|\\s)`, 'i');
         const match = lowerText.match(sideKeywordsRegex);
         if (match) {
@@ -116,17 +110,11 @@ const advancedParse = (text) => {
         }
     });
 
-    // 3. FALLBACK CẢI TIẾN: Tránh bắt lầm SĐT
     if (!hasValidItem) {
         const hasOrderIntent = ORDER_INTENT_KEYWORDS.some(k => new RegExp(`(^|\\s)${k}($|\\s)`).test(lowerText));
-        
-        // Tin nhắn chỉ toàn bộ là 1-2 chữ số (VD: "1", "2")
         const isJustShortNumber = /^\s*\d{1,2}\s*$/.test(lowerText); 
-        
-        // Tin nhắn có số kèm đơn vị (VD: "1p", "2hộp")
         const hasNumberWithUnit = qtyMatch && qtyMatch[2];
 
-        // Ràng buộc chặt chẽ: Fallback chỉ kích hoạt khi thực sự là Đơn Ngoại Lệ, không kích hoạt khi khách gửi SĐT (VD: 0987654321)
         if (hasOrderIntent || isJustShortNumber || hasNumberWithUnit) {
             return { items: "Giống Ghi chú", total: "Thanh toán sau", note: text };
         }
@@ -162,7 +150,7 @@ bot.on('message', async (msg) => {
 
     if (!text || text.startsWith('/')) return;
 
-    // A. XỬ LÝ ADMIN REPLY (Trả lời khách từ Zalo của Admin)
+    // A. XỬ LÝ ADMIN REPLY
     if (zaloId === ADMIN_ZALO_ID && msg.quote) {
         const quotedMsg = msg.quote.text || "";
         const targetIdMatch = quotedMsg.match(/🆔:\s*([a-zA-Z0-9.\-_]+)/);
@@ -196,7 +184,7 @@ bot.on('message', async (msg) => {
         const lowerText = text.toLowerCase();
 
         // ----------------------------------------------------------------
-        // LUỒNG XÁC NHẬN RESET TÀI KHOẢN
+        // 1. LUỒNG XÁC NHẬN RESET TÀI KHOẢN
         // ----------------------------------------------------------------
         if (session.state === 'WAITING_RESET_CONFIRM') {
             if (lowerText === 'yes') {
@@ -215,7 +203,7 @@ bot.on('message', async (msg) => {
         }
 
         // ----------------------------------------------------------------
-        // YÊU CẦU CUNG CẤP SĐT CHO HỖ TRỢ TRỰC TUYẾN
+        // 2. YÊU CẦU CUNG CẤP SĐT CHO HỖ TRỢ TRỰC TUYẾN
         // ----------------------------------------------------------------
         if (session.state === 'WAITING_PHONE_SUPPORT') {
             const phone = text.replace(/\D/g, '');
@@ -252,8 +240,60 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "✅ Đã đồng bộ tài khoản! Bộ phận hỗ trợ đã được kết nối, bạn cần Shop giúp gì ạ?");
         }
 
+        // ----------------------------------------------------------------
+        // 3. THOÁT CHẾ ĐỘ HỖ TRỢ (NGƯỜI DÙNG CHỦ ĐỘNG ĐÓNG)
+        // ----------------------------------------------------------------
+        if (session.supportMode && CLOSE_SUPPORT_KEYWORDS.some(k => lowerText.includes(k))) {
+            session.supportMode = false;
+            await sessionRef.set(session);
+            return bot.sendMessage(zaloId, "✅ Đã đóng hộp thoại Hỗ trợ. Bạn đã trở về trạng thái nhận đơn Bình thường!");
+        }
 
-        // B. LỆNH ĐIỀU HƯỚNG CƠ BẢN
+        // ----------------------------------------------------------------
+        // 4. KÍCH HOẠT CHẾ ĐỘ HỖ TRỢ
+        // ----------------------------------------------------------------
+        let isSupportReq = SUPPORT_KEYWORDS.some(k => lowerText.includes(k));
+
+        if (isSupportReq && !session.supportMode) {
+            if (!userPhone) {
+                session.state = 'WAITING_PHONE_SUPPORT';
+                await sessionRef.set(session);
+                return bot.sendMessage(zaloId, "🤖 Để Shop hỗ trợ và đồng bộ thông tin tốt nhất, bạn vui lòng cung cấp Số Điện Thoại nhé!");
+            }
+            session.supportMode = true;
+            await sessionRef.set(session);
+            await bot.sendMessage(zaloId, "🤖 Shop đã nhận được yêu cầu. Nhân viên sẽ hỗ trợ bạn ngay giây lát!");
+            await bot.sendMessage(zaloId, "Bạn đã vào hộp thoại Hỗ trợ với Quán");
+            return bot.sendMessage(zaloId, 'Lưu ý : Khách vui lòng nhắn "Đóng chat" để ngưng nhận Hỗ trợ và trở về trạng thái nhận đơn Bình thường!');
+        }
+
+        // ----------------------------------------------------------------
+        // 5. CÁCH LY LOGIC KHI ĐANG HỖ TRỢ (QUAN TRỌNG)
+        // ----------------------------------------------------------------
+        if (session.supportMode && userPhone) {
+            await db.collection('support_chats').doc(userPhone).set({
+                userPhone: userPhone,
+                userName: name,
+                zaloId: zaloId,
+                unreadAdmin: true,
+                lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            await db.collection('support_chats').doc(userPhone).collection('messages').add({
+                zaloId,
+                sender: 'USER',
+                text: text, 
+                name: name,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            
+            // Return ngay tại đây. Các lệnh Đặt Hàng, Menu phía dưới SẼ BỊ BỎ QUA hoàn toàn.
+            return; 
+        }
+
+        // ----------------------------------------------------------------
+        // B. LỆNH ĐIỀU HƯỚNG CƠ BẢN (CHỈ CHẠY KHI KHÔNG Ở CHẾ ĐỘ HỖ TRỢ)
+        // ----------------------------------------------------------------
         if (RESET_KEYWORDS.some(k => lowerText.includes(k))) {
             session.state = 'WAITING_RESET_CONFIRM';
             await sessionRef.set(session);
@@ -276,40 +316,6 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "📝 Vui lòng nhập Số điện thoại mới để quán cập nhật.");
         }
 
-        // ----------------------------------------------------------------
-        // CHẾ ĐỘ HỖ TRỢ
-        // ----------------------------------------------------------------
-        let isSupportReq = SUPPORT_KEYWORDS.some(k => lowerText.includes(k));
-
-        if (isSupportReq && !session.supportMode) {
-            if (!userPhone) {
-                session.state = 'WAITING_PHONE_SUPPORT';
-                await sessionRef.set(session);
-                return bot.sendMessage(zaloId, "🤖 Để Shop hỗ trợ và đồng bộ thông tin tốt nhất, bạn vui lòng cung cấp Số Điện Thoại nhé!");
-            }
-            session.supportMode = true;
-            await sessionRef.set(session);
-            bot.sendMessage(zaloId, "🤖 Shop đã nhận được yêu cầu. Nhân viên sẽ hỗ trợ bạn ngay giây lát!");
-        }
-
-        if ((session.supportMode || isSupportReq) && userPhone) {
-            await db.collection('support_chats').doc(userPhone).set({
-                userPhone: userPhone,
-                userName: name,
-                zaloId: zaloId,
-                unreadAdmin: true,
-                lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
-
-            await db.collection('support_chats').doc(userPhone).collection('messages').add({
-                zaloId,
-                sender: 'USER',
-                text: text, 
-                name: name,
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-        }
-
         // C. THANH TOÁN
         if (PAYMENT_BANK_KEYWORDS.some(k => lowerText.includes(k))) {
             await bot.sendMessage(zaloId, "💳 Bạn vui lòng chuyển khoản qua STK: Ngân hàng TPBank 00006464313 - PHẠM ĐỨC THUẬN");
@@ -320,7 +326,7 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, "💵 Đã ghi nhận hình thức thanh toán Tiền mặt (COD).");
         }
 
-        // E. NHẬN DIỆN ĐƠN HÀNG THÔNG MINH (Kèm Fallback)
+        // E. NHẬN DIỆN ĐƠN HÀNG THÔNG MINH
         const detected = advancedParse(text);
         if (detected.items) {
             session.pendingOrder = { customer: name, items: detected.items, total: detected.total, note: detected.note, zaloId };
@@ -424,7 +430,7 @@ db.collection('orders').onSnapshot((snapshot) => {
     });
 });
 
-// ĐỒNG BỘ TIN NHẮN TỪ ADMIN WEB -> ZALO
+// ĐỒNG BỘ TIN NHẮN TỪ ADMIN WEB -> ZALO BẰNG createdAt VÀ sendzaloId
 db.collection('support_chats').onSnapshot((snapshot) => {
     snapshot.docChanges().forEach((change) => {
         const data = change.doc.data();
@@ -441,7 +447,6 @@ db.collection('support_chats').onSnapshot((snapshot) => {
                     }
                     
                     if (zaloId) {
-                        // 1. Lấy mốc thời gian (createdAt) của tin nhắn USER mới nhất
                         const userMsgsSnap = await db.collection('support_chats').doc(phone).collection('messages')
                             .where('sender', '==', 'USER')
                             .orderBy('createdAt', 'desc')
@@ -454,7 +459,6 @@ db.collection('support_chats').onSnapshot((snapshot) => {
                             lastUserTime = uData.createdAt ? uData.createdAt.toMillis() : 0;
                         }
 
-                        // 2. Lấy các tin nhắn phản hồi gần nhất của ADMIN
                         const msgsSnap = await db.collection('support_chats').doc(phone).collection('messages')
                             .where('sender', '==', 'ADMIN')
                             .orderBy('createdAt', 'desc')
@@ -472,18 +476,14 @@ db.collection('support_chats').onSnapshot((snapshot) => {
                                 const msgData = msgDoc.data();
                                 const adminTime = msgData.createdAt ? msgData.createdAt.toMillis() : Date.now();
                                 
-                                // 3. SO SÁNH: Thời gian Admin gửi phải mới hơn/bằng tin nhắn khách 
-                                // VÀ chưa có cờ sendzaloId xác nhận đã gửi
                                 if (adminTime >= lastUserTime && msgData.sendzaloId !== expectedFlag) {
                                     await bot.sendMessage(zaloId, `💬 Phản hồi từ Shop: ${msgData.text || msgData.message}`);
                                     
-                                    // Cập nhật trường sendzaloId để đánh dấu hoàn tất
                                     batch.update(msgDoc.ref, { sendzaloId: expectedFlag });
                                     sent = true;
                                 }
                             }
                             
-                            // Gỡ cờ unreadUser cho Web Admin
                             if (sent) {
                                 batch.update(change.doc.ref, { unreadUser: false });
                                 await batch.commit();
