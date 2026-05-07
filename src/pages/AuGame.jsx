@@ -11,7 +11,7 @@ const ARROW_SYMBOLS = { UP: '⬆️', DOWN: '⬇️', LEFT: '⬅️', RIGHT: '�
 
 const AuGame = () => {
   const navigate = useNavigate();
-  const [gameState, setGameState] = useState('CONFIRM'); // CONFIRM -> PLAYING -> SPINNING -> RESULT
+  const [gameState, setGameState] = useState('CONFIRM'); // CONFIRM -> PREPARING -> PLAYING -> SPINNING -> RESULT
   const [currentTrack, setCurrentTrack] = useState('');
   
   const [savedPhone, setSavedPhone] = useState('');
@@ -28,6 +28,7 @@ const AuGame = () => {
   const [missCount, setMissCount] = useState(0);
   
   // Result states
+  const [prepCountdown, setPrepCountdown] = useState(3); // Đếm ngược 3s chuẩn bị
   const [countdown, setCountdown] = useState(5);
   const [rewardPercent, setRewardPercent] = useState(0);
 
@@ -54,7 +55,7 @@ const AuGame = () => {
     fetchUser();
   }, [navigate]);
 
-  // Khởi tạo vòng nhảy mới
+  // Khởi tạo vòng nhảy mới với độ khó thay đổi ngẫu nhiên
   const generateNewSequence = () => {
     const length = Math.floor(Math.random() * 6) + 4; // 4 đến 9 mũi tên
     const seq = Array.from({ length }, () => ARROWS[Math.floor(Math.random() * ARROWS.length)]);
@@ -77,15 +78,31 @@ const AuGame = () => {
 
       const randomMusic = MUSIC_TRACKS[Math.floor(Math.random() * MUSIC_TRACKS.length)];
       setCurrentTrack(randomMusic);
-      setGameState('PLAYING');
-      generateNewSequence();
+      
+      // Chuyển sang trạng thái Đếm ngược chuẩn bị thay vì chơi ngay
+      setPrepCountdown(3);
+      setGameState('PREPARING');
     } catch (error) {
       console.error("Lỗi trừ xu:", error);
       alert("Lỗi kết nối máy chủ, vui lòng thử lại!");
     }
   };
 
-  // Cố gắng ép phát nhạc khi đã có bài hát mới
+  // Logic Đếm ngược 3s trước khi nhảy
+  useEffect(() => {
+    if (gameState === 'PREPARING') {
+      if (prepCountdown > 0) {
+        const timer = setTimeout(() => setPrepCountdown(prev => prev - 1), 1000);
+        return () => clearTimeout(timer);
+      } else {
+        // Đếm xong thì kích hoạt nhạc và thanh trượt
+        setGameState('PLAYING');
+        generateNewSequence();
+      }
+    }
+  }, [gameState, prepCountdown]);
+
+  // Cố gắng ép phát nhạc khi đã chuyển sang trạng thái PLAYING
   useEffect(() => {
     if (gameState === 'PLAYING' && currentTrack && audioRef.current) {
         audioRef.current.load(); // Bắt buộc tải lại source mới
@@ -99,7 +116,9 @@ const AuGame = () => {
   // Vòng lặp thanh trượt (Slider)
   useEffect(() => {
     if (gameState !== 'PLAYING') return;
-    const DURATION = Math.floor(Math.random() * 1000) + 2000; // Nhịp 2s-3s
+
+    // Thay đổi tốc độ thanh trượt ngẫu nhiên cho mỗi bài nhạc (từ 2s đến 3s)
+    const DURATION = Math.floor(Math.random() * 1000) + 2000; 
 
     const animate = (time) => {
       if (!startTimeRef.current) startTimeRef.current = time;
@@ -130,11 +149,15 @@ const AuGame = () => {
         });
       }
 
+      // Khi bấm Spacebar
       if (e.code === 'Space') {
         e.preventDefault();
         setTotalRounds(prev => prev + 1);
         
+        // Kiểm tra Vùng Perfect (Giả sử vùng sáng từ 80% đến 95%)
         const inHitZone = sliderPos >= 80 && sliderPos <= 95;
+        
+        // Kiểm tra phím đã gõ có đúng không
         const isSequenceCorrect = targetSequence.length > 0 && 
             targetSequence.length === userInput.length && 
             targetSequence.every((val, index) => val === userInput[index]);
@@ -142,9 +165,11 @@ const AuGame = () => {
         if (inHitZone && isSequenceCorrect) {
           // Thành công
         } else {
-          setMissCount(prev => prev + 1); // Trượt
+          // Miss
+          setMissCount(prev => prev + 1);
         }
         
+        // Tạo nhịp mới
         generateNewSequence();
       }
     };
@@ -157,23 +182,26 @@ const AuGame = () => {
   const handleAudioEnd = () => {
     setGameState('SPINNING');
     
-    const missRate = totalRounds > 0 ? (missCount / totalRounds) : 1; 
+    // Tính toán Miss Rate
+    const missRate = totalRounds > 0 ? (missCount / totalRounds) : 1; // Nếu không chơi gì coi như miss 100%
     
-    if (missRate > 0.05) { 
-        setRewardPercent(-1); 
+    if (missRate > 0.05) { // Miss trên 5%
+        setRewardPercent(-1); // Mã lỗi cho thất bại
     } else {
+        // RNG Logic
         const rand = Math.random() * 100;
         let percent = 0;
-        if (rand < 99.999) { 
+        if (rand < 99.999) { // 99.999% rớt vào mốc thường
             const common = [10, 20, 30, 40];
             percent = common[Math.floor(Math.random() * common.length)];
-        } else { 
+        } else { // 0.001% rớt vào mốc siêu hiếm
             const rare = [50, 60, 70, 80, 90, 100];
             percent = rare[Math.floor(Math.random() * rare.length)];
         }
         setRewardPercent(percent);
     }
 
+    // Đếm ngược random từ 3 đến 5 giây
     let counter = Math.floor(Math.random() * 3) + 3;
     setCountdown(counter);
     
@@ -251,12 +279,22 @@ const AuGame = () => {
           </div>
         )}
 
+        {/* MÀN HÌNH CHỜ ĐẾM NGƯỢC (PREPARING) */}
+        {gameState === 'PREPARING' && (
+          <div className="text-center space-y-8 py-16 flex flex-col items-center justify-center">
+            <h2 className="text-2xl font-black text-white uppercase tracking-widest animate-pulse drop-shadow-md">Chuẩn bị!</h2>
+            <div className="text-[10rem] leading-none font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 to-orange-600 drop-shadow-[0_0_30px_rgba(250,204,21,0.6)] animate-bounce">
+              {prepCountdown > 0 ? prepCountdown : 'GO!'}
+            </div>
+          </div>
+        )}
+
         {/* MÀN HÌNH GAMEPLAY */}
         {gameState === 'PLAYING' && (
           <div className="space-y-10 py-8">
             <audio ref={audioRef} src={currentTrack} onEnded={handleAudioEnd} className="hidden" preload="auto" />
             
-            {/* ĐÃ FIX: Chống tràn nút mũi tên bằng flex-wrap */}
+            {/* Chống tràn nút mũi tên */}
             <div className="text-center font-bold text-yellow-400 tracking-widest flex flex-wrap justify-center items-center gap-2 sm:gap-4 min-h-[60px] px-4">
               {targetSequence.map((dir, idx) => {
                   const isTyped = idx < userInput.length;

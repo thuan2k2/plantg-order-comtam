@@ -13,6 +13,8 @@ import Order from './pages/Order';
 import CheckOrder from './pages/CheckOrder';
 import UserSettings from './pages/UserSettings'; 
 import RewardCenter from './pages/RewardCenter'; 
+// MỚI: Import trang Game AU Nhân phẩm
+import AuGame from './pages/AuGame';
 
 // Import Widget Chat dành cho Khách hàng
 import CustomerChat from './components/CustomerChat';
@@ -116,6 +118,9 @@ function App() {
             <Route path="/checkorder" element={<CheckOrder />} />
             <Route path="/settings" element={<UserSettings />} /> 
             <Route path="/rewards" element={<RewardCenter />} />
+            
+            {/* CẬP NHẬT: Thêm định tuyến cho game AU */}
+            <Route path="/au" element={<AuGame />} />
 
             {/* --- Cấu trúc các trang dành cho Admin --- */}
             <Route path="/admin/login" element={<AdminLogin />} />
