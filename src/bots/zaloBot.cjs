@@ -47,21 +47,21 @@ const MENU = {
     MAIN: [
         { keywords: ['cơm thêm', 'thêm cơm', 'cơm không', 'cơm riêng', 'com khong', 'cơm ko'], name: 'Cơm thêm', price: 5000 },
         { keywords: ['sườn trứng', 'suon trung', 'đầy đủ', 'cơm sườn trứng', 's trứng', 'st', 'com st', 'cơm st',], name: 'Cơm tấm sườn trứng', price: 35000 },
-        { keywords: ['cơm sườn', 'com suon', 'cơm tấm sườn', 'sườn chả', 'sườn nướng', 'sườn', 'suon', 's'], name: 'Cơm tấm sườn', price: 35000 },
+        { keywords: ['cơm sườn', 'com suon', 'cơm tấm sườn', 'sườn chả', 'sườn nướng', 'suon', 's'], name: 'Cơm tấm sườn', price: 35000 },
         { keywords: ['phần cơm', 'p cơm', 'hộp cơm', 'cơm tấm', 'phần', 'hộp', 'suất', 'cơm'], name: 'Cơm tấm sườn trứng', price: 35000 } 
     ],
     SIDES: [
         { keywords: ['sườn thêm', 'miếng sườn', 'thêm sườn'], name: 'Sườn thêm', price: 10000 },
         { keywords: ['trứng thêm', 'thêm trứng'], name: 'Trứng thêm', price: 5000 },
-        { keywords: ['canh thêm', 'thêm canh'], name: 'Canh thêm', price: 0 },
-        { keywords: ['cà chua thêm', 'ca chua them', 'cà chua'], name: 'Cà chua thêm', price: 0 },
-        { keywords: ['dưa chua thêm', 'dua chua them', 'đồ chua thêm'], name: 'Dưa chua thêm', price: 0 },
-        { keywords: ['dưa leo thêm', 'dua leo them', 'thêm dưa chuột'], name: 'Dưa leo thêm', price: 0 },
-        { keywords: ['nước mắm thêm', 'nuoc mam them', 'mắm thêm', 'thêm mắm'], name: 'Nước mắm thêm', price: 0 }
+        { keywords: ['canh thêm', 'thêm canh', 'canh'], name: 'Canh thêm', price: 0 },
+        { keywords: ['cà chua thêm', 'ca chua them', 'cà chua', 'ca chua'], name: 'Cà chua thêm', price: 0 },
+        { keywords: ['dưa chua thêm', 'dua chua them', 'đồ chua thêm', 'dưa chua', 'đồ chua'], name: 'Dưa chua thêm', price: 0 },
+        { keywords: ['dưa leo thêm', 'dua leo them', 'thêm dưa chuột', 'dưa leo', 'dưa chuột'], name: 'Dưa leo thêm', price: 0 },
+        { keywords: ['nước mắm thêm', 'nuoc mam them', 'mắm thêm', 'thêm mắm', 'mắm', 'nước mắm'], name: 'Nước mắm thêm', price: 0 }
     ]
 };
 
-const CANCEL_KEYWORDS = ['hủy', 'huy', 'hủy đơn', 'huy don', 'không đặt nữa'];
+const CANCEL_KEYWORDS = ['hủy', 'huỷ', 'huy', 'hủy đơn', 'huỷ đơn', 'huy don', 'không đặt nữa'];
 const SUPPORT_KEYWORDS = ['hỗ trợ', 'ho tro', 'cần hỗ trợ', 'nhân viên', 'tư vấn', 'shop ơi', 'ad ơi', 'chủ quán'];
 const CLOSE_SUPPORT_KEYWORDS = ['đóng chat', 'dong chat', 'đóng hỗ trợ', 'dong ho tro', 'kết thúc', 'ket thuc'];
 const GREETING_KEYWORDS = ['nay có bán không ạ','đặt cơm ạ','shop ơi','hello','hi','xin chào', 'chào', 'bắt đầu', 'alo shop', 'alo sốp', 'alo'];
@@ -109,11 +109,11 @@ const shortcutMsgText = `📋 DANH SÁCH TỪ KHÓA VIẾT TẮT:\n\n` +
                         `🍲 Món thêm:\n` +
                         `- Sườn thêm: sườn thêm\n` +
                         `- Trứng thêm: trứng thêm\n` +
-                        `- Canh / Cà chua / Dưa leo / Mắm: thêm canh, cà chua, dưa leo, mắm\n\n` +
+                        `- Canh / Cà chua / Dưa leo / Mắm: thêm canh, cà chua thêm, dưa leo thêm, mắm thêm\n\n` +
                         `💡 3 VÍ DỤ CÁCH GỌI NHANH:\n` +
                         `1. "1 st" -> Lên đơn 1 Cơm sườn trứng.\n` +
-                        `2. "2 s 1 sườn thêm" -> Lên đơn 2 Cơm sườn + 1 sườn thêm.\n` +
-                        `3. "1p thêm canh mắm" -> Lên đơn 1 Cơm sườn trứng (mặc định) + canh + mắm.`;
+                        `2. "2 s, 1 sườn thêm" -> Lên đơn 2 Cơm sườn + 1 sườn thêm.\n` +
+                        `3. "1p, thêm canh, mắm thêm" -> Lên đơn 1 Cơm sườn trứng (mặc định) + canh thêm + mắm thêm.`;
 
 const guideMsgText = `📖 HƯỚNG DẪN SỬ DỤNG BOT PLANTG 📖\n` +
                      `--------------\n` +
@@ -121,8 +121,9 @@ const guideMsgText = `📖 HƯỚNG DẪN SỬ DỤNG BOT PLANTG 📖\n` +
                      `- Gõ Số điện thoại của bạn có kèm dấu chấm ở cuối (VD: 0987654321.) để hệ thống nhận diện nhanh và tự động liên kết.\n` +
                      `--------------\n` +
                      `🛒 CÁCH ĐẶT ĐƠN:\n` +
-                     `- Nhắn số lượng + tên món (VD: "2 sườn trứng 1 canh"). \n` +
+                     `- Nhắn số lượng + tên món (VD: "2 sườn trứng, 1 canh thêm"). \n` +
                      `- Có thể gõ "Viết tắt" để biết cách đặt siêu nhanh.\n` +
+                     `- Ngăn cách các món bằng dấu phẩy "," để BOT nhận diện chính xác nhất nhé.\n` +
                      `--------------\n` +
                      `🔄 ĐẶT LẠI ĐƠN CŨ:\n` +
                      `- Bạn lười chọn món? Nhắn "Đặt lại" để BOT lên lại đơn hàng vừa giao gần nhất.\n` +
@@ -143,7 +144,7 @@ const getPhoneByZaloId = async (zaloId) => {
     return null;
 };
 
-// CẬP NHẬT: Phân tách món ăn bằng dấu "," hoặc "."
+// Phân tách món ăn bằng dấu "," hoặc "."
 const advancedParse = (text) => {
     let itemsMap = {};
     let total = 0;
@@ -166,7 +167,6 @@ const advancedParse = (text) => {
 
         let foundMain = false;
 
-        // Quét Món Chính cho phần cắt này
         for (const main of MENU.MAIN) {
             if (main.keywords.some(k => new RegExp(`(^|\\s)${k}($|\\s)`).test(lowerPart))) {
                 itemsMap[main.name] = (itemsMap[main.name] || 0) + primaryQty;
@@ -177,14 +177,12 @@ const advancedParse = (text) => {
             }
         }
 
-        // Nếu không có tên món cụ thể nhưng có "1p", "1 hộp" -> Mặc định Cơm Sườn Trứng
         if (!foundMain && qtyMatch && qtyMatch[2]) {
             itemsMap['Cơm tấm sườn trứng'] = (itemsMap['Cơm tấm sườn trứng'] || 0) + primaryQty;
             total += 35000 * primaryQty;
             hasValidItem = true;
         }
 
-        // Quét Món Phụ cho phần cắt này
         MENU.SIDES.forEach(side => {
             const sideKeywordsRegex = new RegExp(`(?:^|\\s)(\\d{1,2})?\\s*(${side.keywords.join('|')})(?:$|\\s)`, 'i');
             const match = lowerPart.match(sideKeywordsRegex);
@@ -210,26 +208,35 @@ const advancedParse = (text) => {
         return { items: null }; 
     }
 
-    // Gộp các món đã gom lại thành 1 chuỗi hoàn chỉnh
     const itemsArr = Object.keys(itemsMap).map(key => `${itemsMap[key]}x ${key}`);
-
     return { items: itemsArr.join(', '), total, note: text };
 };
 
+// CẬP NHẬT: Thêm logic cảnh báo đơn hàng dưới 35k
 const formatConfirmMsg = (order) => {
     const displayTotal = order.total === "Thanh toán sau" ? "Thanh toán sau" : `${order.total.toLocaleString()}đ`;
-    return `📝 XÁC NHẬN THÔNG TIN\n` +
-           `--------------------------\n` +
-           `👤 Khách hàng: ${order.customer}\n` +
-           `📍 Địa chỉ: ${order.address}\n` +
-           `📞 SĐT nhận hàng: ${order.phone}\n` +
-           `🍱 Đơn hàng: ${order.items || 'Chưa chọn món'}\n` +
-           `📝 Ghi chú: ${order.note}\n` +
-           `💰 Tổng cộng: ${displayTotal}\n` +
-           `--------------------------\n` +
-           `👉 Nhắn "Ok" để chốt đơn.\n` +
-           `👉 Nhắn món mới nếu bạn muốn ghi đè đơn.\n` +
-           `👉 Nhắn "Hủy" nếu muốn xóa thao tác này.`;
+    let msg = `📝 XÁC NHẬN THÔNG TIN\n` +
+              `--------------------------\n` +
+              `👤 Khách hàng: ${order.customer}\n` +
+              `📍 Địa chỉ: ${order.address}\n` +
+              `📞 SĐT nhận hàng: ${order.phone}\n` +
+              `🍱 Đơn hàng: ${order.items || 'Chưa chọn món'}\n` +
+              `📝 Ghi chú: ${order.note}\n` +
+              `💰 Tổng cộng: ${displayTotal}\n` +
+              `--------------------------\n` +
+              `👉 Nhắn "Ok" để chốt đơn.\n` +
+              `👉 Nhắn món mới nếu bạn muốn ghi đè đơn.\n` +
+              `👉 Nhắn "Hủy" nếu muốn xóa thao tác này.`;
+
+    // Cảnh báo nếu giá trị < 35,000
+    if (typeof order.total === 'number' && order.total > 0 && order.total < 35000) {
+        msg = `⚠️ Đơn hàng của bạn có vẻ Không đúng, hãy kiểm tra lại đơn hàng của mình thêm 1 lần nữa.\n` +
+              `Nếu đúng, hãy nhắn "Ok" để tiếp tục.\n` +
+              `Nếu sai, hãy nhắn cụ thể đơn hàng của bạn.\n` +
+              `Mỗi món nên cách nhau 1 dấu phẩy để BOT nhận diện đơn hàng tốt hơn.\n` +
+              `Xin cảm ơn!\n\n` + msg;
+    }
+    return msg;
 };
 
 /**
@@ -413,11 +420,10 @@ bot.on('message', async (msg) => {
         }
 
         // ----------------------------------------------------------------
-        // 7. ĐĂNG NHẬP BẰNG SĐT (Chặn chữ cái để không trùng lặp lệnh)
+        // 7. ĐĂNG NHẬP BẰNG SĐT
         // ----------------------------------------------------------------
         if (!session.state && !session.supportMode) {
             const cleanPhone = text.replace(/\D/g, '');
-            // Ràng buộc: Đoạn tin nhắn không chứa chữ cái nào, và sau khi bỏ ký tự đặc biệt thì còn lại đúng 10 số
             if (!/[\p{L}]/u.test(text) && /^(0\d{9}|\d{10})$/.test(cleanPhone)) {
                 const userSnap = await db.collection('users').doc(cleanPhone).get();
                 if (userSnap.exists) {
@@ -540,15 +546,7 @@ bot.on('message', async (msg) => {
             session.state = 'WAITING_CONFIRM';
             await sessionRef.set(session);
             
-            const displayTotal = orderToReorder.total;
-            const reorderMsg = `❓ Bạn có muốn đặt lại đơn hàng này không?\n\n` +
-                               `🍱 Món ăn: ${orderToReorder.items}\n` +
-                               `📝 Ghi chú: ${orderToReorder.note || "Không"}\n` +
-                               `💰 Tổng cộng: ${displayTotal}\n` +
-                               `📍 Địa chỉ: ${orderToReorder.address}\n\n` +
-                               `👉 Nhắn "Ok" để chốt đặt ngay.\n` +
-                               `👉 Nhắn món mới nếu bạn muốn đổi sang món khác.`;
-            return bot.sendMessage(zaloId, reorderMsg);
+            return bot.sendMessage(zaloId, formatConfirmMsg(session.pendingOrder));
         }
 
         if (CANCEL_KEYWORDS.some(k => lowerText.includes(k))) {
@@ -630,10 +628,21 @@ bot.on('message', async (msg) => {
             return bot.sendMessage(zaloId, formatConfirmMsg(session.pendingOrder));
         }
 
+        // CẬP NHẬT: TỰ ĐỘNG HỦY ĐƠN NẾU GIÁ TRỊ KHÔNG HỢP LỆ (Sau 5 phút)
         if (lowerText === 'ok' && session.state === 'WAITING_CONFIRM') {
             const order = session.pendingOrder;
             const dbTotal = order.total === "Thanh toán sau" ? "Thanh toán sau" : order.total.toLocaleString() + 'đ';
             
+            let minOrderValue = 35000;
+            try {
+                const configSnap = await db.collection('system').doc('config').get();
+                if (configSnap.exists && configSnap.data().minOrderValue !== undefined) {
+                    minOrderValue = Number(configSnap.data().minOrderValue);
+                }
+            } catch(e) {}
+
+            const isLowValue = typeof order.total === 'number' && order.total > 0 && order.total < minOrderValue;
+
             const docRef = await db.collection('orders').add({
                 ...order, 
                 status: 'PENDING', 
@@ -641,6 +650,7 @@ bot.on('message', async (msg) => {
                 paymentStatus: 'UNPAID',        
                 deliveryType: 'ASAP',           
                 total: dbTotal, 
+                isLowValue: isLowValue, 
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
@@ -649,6 +659,23 @@ bot.on('message', async (msg) => {
             const finalMsg = `✅ ĐÃ CHỐT ĐƠN (#${docRef.id.slice(-6).toUpperCase()})\n🍱 Món: ${order.items}\n📍 Giao: ${order.address}\n🔔 Trạng thái: 🕒 Chờ xác nhận`;
             bot.sendMessage(zaloId, finalMsg);
             if (ADMIN_ZALO_ID) bot.sendMessage(ADMIN_ZALO_ID, `🔔 ĐƠN MỚI\n🆔: ${zaloId}\n👤 Khách: ${order.customer}\n🍱 Đơn: ${order.items}\n📝 Note: ${order.note}`);
+
+            // Hẹn giờ 5 phút hủy đơn
+            if (isLowValue) {
+                setTimeout(async () => {
+                    try {
+                        const checkSnap = await db.collection('orders').doc(docRef.id).get();
+                        if (checkSnap.exists && checkSnap.data().status === 'PENDING') {
+                            await db.collection('orders').doc(docRef.id).update({
+                                status: 'CANCELLED',
+                                cancelReason: 'Giá trị đơn hàng không hợp lệ (Dưới mức quy định), tự động hủy sau 5 phút',
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                        }
+                    } catch(e) {}
+                }, 5 * 60 * 1000); 
+            }
+
             return;
         }
 
@@ -709,9 +736,14 @@ db.collection('orders').onSnapshot((snapshot) => {
                 }
             } 
             else if (order.status !== 'COMPLETED') {
-                const statusMap = { 'PREPARING': '👨‍🍳 Đang chuẩn bị', 'DELIVERING': '🚚 Đang giao', 'CANCELLED': '❌ Đã hủy' };
-                if (statusMap[order.status]) {
-                    bot.sendMessage(order.zaloId, `🔔 Cập nhật đơn #${change.doc.id.slice(-6).toUpperCase()}: [${statusMap[order.status]}]`);
+                // CẬP NHẬT: Gửi thông báo hủy dành riêng cho đơn không hợp lệ
+                if (order.status === 'CANCELLED' && order.isLowValue) {
+                    bot.sendMessage(order.zaloId, `🔔 Cập nhật đơn #${change.doc.id.slice(-6).toUpperCase()}: [❌ Đã hủy]\nĐơn hàng của bạn có giá trị không hợp lệ. Vì vậy, đơn đã bị huỷ Tự động hoặc Cửa hàng đã huỷ. Vui lòng thực hiện lại Đơn hàng mới hợp lệ hơn. Trân trọng!`);
+                } else {
+                    const statusMap = { 'PREPARING': '👨‍🍳 Đang chuẩn bị', 'DELIVERING': '🚚 Đang giao', 'CANCELLED': '❌ Đã hủy' };
+                    if (statusMap[order.status]) {
+                        bot.sendMessage(order.zaloId, `🔔 Cập nhật đơn #${change.doc.id.slice(-6).toUpperCase()}: [${statusMap[order.status]}]`);
+                    }
                 }
             }
         }
