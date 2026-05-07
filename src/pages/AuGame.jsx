@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 // Fix đường dẫn: Bỏ chữ /public/ vì Vite sẽ tự động map thư mục public ra root (/)
@@ -34,7 +34,11 @@ const AuGame = () => {
 
   const audioRef = useRef(null);
   const requestRef = useRef();
+  
+  // MỚI: Ref dùng cho Anti-Cheat
   const startTimeRef = useRef();
+  const gameStartTimeRef = useRef(0);
+  const isClaimedRef = useRef(false);
 
   // Khởi tạo lấy dữ liệu user
   useEffect(() => {
@@ -44,7 +48,8 @@ const AuGame = () => {
         setSavedPhone(phones[0]);
         const userSnap = await getDoc(doc(db, 'users', phones[0]));
         if (userSnap.exists()) {
-          setTotalXu(userSnap.data().totalXu || userSnap.data().coins || 0);
+          // Lấy chuẩn dữ liệu dạng Number để tránh lỗi Rollback của Firebase
+          setTotalXu(Number(userSnap.data().totalXu || userSnap.data().coins || 0));
         }
       } else {
         alert("Vui lòng đăng nhập trước khi chơi!");
@@ -71,17 +76,33 @@ const AuGame = () => {
     }
 
     try {
-      // Trừ 5000 xu ngay khi bắt đầu
+      // FIX LỖI NHẢY ĐIỂM: Fetch số dư mới nhất và trừ tĩnh thay vì dùng increment
       const userRef = doc(db, 'users', savedPhone);
-      await updateDoc(userRef, { totalXu: increment(-5000) });
-      setTotalXu(prev => prev - 5000);
-
-      const randomMusic = MUSIC_TRACKS[Math.floor(Math.random() * MUSIC_TRACKS.length)];
-      setCurrentTrack(randomMusic);
+      const userSnap = await getDoc(userRef);
       
-      // Chuyển sang trạng thái Đếm ngược chuẩn bị thay vì chơi ngay
-      setPrepCountdown(3);
-      setGameState('PREPARING');
+      if (userSnap.exists()) {
+        const currentDbXu = Number(userSnap.data().totalXu || userSnap.data().coins || 0);
+        if (currentDbXu < 5000) {
+            alert("Số dư thực tế không đủ, vui lòng tải lại trang!");
+            return;
+        }
+        
+        const newXu = currentDbXu - 5000;
+        await updateDoc(userRef, { 
+            totalXu: newXu,
+            lastUpdateSource: 'au_game_fee' // Khai báo nguồn cập nhật hợp lệ
+        });
+        
+        setTotalXu(newXu);
+        isClaimedRef.current = false; // Reset cờ chống nhận đúp
+
+        const randomMusic = MUSIC_TRACKS[Math.floor(Math.random() * MUSIC_TRACKS.length)];
+        setCurrentTrack(randomMusic);
+        
+        // Chuyển sang trạng thái Đếm ngược chuẩn bị
+        setPrepCountdown(3);
+        setGameState('PREPARING');
+      }
     } catch (error) {
       console.error("Lỗi trừ xu:", error);
       alert("Lỗi kết nối máy chủ, vui lòng thử lại!");
@@ -98,6 +119,8 @@ const AuGame = () => {
         // Đếm xong thì kích hoạt nhạc và thanh trượt
         setGameState('PLAYING');
         generateNewSequence();
+        // Lưu thời điểm bắt đầu game thực tế để Anti-cheat
+        gameStartTimeRef.current = Date.now();
       }
     }
   }, [gameState, prepCountdown]);
@@ -183,18 +206,17 @@ const AuGame = () => {
     setGameState('SPINNING');
     
     // Tính toán Miss Rate
-    const missRate = totalRounds > 0 ? (missCount / totalRounds) : 1; // Nếu không chơi gì coi như miss 100%
+    const missRate = totalRounds > 0 ? (missCount / totalRounds) : 1; 
     
     if (missRate > 0.05) { // Miss trên 5%
-        setRewardPercent(-1); // Mã lỗi cho thất bại
+        setRewardPercent(-1); 
     } else {
-        // RNG Logic
         const rand = Math.random() * 100;
         let percent = 0;
-        if (rand < 99.999) { // 99.999% rớt vào mốc thường
+        if (rand < 99.999) { 
             const common = [10, 20, 30, 40];
             percent = common[Math.floor(Math.random() * common.length)];
-        } else { // 0.001% rớt vào mốc siêu hiếm
+        } else { 
             const rare = [50, 60, 70, 80, 90, 100];
             percent = rare[Math.floor(Math.random() * rare.length)];
         }
@@ -216,17 +238,44 @@ const AuGame = () => {
     }, 1000);
   };
 
-  // Cộng thưởng vào Database
+  // Cộng thưởng vào Database với ANTI-CHEAT
   const applyRewardResult = async (percent) => {
-    if (percent !== -1) {
-        const rewardAmount = 5000 + (5000 * (percent / 100));
-        try {
-            const userRef = doc(db, 'users', savedPhone);
-            await updateDoc(userRef, { totalXu: increment(rewardAmount) });
-            setTotalXu(prev => prev + rewardAmount);
-        } catch (error) {
-            console.error("Lỗi cộng xu thưởng:", error);
+    if (percent === -1) return; // Thua cuộc không làm gì
+    
+    // ANTI-CHEAT 1: Ngăn chặn Spam gọi hàm nhiều lần
+    if (isClaimedRef.current) return;
+    
+    // ANTI-CHEAT 2: Thời gian chơi thực tế phải hợp lý (Ví dụ nhạc ngắn nhất là 30s -> Min 20s chơi)
+    const timePlayed = Date.now() - gameStartTimeRef.current;
+    if (timePlayed < 20000) {
+        console.warn(`ANTI-CHEAT ALERT: Khách hàng ${savedPhone} có dấu hiệu dùng Tool skip nhạc (Time: ${timePlayed}ms).`);
+        alert("Kết quả không hợp lệ do phát hiện bất thường trong thời gian chơi!");
+        return;
+    }
+
+    // Lock cờ đã nhận
+    isClaimedRef.current = true;
+    
+    const rewardAmount = 5000 + (5000 * (percent / 100));
+
+    try {
+        // Lấy lại số dư mới nhất trên Server thay vì dùng increment để tránh lỗi Type String/Number
+        const userRef = doc(db, 'users', savedPhone);
+        const userSnap = await getDoc(userRef);
+        
+        if (userSnap.exists()) {
+            const currentDbXu = Number(userSnap.data().totalXu || userSnap.data().coins || 0);
+            const newXu = currentDbXu + rewardAmount;
+            
+            await updateDoc(userRef, { 
+                totalXu: newXu,
+                lastUpdateSource: 'au_game_reward' // Khai báo nguồn hợp lệ
+            });
+            
+            setTotalXu(newXu);
         }
+    } catch (error) {
+        console.error("Lỗi cộng xu thưởng:", error);
     }
   };
 
