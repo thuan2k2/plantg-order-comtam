@@ -4,7 +4,6 @@ import { doc, getDoc, setDoc, updateDoc, collection, query, orderBy, limit, getD
 import { db } from '../firebase/config';
 import { getRankInfo } from '../utils/rankUtils';
 
-// HỆ THỐNG 18 TRACKS
 const MUSIC_TRACKS = [
     { id: 'track1', src: '/music/track1.mp3', title: "Sôi Động Vinhomes", artist: "DJ Plant G", bpm: 110, difficulty: 'Easy', genre: 'Pop', cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=100&h=100&fit=crop' },
     { id: 'track2', src: '/music/track2.mp3', title: "Bass Cực Căng", artist: "Remixer Pro", bpm: 128, difficulty: 'Normal', genre: 'EDM', cover: 'https://images.unsplash.com/photo-1459749411177-042180ce673c?w=100&h=100&fit=crop' },
@@ -31,13 +30,12 @@ const OPPOSITE_KEYS = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
 
 const AuGame = () => {
   const navigate = useNavigate();
-  const [gameState, setGameState] = useState('LOBBY'); // LOBBY -> LOADING -> PREPARING -> PLAYING -> RESULT -> GAME_OVER
+  const [gameState, setGameState] = useState('LOBBY'); 
   const [isPaused, setIsPaused] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [userData, setUserData] = useState({ phone: '', name: '', totalXu: 0, rankId: '', dailyPlays: 0 });
   const [leaderboard, setLeaderboard] = useState([]);
 
-  // Gameplay & UI States
   const [hp, setHp] = useState(100);
   const [level, setLevel] = useState(4); 
   const [score, setScore] = useState(0);
@@ -45,6 +43,7 @@ const AuGame = () => {
   const [maxCombo, setMaxCombo] = useState(0);
   const [judgment, setJudgment] = useState(null); 
   const [stats, setStats] = useState({ perfect: 0, great: 0, cool: 0, bad: 0, miss: 0 });
+  
   const [sliderPos, setSliderPos] = useState(0);
   const [userInput, setUserInput] = useState([]);
   const [targetSequence, setTargetSequence] = useState([]);
@@ -80,13 +79,14 @@ const AuGame = () => {
     if (track.requiredRank && userData.rankId !== track.requiredRank) return;
     setCurrentTrack(track);
     setGameState('LOADING');
+    setLoadMusicProgress(0);
     let prog = 0;
     const interval = setInterval(() => {
-        prog += Math.random() * 20;
+        prog += Math.random() * 25;
         if (prog >= 100) {
             setLoadMusicProgress(100); clearInterval(interval);
             setTimeout(() => {
-                setGameState('PREPARING'); setPrepCountdown(3); setHp(100); setScore(0); setCombo(0);
+                setGameState('PREPARING'); setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMusicProgress(0);
             }, 500);
         } else setLoadMusicProgress(prog);
     }, 150);
@@ -115,16 +115,18 @@ const AuGame = () => {
     }
   }, [gameState, prepCountdown]);
 
-  // LOGIC ĐỒNG BỘ SLIDER VÀ MUSIC PROGRESS
+  // FIX LỖI ĐỒNG BỘ: Chỉ dùng requestAnimationFrame cho Slider Ball (60fps)
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused || !currentTrack) return;
+    
     const bps = currentTrack.bpm / 60;
     const measureSec = 4 / bps;
 
     const animate = () => {
       if (audioRef.current && !isPaused) {
-         setSliderPos((audioRef.current.currentTime % measureSec) / measureSec * 100);
-         setMusicProgress((audioRef.current.currentTime / audioRef.current.duration) * 100);
+         // Quả cầu bay theo nhịp beat
+         const current = audioRef.current.currentTime;
+         setSliderPos((current % measureSec) / measureSec * 100);
       }
       requestRef.current = requestAnimationFrame(animate);
     };
@@ -132,7 +134,14 @@ const AuGame = () => {
     return () => cancelAnimationFrame(requestRef.current);
   }, [gameState, isPaused, currentTrack]);
 
-  // HÀM TẠM DỪNG / TIẾP TỤC
+  // FIX LỖI TIẾN TRÌNH NHẠC: Sử dụng Event Listener từ chính Audio Element
+  const handleTimeUpdate = () => {
+    if (audioRef.current && gameState === 'PLAYING') {
+        const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+        setMusicProgress(progress || 0);
+    }
+  };
+
   const togglePause = () => {
       if (isPaused) {
           audioRef.current.play();
@@ -143,7 +152,7 @@ const AuGame = () => {
       }
   };
 
-  const handleLeave = () => {
+  const handleLeaveGame = () => {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
       setGameState('LOBBY');
       setIsPaused(false);
@@ -242,7 +251,6 @@ const AuGame = () => {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
       `}</style>
 
-      {/* LOBBY */}
       {gameState === 'LOBBY' && (
         <div className="max-w-4xl mx-auto py-12 px-6 animate-in fade-in duration-500">
            <header className="flex justify-between items-center mb-10">
@@ -276,7 +284,6 @@ const AuGame = () => {
         </div>
       )}
 
-      {/* LOADING */}
       {gameState === 'LOADING' && (
           <div className="h-screen flex flex-col items-center justify-center bg-black">
               <div className="w-64 h-1.5 bg-gray-800 rounded-full overflow-hidden mb-4">
@@ -286,7 +293,6 @@ const AuGame = () => {
           </div>
       )}
 
-      {/* PREPARING (FIXED Cắt số) */}
       {gameState === 'PREPARING' && (
           <div className="h-screen flex items-center justify-center">
               <div className="text-[15rem] leading-none font-black italic text-transparent bg-clip-text bg-gradient-to-b from-purple-400 to-pink-600 animate-bounce text-center w-full">
@@ -295,28 +301,32 @@ const AuGame = () => {
           </div>
       )}
 
-      {/* PLAYING */}
       {gameState === 'PLAYING' && (
           <div className="h-screen relative flex flex-col items-center justify-center p-6">
-              <audio ref={audioRef} src={currentTrack?.src} autoPlay onEnded={handleGameEnd} className="hidden" />
+              {/* FIXED: Audio sử dụng onTimeUpdate để đồng bộ tiến trình cực chuẩn */}
+              <audio 
+                ref={audioRef} 
+                src={currentTrack?.src} 
+                autoPlay 
+                onEnded={handleGameEnd} 
+                onTimeUpdate={handleTimeUpdate}
+                className="hidden" 
+              />
               
-              {/* NÚT TẠM DỪNG */}
               <button onClick={togglePause} className="absolute top-6 left-6 z-50 bg-white/10 hover:bg-white/20 p-3 rounded-full border border-white/20 backdrop-blur-md transition-all">
                   <span className="text-xl">{isPaused ? '▶️' : '⏸️'}</span>
               </button>
 
-              {/* OVERLAY TẠM DỪNG */}
               {isPaused && (
                   <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
-                      <h2 className="text-6xl font-black italic text-white mb-10 tracking-tighter">GAME PAUSED</h2>
+                      <h2 className="text-6xl font-black italic text-white mb-10 tracking-tighter text-center">GAME PAUSED</h2>
                       <div className="flex flex-col gap-4 w-64">
                           <button onClick={togglePause} className="py-4 bg-white text-black font-black rounded-2xl uppercase tracking-widest hover:scale-105 transition-all">Tiếp tục</button>
-                          <button onClick={handleLeave} className="py-4 bg-red-600 text-white font-black rounded-2xl uppercase tracking-widest hover:scale-105 transition-all">Rời khỏi bản nhạc</button>
+                          <button onClick={handleLeaveGame} className="py-4 bg-red-600 text-white font-black rounded-2xl uppercase tracking-widest hover:scale-105 transition-all">Rời khỏi</button>
                       </div>
                   </div>
               )}
 
-              {/* HP BAR */}
               <div className="absolute top-10 left-1/2 -translate-x-1/2 w-full max-w-md px-10">
                   <div className="h-3 bg-gray-800 rounded-full border border-white/10 p-0.5 overflow-hidden shadow-2xl">
                       <div className={`h-full rounded-full transition-all duration-300 ${hp < 30 ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-green-500 to-blue-500'}`} style={{ width: `${hp}%` }}></div>
@@ -330,15 +340,13 @@ const AuGame = () => {
                   </div>
               )}
 
-              {/* GAMEBOARD (SINGLE LINE BUTTONS) */}
               <div className="w-fit min-w-[500px] max-w-[95vw] bg-gray-800/40 backdrop-blur-xl rounded-[3rem] p-10 border border-white/5 shadow-2xl relative overflow-hidden">
                   <div className="flex justify-between items-end mb-10 px-4">
                       <div className="text-4xl font-black italic text-white opacity-20">LVL {level}</div>
                       <div className="text-right"><p className="text-[10px] font-black text-gray-500 uppercase">Score</p><p className="text-5xl font-black text-yellow-400">{score.toLocaleString()}</p></div>
                   </div>
 
-                  {/* Cố định 1 hàng duy nhất */}
-                  <div className={`flex flex-nowrap justify-center gap-3 sm:gap-5 mb-12 transition-all overflow-visible px-4 ${isFailedSeq ? 'opacity-20 blur-sm' : ''}`}>
+                  <div className={`flex flex-nowrap justify-center gap-3 sm:gap-5 mb-12 transition-all px-4 ${isFailedSeq ? 'opacity-20 blur-sm' : ''}`}>
                       {targetSequence.map((item, i) => (
                           <span key={i} className={`text-5xl sm:text-7xl transition-all duration-150 flex-shrink-0 ${
                               i < userInput.length ? 'opacity-20 scale-75' : 
@@ -349,7 +357,6 @@ const AuGame = () => {
                       ))}
                   </div>
 
-                  {/* SLIDER BAR */}
                   <div className="relative h-16 bg-black/60 rounded-full border-4 border-gray-700 shadow-inner overflow-hidden">
                       <div className="absolute inset-y-0 left-[75%] right-[5%] bg-blue-500/20"></div>
                       <div className="absolute inset-y-0 left-[85%] w-2 bg-white shadow-[0_0_30px_#fff] z-10"></div>
@@ -358,17 +365,19 @@ const AuGame = () => {
                   </div>
               </div>
 
-              {/* MUSIC PLAYER (BOTTOM-CENTER) */}
-              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-sm">
+              {/* MUSIC PLAYER (BOTTOM-CENTER) - Đã đồng bộ tiến trình cực chuẩn */}
+              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-sm px-4">
                   <div className="bg-black/60 backdrop-blur-xl p-4 rounded-[2rem] border border-white/10 shadow-2xl flex flex-col gap-3">
-                      {/* Music Progress Bar */}
                       <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                          <div className="h-full bg-purple-500 transition-all duration-300" style={{ width: `${musicProgress}%` }}></div>
+                          <div 
+                            className="h-full bg-purple-500 transition-all duration-200" 
+                            style={{ width: `${musicProgress}%` }}
+                          ></div>
                       </div>
                       <div className="flex items-center gap-4">
                           <img src={currentTrack?.cover} className={`w-12 h-12 rounded-xl object-cover border border-white/10 ${!isPaused && 'animate-spin-slow'}`} alt="art" />
                           <div className="overflow-hidden">
-                              <p className="text-xs font-black uppercase text-white truncate tracking-tighter leading-none mb-1">{currentTrack?.title}</p>
+                              <p className="text-xs font-black uppercase text-white truncate leading-none mb-1">{currentTrack?.title}</p>
                               <p className="text-[10px] text-gray-400 font-bold truncate uppercase">{currentTrack?.artist}</p>
                           </div>
                       </div>
@@ -377,11 +386,10 @@ const AuGame = () => {
           </div>
       )}
 
-      {/* RESULT / GAME OVER (GIỮ NGUYÊN) */}
       {gameState === 'GAME_OVER' && (
           <div className="h-screen bg-black/90 flex flex-col items-center justify-center text-center p-6 animate-in zoom-in">
               <div className="text-9xl mb-8">💀</div>
-              <h2 className="text-6xl font-black text-red-600 uppercase tracking-tighter mb-4 italic">KIỆT SỨC!</h2>
+              <h2 className="text-6xl font-black text-red-600 uppercase tracking-tighter mb-4 italic">GAME OVER</h2>
               <button onClick={() => setGameState('LOBBY')} className="px-12 py-5 bg-white text-black font-black rounded-full uppercase hover:scale-105 active:scale-95 transition-all">Về Lobby</button>
           </div>
       )}
@@ -389,13 +397,13 @@ const AuGame = () => {
       {gameState === 'RESULT' && (
           <div className="h-screen flex items-center justify-center p-6 bg-gradient-to-br from-purple-900/50 to-gray-900 w-full">
               <div className="bg-gray-800/80 backdrop-blur-2xl p-12 rounded-[4rem] border border-white/10 shadow-2xl max-w-md w-full text-center">
-                  <h2 className="text-5xl font-black italic text-white uppercase mb-8">HOÀN TẤT!</h2>
+                  <h2 className="text-5xl font-black italic text-white uppercase mb-8">BẢN NHẠC XONG!</h2>
                   <div className="grid grid-cols-2 gap-4 mb-10">
                       <div className="bg-black/30 p-4 rounded-3xl"><p className="text-[10px] text-gray-500 font-black uppercase">Max Combo</p><p className="text-3xl font-black text-blue-400">{maxCombo}</p></div>
                       <div className="bg-black/30 p-4 rounded-3xl"><p className="text-[10px] text-gray-500 font-black uppercase">Perfects</p><p className="text-3xl font-black text-green-400">{stats.perfect}</p></div>
                   </div>
                   <div className="mb-10"><p className="text-xs text-gray-400 uppercase mb-2">Tổng điểm</p><p className="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500">{score.toLocaleString()}</p></div>
-                  <button onClick={() => setGameState('LOBBY')} className="w-full py-5 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-black rounded-3xl uppercase tracking-widest">Tiếp tục</button>
+                  <button onClick={() => setGameState('LOBBY')} className="w-full py-5 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-black rounded-3xl uppercase tracking-widest shadow-xl">Tiếp tục</button>
               </div>
           </div>
       )}
