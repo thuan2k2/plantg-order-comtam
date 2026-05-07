@@ -1,28 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, getDoc, setDoc, updateDoc, collection, query, orderBy, limit, getDocs, increment, arrayUnion } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { getRankInfo } from '../utils/rankUtils';
 
 const MUSIC_TRACKS = [
-    { id: 'track1', src: '/music/track1.mp3', title: "Sôi Động Vinhomes", artist: "DJ Plant G", bpm: 110, difficulty: 'Easy', genre: 'Pop', cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=100&h=100&fit=crop' },
-    { id: 'track2', src: '/music/track2.mp3', title: "Bass Cực Căng", artist: "Remixer Pro", bpm: 128, difficulty: 'Normal', genre: 'EDM', cover: 'https://images.unsplash.com/photo-1459749411177-042180ce673c?w=100&h=100&fit=crop' },
-    { id: 'track3', src: '/music/track3.mp3', title: "Giai Điệu Buồn", artist: "Lofi Chill", bpm: 95, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1516280440614-37939bb92583?w=100&h=100&fit=crop' },
-    { id: 'track4', src: '/music/track4.mp3', title: "Dance Alone", artist: "V-Dance", bpm: 140, difficulty: 'Hard', genre: 'Dance', cover: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=100&h=100&fit=crop' },
-    { id: 'track5', src: '/music/track5.mp3', title: "Challenger Anthem", artist: "Plant G VIP", bpm: 155, difficulty: 'Expert', genre: 'Hardstyle', cover: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=100&h=100&fit=crop', requiredRank: 'CHALLENGER' },
-    { id: 'track6', src: '/music/track6.mp3', title: "đêm tĩnh lặng", artist: "kẻ cô đơn", bpm: 85, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1493225457124-a1a2a5f0b008?w=100&h=100&fit=crop' },
-    { id: 'track7', src: '/music/track7.mp3', title: "Cơm Tấm Rush", artist: "Bếp Trưởng", bpm: 135, difficulty: 'Hard', genre: 'Electro', cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=100&h=100&fit=crop' },
-    { id: 'track8', src: '/music/track8.mp3', title: "Nhịp Đập Phố Đêm", artist: "Night Owl", bpm: 125, difficulty: 'Normal', genre: 'House', cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&h=100&fit=crop' },
-    { id: 'track9', src: '/music/track9.mp3', title: "góc tối", artist: "mưa rơi", bpm: 80, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1499946981954-e7f4b234d7fa?w=100&h=100&fit=crop' },
-    { id: 'track10', src: '/music/track10.mp3', title: "Spacebar Smasher", artist: "Keyboard Warrior", bpm: 150, difficulty: 'Hard', genre: 'Techno', cover: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=100&h=100&fit=crop' },
-    { id: 'track11', src: '/music/track11.mp3', title: "Vũ Điệu Giao Hàng", artist: "Shipper Boy", bpm: 105, difficulty: 'Normal', genre: 'HipHop', cover: 'https://images.unsplash.com/photo-1483032469466-b937c425697b?w=100&h=100&fit=crop' },
-    { id: 'track12', src: '/music/track12.mp3', title: "nỗi buồn để lại", artist: "hư không", bpm: 90, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1458560871784-56d23406c091?w=100&h=100&fit=crop' },
-    { id: 'track13', src: '/music/track13.mp3', title: "Speed Limit", artist: "Sonic", bpm: 160, difficulty: 'Expert', genre: 'Trance', cover: 'https://images.unsplash.com/photo-1478147427282-58a87a120781?w=100&h=100&fit=crop' },
-    { id: 'track14', src: '/music/track14.mp3', title: "Plant G Party", artist: "All Stars", bpm: 120, difficulty: 'Normal', genre: 'Pop', cover: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=100&h=100&fit=crop' },
-    { id: 'track15', src: '/music/track15.mp3', title: "Ký Ức Audition", artist: "Nostalgia", bpm: 115, difficulty: 'Normal', genre: 'Dance', cover: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=100&h=100&fit=crop' },
-    { id: 'track16', src: '/music/track16.mp3', title: "chìm vào giấc mơ", artist: "kẻ mộng du", bpm: 75, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=100&h=100&fit=crop' },
-    { id: 'track17', src: '/music/track17.mp3', title: "Tốc Độ Ánh Sáng", artist: "Master Tier", bpm: 175, difficulty: 'Expert', genre: 'Hardcore', cover: 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=100&h=100&fit=crop', requiredRank: 'CHALLENGER' },
-    { id: 'track18', src: '/music/track18.mp3', title: "Vương Miện Plant G", artist: "The Boss", bpm: 180, difficulty: 'Expert', genre: 'Hardstyle', cover: 'https://images.unsplash.com/photo-1505506874110-6a7a4f4aa009?w=100&h=100&fit=crop', requiredRank: 'CHALLENGER' }
+    { id: 'track1', src: '/music/track1.mp3', title: "Sôi Động Vinhomes", artist: "DJ Plant G", bpm: 110, difficulty: 'Easy', genre: 'Pop', cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&h=200&fit=crop' },
+    { id: 'track2', src: '/music/track2.mp3', title: "Bass Cực Căng", artist: "Remixer Pro", bpm: 128, difficulty: 'Normal', genre: 'EDM', cover: 'https://images.unsplash.com/photo-1459749411177-042180ce673c?w=200&h=200&fit=crop' },
+    { id: 'track3', src: '/music/track3.mp3', title: "Giai Điệu Buồn", artist: "Lofi Chill", bpm: 95, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1516280440614-37939bb92583?w=200&h=200&fit=crop' },
+    { id: 'track4', src: '/music/track4.mp3', title: "Dance Alone", artist: "V-Dance", bpm: 140, difficulty: 'Hard', genre: 'Dance', cover: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=200&h=200&fit=crop' },
+    { id: 'track5', src: '/music/track5.mp3', title: "Challenger Anthem", artist: "Plant G VIP", bpm: 155, difficulty: 'Expert', genre: 'Hardstyle', cover: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop', requiredRank: 'CHALLENGER' },
+    { id: 'track6', src: '/music/track6.mp3', title: "đêm tĩnh lặng", artist: "kẻ cô đơn", bpm: 85, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1493225457124-a1a2a5f0b008?w=200&h=200&fit=crop' },
+    { id: 'track7', src: '/music/track7.mp3', title: "Cơm Tấm Rush", artist: "Bếp Trưởng", bpm: 135, difficulty: 'Hard', genre: 'Electro', cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=200&h=200&fit=crop' },
+    { id: 'track8', src: '/music/track8.mp3', title: "Nhịp Đập Phố Đêm", artist: "Night Owl", bpm: 125, difficulty: 'Normal', genre: 'House', cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&h=200&fit=crop' },
+    { id: 'track9', src: '/music/track9.mp3', title: "góc tối", artist: "mưa rơi", bpm: 80, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1499946981954-e7f4b234d7fa?w=200&h=200&fit=crop' },
+    { id: 'track10', src: '/music/track10.mp3', title: "Spacebar Smasher", artist: "Keyboard Warrior", bpm: 150, difficulty: 'Hard', genre: 'Techno', cover: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=200&h=200&fit=crop' },
+    { id: 'track11', src: '/music/track11.mp3', title: "Vũ Điệu Giao Hàng", artist: "Shipper Boy", bpm: 105, difficulty: 'Normal', genre: 'HipHop', cover: 'https://images.unsplash.com/photo-1483032469466-b937c425697b?w=200&h=200&fit=crop' },
+    { id: 'track12', src: '/music/track12.mp3', title: "nỗi buồn để lại", artist: "hư không", bpm: 90, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1458560871784-56d23406c091?w=200&h=200&fit=crop' },
+    { id: 'track13', src: '/music/track13.mp3', title: "Speed Limit", artist: "Sonic", bpm: 160, difficulty: 'Expert', genre: 'Trance', cover: 'https://images.unsplash.com/photo-1478147427282-58a87a120781?w=200&h=200&fit=crop' },
+    { id: 'track14', src: '/music/track14.mp3', title: "Plant G Party", artist: "All Stars", bpm: 120, difficulty: 'Normal', genre: 'Pop', cover: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=200&h=200&fit=crop' },
+    { id: 'track15', src: '/music/track15.mp3', title: "WHERE U AT FULL", artist: "THÁI HOÀNG REMIX", bpm: 155, difficulty: 'Hard', genre: 'Dance', cover: 'https://i.ytimg.com/vi/AFEWE3ySRGo/maxresdefault.jpg' },
+    { id: 'track16', src: '/music/track16.mp3', title: "chìm vào giấc mơ", artist: "kẻ mộng du", bpm: 75, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=200&h=200&fit=crop' },
+    { id: 'track17', src: '/music/track17.mp3', title: "Tốc Độ Ánh Sáng", artist: "Master Tier", bpm: 175, difficulty: 'Expert', genre: 'Hardcore', cover: 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=200&h=200&fit=crop', requiredRank: 'CHALLENGER' },
+    { id: 'track18', src: '/music/track18.mp3', title: "Vương Miện Plant G", artist: "The Boss", bpm: 180, difficulty: 'Expert', genre: 'Hardstyle', cover: 'https://images.unsplash.com/photo-1505506874110-6a7a4f4aa009?w=200&h=200&fit=crop', requiredRank: 'CHALLENGER' }
 ];
 
 const ARROW_SYMBOLS = { UP: '⬆️', DOWN: '⬇️', LEFT: '⬅️', RIGHT: '➡️' };
@@ -33,9 +33,10 @@ const AuGame = () => {
   const [gameState, setGameState] = useState('LOBBY'); 
   const [isPaused, setIsPaused] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
-  const [userData, setUserData] = useState({ phone: '', name: '', totalXu: 0, rankId: '', dailyPlays: 0 });
+  const [userData, setUserData] = useState({ phone: '', name: '', rankId: '' });
   const [leaderboard, setLeaderboard] = useState([]);
 
+  // Gameplay & UI States
   const [hp, setHp] = useState(100);
   const [level, setLevel] = useState(4); 
   const [score, setScore] = useState(0);
@@ -43,7 +44,6 @@ const AuGame = () => {
   const [maxCombo, setMaxCombo] = useState(0);
   const [judgment, setJudgment] = useState(null); 
   const [stats, setStats] = useState({ perfect: 0, great: 0, cool: 0, bad: 0, miss: 0 });
-  
   const [sliderPos, setSliderPos] = useState(0);
   const [userInput, setUserInput] = useState([]);
   const [targetSequence, setTargetSequence] = useState([]);
@@ -66,20 +66,27 @@ const AuGame = () => {
         if (userSnap.exists()) {
           const data = userSnap.data();
           const rankInfo = getRankInfo(data.totalSpend || 0, data.manualRankId);
-          const todayStr = new Date().toDateString();
-          const playsToday = data.auLastPlayDate === todayStr ? (data.auDailyPlays || 0) : 0;
-          setUserData({ phone: phones[0], name: data.fullName || 'Người chơi', totalXu: data.totalXu || data.coins || 0, rankId: rankInfo.current.id, dailyPlays: playsToday });
+          setUserData({ phone: phones[0], name: data.fullName || 'Người chơi', rankId: rankInfo.current.id });
         }
       } else { navigate('/'); }
     };
     fetchUser();
+    fetchGlobalLeaderboard(); // Lấy BXH toàn cầu ngay khi vào
   }, [navigate]);
+
+  const fetchGlobalLeaderboard = async () => {
+    try {
+        const lbRef = collection(db, 'au_global_leaderboard');
+        const q = query(lbRef, orderBy('bestScore', 'desc'), limit(10));
+        const querySnapshot = await getDocs(q);
+        setLeaderboard(querySnapshot.docs.map(d => d.data()));
+    } catch (e) { console.error("Lỗi lấy BXH:", e); }
+  };
 
   const selectTrack = (track) => {
     if (track.requiredRank && userData.rankId !== track.requiredRank) return;
     setCurrentTrack(track);
     setGameState('LOADING');
-    setLoadMusicProgress(0);
     let prog = 0;
     const interval = setInterval(() => {
         prog += Math.random() * 25;
@@ -115,18 +122,13 @@ const AuGame = () => {
     }
   }, [gameState, prepCountdown]);
 
-  // FIX LỖI ĐỒNG BỘ: Chỉ dùng requestAnimationFrame cho Slider Ball (60fps)
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused || !currentTrack) return;
-    
     const bps = currentTrack.bpm / 60;
     const measureSec = 4 / bps;
-
     const animate = () => {
       if (audioRef.current && !isPaused) {
-         // Quả cầu bay theo nhịp beat
-         const current = audioRef.current.currentTime;
-         setSliderPos((current % measureSec) / measureSec * 100);
+         setSliderPos((audioRef.current.currentTime % measureSec) / measureSec * 100);
       }
       requestRef.current = requestAnimationFrame(animate);
     };
@@ -134,28 +136,10 @@ const AuGame = () => {
     return () => cancelAnimationFrame(requestRef.current);
   }, [gameState, isPaused, currentTrack]);
 
-  // FIX LỖI TIẾN TRÌNH NHẠC: Sử dụng Event Listener từ chính Audio Element
   const handleTimeUpdate = () => {
     if (audioRef.current && gameState === 'PLAYING') {
-        const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
-        setMusicProgress(progress || 0);
+        setMusicProgress((audioRef.current.currentTime / audioRef.current.duration) * 100 || 0);
     }
-  };
-
-  const togglePause = () => {
-      if (isPaused) {
-          audioRef.current.play();
-          setIsPaused(false);
-      } else {
-          audioRef.current.pause();
-          setIsPaused(true);
-      }
-  };
-
-  const handleLeaveGame = () => {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
-      setGameState('LOBBY');
-      setIsPaused(false);
   };
 
   const registerJudgment = (judg) => {
@@ -165,8 +149,8 @@ const AuGame = () => {
     let scoreAdd = 0, hpAdd = 0, isSuccess = false;
 
     if (judg === 'PERFECT') {
-        scoreAdd = 500 + (combo * 50); hpAdd = 8; setCombo(c => c + 1); setIsShaking(true); setBurstEffect(true);
-        setTimeout(() => { setIsShaking(false); setBurstEffect(false); }, 300);
+        scoreAdd = 500 + (combo * 50); hpAdd = 8; setCombo(c => c + 1); setBurstEffect(true); setIsShaking(true);
+        setTimeout(() => { setBurstEffect(false); setIsShaking(false); }, 300);
         isSuccess = true;
     } else if (judg === 'GREAT') { scoreAdd = 300; hpAdd = 3; setCombo(0); isSuccess = true; }
     else if (judg === 'COOL') { scoreAdd = 100; hpAdd = 1; setCombo(0); isSuccess = true; }
@@ -219,166 +203,176 @@ const AuGame = () => {
   const handleGameEnd = async () => {
       setGameState('RESULT');
       try {
-          const lbRef = doc(db, 'au_leaderboards', currentTrack.id, 'ranking', userData.phone);
-          const snap = await getDoc(lbRef);
-          if (!snap.exists() || snap.data().score < score) {
-              await setDoc(lbRef, { name: userData.name, score: score, phone: userData.phone, timestamp: Date.now() });
-          }
-          const todayStr = new Date().toDateString();
-          const userRef = doc(db, 'users', userData.phone);
-          const userSnap = await getDoc(userRef);
-          if (userSnap.exists()) {
-              const d = userSnap.data();
-              let plays = d.auLastPlayDate === todayStr ? (d.auDailyPlays || 0) : 0;
-              plays += 1;
-              let updates = { auDailyPlays: plays, auLastPlayDate: todayStr };
-              if (plays === 3) { updates.totalXu = increment(500); updates.lastUpdateSource = 'au_daily_quest'; updates.badges = arrayUnion('DANCER'); }
-              await updateDoc(userRef, updates);
-              setUserData(prev => ({ ...prev, dailyPlays: plays }));
+          // Lưu BXH Toàn cầu (Kỷ lục cá nhân cao nhất)
+          const globalRef = doc(db, 'au_global_leaderboard', userData.phone);
+          const snap = await getDoc(globalRef);
+          if (!snap.exists() || snap.data().bestScore < score) {
+              await setDoc(globalRef, { 
+                  name: userData.name, 
+                  bestScore: score, 
+                  phone: userData.phone, 
+                  timestamp: Date.now() 
+              });
           }
       } catch (e) { console.error(e); }
   };
 
-  useEffect(() => { if (judgment) { const t = setTimeout(() => setJudgment(null), 1000); return () => clearTimeout(t); } }, [judgment]);
-
   return (
-    <div className={`min-h-screen bg-gray-900 text-white font-sans overflow-hidden relative transition-all ${isShaking ? 'scale-[1.01]' : ''}`}>
+    <div className={`min-h-screen bg-gray-900 text-white font-sans overflow-hidden relative transition-all ${isShaking ? 'modern-shake' : ''}`}>
       
       <style>{`
-        .shake-animation { animation: shake 0.2s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes shake { 0%, 100% { transform: translate(0, 0); } 20% { transform: translate(-3px, 3px); } 40% { transform: translate(3px, -3px); } }
+        .modern-shake { animation: modernShake 0.3s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes modernShake {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          50% { transform: scale(1.03); filter: brightness(1.5); }
+        }
+        .album-rotate { animation: rotate 10s linear infinite; }
+        .album-rotate-paused { animation-play-state: paused; }
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
       `}</style>
 
+      {/* LOBBY */}
       {gameState === 'LOBBY' && (
-        <div className="max-w-4xl mx-auto py-12 px-6 animate-in fade-in duration-500">
-           <header className="flex justify-between items-center mb-10">
-               <h1 className="text-4xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">AU PLANT G</h1>
-               <div className="flex gap-4">
-                   <div className="bg-gray-800 border border-gray-700 rounded-full px-4 py-1.5 flex items-center gap-2">
-                       <span className="text-xl">🏆</span>
-                       <p className="text-xs font-bold">{Math.min(userData.dailyPlays, 3)}/3 Bài</p>
-                   </div>
-                   <button onClick={() => navigate('/')} className="bg-gray-800 px-4 py-2 rounded-xl text-xs font-bold uppercase border border-gray-700">Trở về</button>
-               </div>
+        <div className="max-w-6xl mx-auto py-12 px-6 animate-in fade-in duration-500">
+           <header className="flex justify-between items-center mb-12">
+               <h1 className="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">AU PLANT G</h1>
+               <button onClick={() => navigate('/')} className="bg-white/10 hover:bg-white/20 backdrop-blur-md px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/10 transition-all">Trở về</button>
            </header>
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-               <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                   {MUSIC_TRACKS.map(track => (
-                       <div key={track.id} onClick={() => selectTrack(track)} className={`relative bg-gray-800/50 p-4 rounded-2xl border flex items-center gap-4 transition-all group ${track.requiredRank && userData.rankId !== track.requiredRank ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-purple-500'}`}>
-                           <img src={track.cover} className="w-14 h-14 rounded-lg object-cover" alt="cover" />
-                           <div className="flex-1">
-                               <h3 className="font-black text-base">{track.title} {track.requiredRank && '👑'}</h3>
-                               <p className="text-gray-400 text-[10px]">{track.artist} • {track.bpm} BPM</p>
+           <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+               <div className="lg:col-span-2 space-y-4 max-h-[70vh] overflow-y-auto pr-4 custom-scrollbar">
+                   {MUSIC_TRACKS.map(track => {
+                       const isLocked = track.requiredRank && userData.rankId !== track.requiredRank;
+                       return (
+                           <div key={track.id} onClick={() => !isLocked && selectTrack(track)} 
+                                className={`relative group bg-white/5 backdrop-blur-sm p-5 rounded-[2rem] border border-white/5 flex items-center gap-6 transition-all 
+                                ${isLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10 hover:border-purple-500/50 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(168,85,247,0.2)]'}`}>
+                               <div className="relative w-20 h-20 flex-shrink-0">
+                                   <img src={track.cover} className="w-full h-full rounded-full object-cover border-2 border-white/10 shadow-lg group-hover:border-purple-400 transition-all" alt="cover" />
+                                   {!isLocked && <div className="absolute inset-0 bg-black/20 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">▶️</div>}
+                               </div>
+                               <div className="flex-1">
+                                   <h3 className="font-black text-xl tracking-tight mb-1">{track.title} {track.requiredRank && '👑'}</h3>
+                                   <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{track.artist} • <span className="text-purple-400">{track.bpm} BPM</span></p>
+                               </div>
+                               <div className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase ${track.difficulty === 'Expert' ? 'bg-purple-600/30 text-purple-300' : 'bg-white/5 text-gray-400'}`}>{track.difficulty}</div>
+                               {isLocked && <div className="absolute right-6 top-1/2 -translate-y-1/2 text-2xl">🔒</div>}
                            </div>
-                           <div className={`text-[10px] font-black px-2 py-1 rounded uppercase ${track.difficulty === 'Expert' ? 'bg-purple-600' : 'bg-gray-700'}`}>{track.difficulty}</div>
-                       </div>
-                   ))}
+                       );
+                   })}
                </div>
-               <div className="bg-gray-800/30 p-6 rounded-[2rem] border border-gray-700/50">
-                   <h2 className="text-[10px] font-black text-gray-500 uppercase mb-4">🏆 BXH TOÀN CẦU</h2>
-                   <p className="text-center text-gray-600 italic py-10 text-xs">Chọn bài nhạc để xem cao thủ.</p>
+               <div className="bg-white/5 backdrop-blur-xl p-8 rounded-[3rem] border border-white/10 shadow-2xl h-fit">
+                   <h2 className="text-xs font-black text-purple-400 uppercase tracking-[0.3em] mb-8 flex items-center gap-2">🏆 Top 10 Thần Nhảy</h2>
+                   <div className="space-y-5">
+                       {leaderboard.length > 0 ? leaderboard.map((item, i) => (
+                           <div key={i} className={`flex justify-between items-center bg-white/5 p-4 rounded-2xl border-l-4 ${i === 0 ? 'border-yellow-400 bg-yellow-400/5' : 'border-blue-500'}`}>
+                               <div className="flex items-center gap-4">
+                                   <span className={`font-black italic text-lg ${i === 0 ? 'text-yellow-400' : 'text-gray-600'}`}>{i+1}</span>
+                                   <span className="font-bold text-sm truncate max-w-[120px]">{item.name}</span>
+                               </div>
+                               <span className="font-mono font-black text-white/90">{item.bestScore.toLocaleString()}</span>
+                           </div>
+                       )) : <p className="text-center text-gray-500 italic py-10 text-xs tracking-widest">Đang tải cao thủ...</p>}
+                   </div>
                </div>
            </div>
         </div>
       )}
 
+      {/* LOADING */}
       {gameState === 'LOADING' && (
           <div className="h-screen flex flex-col items-center justify-center bg-black">
-              <div className="w-64 h-1.5 bg-gray-800 rounded-full overflow-hidden mb-4">
+              <div className="w-64 h-1 bg-gray-800 rounded-full overflow-hidden mb-6">
                   <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" style={{ width: `${loadProgress}%` }}></div>
               </div>
-              <p className="text-[10px] font-black uppercase text-gray-500 tracking-[0.3em]">Loading stage... {Math.floor(loadProgress)}%</p>
+              <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.5em] animate-pulse">Entering Stage... {Math.floor(loadProgress)}%</p>
           </div>
       )}
 
+      {/* PREPARING */}
       {gameState === 'PREPARING' && (
           <div className="h-screen flex items-center justify-center">
-              <div className="text-[15rem] leading-none font-black italic text-transparent bg-clip-text bg-gradient-to-b from-purple-400 to-pink-600 animate-bounce text-center w-full">
+              <div className="text-[18rem] leading-none font-black italic text-transparent bg-clip-text bg-gradient-to-b from-purple-400 to-pink-600 animate-bounce text-center w-full select-none">
                   {prepCountdown > 0 ? prepCountdown : 'GO!'}
               </div>
           </div>
       )}
 
+      {/* PLAYING */}
       {gameState === 'PLAYING' && (
           <div className="h-screen relative flex flex-col items-center justify-center p-6">
-              {/* FIXED: Audio sử dụng onTimeUpdate để đồng bộ tiến trình cực chuẩn */}
-              <audio 
-                ref={audioRef} 
-                src={currentTrack?.src} 
-                autoPlay 
-                onEnded={handleGameEnd} 
-                onTimeUpdate={handleTimeUpdate}
-                className="hidden" 
-              />
+              <audio ref={audioRef} src={currentTrack?.src} autoPlay onEnded={handleGameEnd} onTimeUpdate={handleTimeUpdate} className="hidden" />
               
-              <button onClick={togglePause} className="absolute top-6 left-6 z-50 bg-white/10 hover:bg-white/20 p-3 rounded-full border border-white/20 backdrop-blur-md transition-all">
-                  <span className="text-xl">{isPaused ? '▶️' : '⏸️'}</span>
+              <button onClick={() => setIsPaused(true)} className="absolute top-8 left-8 z-50 bg-white/5 hover:bg-white/10 p-4 rounded-3xl border border-white/10 backdrop-blur-xl transition-all">
+                  <span className="text-xl text-white">⏸️</span>
               </button>
 
               {isPaused && (
-                  <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
-                      <h2 className="text-6xl font-black italic text-white mb-10 tracking-tighter text-center">GAME PAUSED</h2>
-                      <div className="flex flex-col gap-4 w-64">
-                          <button onClick={togglePause} className="py-4 bg-white text-black font-black rounded-2xl uppercase tracking-widest hover:scale-105 transition-all">Tiếp tục</button>
-                          <button onClick={handleLeaveGame} className="py-4 bg-red-600 text-white font-black rounded-2xl uppercase tracking-widest hover:scale-105 transition-all">Rời khỏi</button>
+                  <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
+                      <h2 className="text-8xl font-black italic text-white mb-16 tracking-tighter">PAUSED</h2>
+                      <div className="flex flex-col gap-6 w-72">
+                          <button onClick={() => { setIsPaused(false); audioRef.current.play(); }} className="py-5 bg-white text-black font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Tiếp tục quẩy</button>
+                          <button onClick={() => { setGameState('LOBBY'); setIsPaused(false); }} className="py-5 bg-red-600 text-white font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Rời sân khấu</button>
                       </div>
                   </div>
               )}
 
-              <div className="absolute top-10 left-1/2 -translate-x-1/2 w-full max-w-md px-10">
-                  <div className="h-3 bg-gray-800 rounded-full border border-white/10 p-0.5 overflow-hidden shadow-2xl">
+              <div className="absolute top-12 left-1/2 -translate-x-1/2 w-full max-w-md px-10">
+                  <div className="h-4 bg-black/40 rounded-full border border-white/10 p-1 overflow-hidden shadow-2xl">
                       <div className={`h-full rounded-full transition-all duration-300 ${hp < 30 ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-green-500 to-blue-500'}`} style={{ width: `${hp}%` }}></div>
                   </div>
               </div>
 
               {judgment && (
                   <div key={judgment.id} className="absolute top-1/4 z-50 animate-bounce text-center">
-                      <h2 className={`text-7xl font-black italic drop-shadow-2xl ${judgment.text === 'PERFECT' ? 'text-yellow-400 scale-125' : 'text-blue-400'}`}>{judgment.text}</h2>
-                      {combo > 1 && <p className="text-2xl font-black text-white italic">COMBO x{combo}</p>}
+                      <h2 className={`text-8xl font-black italic drop-shadow-[0_0_30px_rgba(255,255,255,0.3)] ${judgment.text === 'PERFECT' ? 'text-yellow-400 scale-110' : 'text-blue-400'}`}>{judgment.text}</h2>
+                      {combo > 1 && <p className="text-3xl font-black text-white italic tracking-tighter">COMBO x{combo}</p>}
                   </div>
               )}
 
-              <div className="w-fit min-w-[500px] max-w-[95vw] bg-gray-800/40 backdrop-blur-xl rounded-[3rem] p-10 border border-white/5 shadow-2xl relative overflow-hidden">
-                  <div className="flex justify-between items-end mb-10 px-4">
-                      <div className="text-4xl font-black italic text-white opacity-20">LVL {level}</div>
-                      <div className="text-right"><p className="text-[10px] font-black text-gray-500 uppercase">Score</p><p className="text-5xl font-black text-yellow-400">{score.toLocaleString()}</p></div>
+              <div className="w-fit min-w-[600px] max-w-[95vw] bg-white/5 backdrop-blur-2xl rounded-[4rem] p-12 border border-white/10 shadow-[0_20px_80px_rgba(0,0,0,0.5)] relative overflow-hidden">
+                  <div className="flex justify-between items-end mb-12 px-4">
+                      <div className="text-5xl font-black italic text-white/10">LVL {level}</div>
+                      <div className="text-right">
+                          <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.4em] mb-1">Current Score</p>
+                          <p className="text-6xl font-black text-white tracking-tighter">{score.toLocaleString()}</p>
+                      </div>
                   </div>
 
-                  <div className={`flex flex-nowrap justify-center gap-3 sm:gap-5 mb-12 transition-all px-4 ${isFailedSeq ? 'opacity-20 blur-sm' : ''}`}>
+                  <div className={`flex flex-nowrap justify-center gap-4 sm:gap-6 mb-16 transition-all px-8 ${isFailedSeq ? 'opacity-10 blur-md' : ''}`}>
                       {targetSequence.map((item, i) => (
-                          <span key={i} className={`text-5xl sm:text-7xl transition-all duration-150 flex-shrink-0 ${
-                              i < userInput.length ? 'opacity-20 scale-75' : 
-                              item.isRed ? 'text-pink-500 drop-shadow-[0_0_15px_rgba(236,72,153,0.8)]' : 'text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.5)]'
+                          <span key={i} className={`text-6xl sm:text-8xl transition-all duration-150 flex-shrink-0 ${
+                              i < userInput.length ? 'opacity-20 scale-90' : 
+                              item.isRed ? 'text-pink-500 drop-shadow-[0_0_20px_rgba(236,72,153,0.6)]' : 'text-green-400 drop-shadow-[0_0_20px_rgba(74,222,128,0.4)]'
                           }`}>
                               {ARROW_SYMBOLS[item.display]}
                           </span>
                       ))}
                   </div>
 
-                  <div className="relative h-16 bg-black/60 rounded-full border-4 border-gray-700 shadow-inner overflow-hidden">
-                      <div className="absolute inset-y-0 left-[75%] right-[5%] bg-blue-500/20"></div>
-                      <div className="absolute inset-y-0 left-[85%] w-2 bg-white shadow-[0_0_30px_#fff] z-10"></div>
-                      {burstEffect && <div className="absolute top-1/2 left-[85%] -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-yellow-300 animate-ping z-0 pointer-events-none"></div>}
-                      <div className={`absolute top-1/2 -translate-y-1/2 w-10 h-10 rounded-full border-4 border-white transition-transform z-20 ${userData.rankId === 'CHALLENGER' ? 'bg-gradient-to-r from-purple-500 to-pink-500 shadow-[0_0_30px_rgba(236,72,153,0.8)]' : 'bg-yellow-400 shadow-[0_0_30px_#facc15]'}`} style={{ left: `${sliderPos}%` }}></div>
+                  <div className="relative h-20 bg-black/40 rounded-full border-[6px] border-white/5 shadow-inner overflow-hidden">
+                      <div className="absolute inset-y-0 left-[75%] right-[5%] bg-blue-500/10"></div>
+                      <div className="absolute inset-y-0 left-[85%] w-3 bg-white shadow-[0_0_40px_#fff] z-10"></div>
+                      {burstEffect && <div className="absolute top-1/2 left-[85%] -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full border-8 border-white/20 animate-ping z-0 pointer-events-none"></div>}
+                      <div className={`absolute top-1/2 -translate-y-1/2 w-12 h-12 rounded-full border-[6px] border-white shadow-2xl transition-transform z-20 ${userData.rankId === 'CHALLENGER' ? 'bg-gradient-to-r from-purple-500 to-pink-500' : 'bg-yellow-400'}`} style={{ left: `${sliderPos}%` }}></div>
                   </div>
               </div>
 
-              {/* MUSIC PLAYER (BOTTOM-CENTER) - Đã đồng bộ tiến trình cực chuẩn */}
-              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-sm px-4">
-                  <div className="bg-black/60 backdrop-blur-xl p-4 rounded-[2rem] border border-white/10 shadow-2xl flex flex-col gap-3">
-                      <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-purple-500 transition-all duration-200" 
-                            style={{ width: `${musicProgress}%` }}
-                          ></div>
+              {/* MUSIC PLAYER (BOTTOM-CENTER) - ĐÃ DÀI RA VÀ XOAY 360 */}
+              <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-full max-w-lg px-4">
+                  <div className="bg-black/60 backdrop-blur-3xl p-6 rounded-[2.5rem] border border-white/10 shadow-2xl flex flex-col gap-5">
+                      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-200" style={{ width: `${musicProgress}%` }}></div>
                       </div>
-                      <div className="flex items-center gap-4">
-                          <img src={currentTrack?.cover} className={`w-12 h-12 rounded-xl object-cover border border-white/10 ${!isPaused && 'animate-spin-slow'}`} alt="art" />
-                          <div className="overflow-hidden">
-                              <p className="text-xs font-black uppercase text-white truncate leading-none mb-1">{currentTrack?.title}</p>
-                              <p className="text-[10px] text-gray-400 font-bold truncate uppercase">{currentTrack?.artist}</p>
+                      <div className="flex items-center gap-6">
+                          {/* ALBUM XOAY */}
+                          <img src={currentTrack?.cover} 
+                               className={`w-16 h-16 rounded-full object-cover border-2 border-white/20 shadow-lg album-rotate ${isPaused ? 'album-rotate-paused' : ''}`} 
+                               alt="art" />
+                          <div className="overflow-hidden flex-1">
+                              <p className="text-lg font-black text-white truncate leading-none mb-2">{currentTrack?.title}</p>
+                              <p className="text-xs text-white/40 font-black truncate uppercase tracking-widest">{currentTrack?.artist}</p>
                           </div>
                       </div>
                   </div>
@@ -386,24 +380,36 @@ const AuGame = () => {
           </div>
       )}
 
+      {/* GAME OVER */}
       {gameState === 'GAME_OVER' && (
-          <div className="h-screen bg-black/90 flex flex-col items-center justify-center text-center p-6 animate-in zoom-in">
-              <div className="text-9xl mb-8">💀</div>
-              <h2 className="text-6xl font-black text-red-600 uppercase tracking-tighter mb-4 italic">GAME OVER</h2>
-              <button onClick={() => setGameState('LOBBY')} className="px-12 py-5 bg-white text-black font-black rounded-full uppercase hover:scale-105 active:scale-95 transition-all">Về Lobby</button>
+          <div className="h-screen bg-black flex flex-col items-center justify-center text-center p-6">
+              <div className="text-[12rem] mb-12 animate-pulse">💀</div>
+              <h2 className="text-7xl font-black text-red-600 uppercase tracking-tighter mb-8 italic">YOU FAILED</h2>
+              <button onClick={() => setGameState('LOBBY')} className="px-16 py-6 bg-white text-black font-black rounded-full uppercase tracking-[0.2em] hover:scale-105 active:scale-95 transition-all">Thử lại sân khấu</button>
           </div>
       )}
 
+      {/* RESULT */}
       {gameState === 'RESULT' && (
-          <div className="h-screen flex items-center justify-center p-6 bg-gradient-to-br from-purple-900/50 to-gray-900 w-full">
-              <div className="bg-gray-800/80 backdrop-blur-2xl p-12 rounded-[4rem] border border-white/10 shadow-2xl max-w-md w-full text-center">
-                  <h2 className="text-5xl font-black italic text-white uppercase mb-8">BẢN NHẠC XONG!</h2>
-                  <div className="grid grid-cols-2 gap-4 mb-10">
-                      <div className="bg-black/30 p-4 rounded-3xl"><p className="text-[10px] text-gray-500 font-black uppercase">Max Combo</p><p className="text-3xl font-black text-blue-400">{maxCombo}</p></div>
-                      <div className="bg-black/30 p-4 rounded-3xl"><p className="text-[10px] text-gray-500 font-black uppercase">Perfects</p><p className="text-3xl font-black text-green-400">{stats.perfect}</p></div>
+          <div className="h-screen flex items-center justify-center p-6 bg-black w-full">
+              <div className="bg-white/5 backdrop-blur-2xl p-16 rounded-[4rem] border border-white/10 shadow-2xl max-w-xl w-full text-center">
+                  <h2 className="text-6xl font-black italic text-white uppercase mb-12 tracking-tighter">BẢN NHẠC XONG!</h2>
+                  <div className="grid grid-cols-2 gap-6 mb-12">
+                      <div className="bg-white/5 p-6 rounded-[2rem] border border-white/5">
+                          <p className="text-[10px] text-purple-400 font-black uppercase tracking-widest mb-2">Max Combo</p>
+                          <p className="text-4xl font-black text-white">{maxCombo}</p>
+                      </div>
+                      <div className="bg-white/5 p-6 rounded-[2rem] border border-white/5">
+                          <p className="text-[10px] text-green-400 font-black uppercase tracking-widest mb-2">Perfects</p>
+                          <p className="text-4xl font-black text-white">{stats.perfect}</p>
+                      </div>
                   </div>
-                  <div className="mb-10"><p className="text-xs text-gray-400 uppercase mb-2">Tổng điểm</p><p className="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500">{score.toLocaleString()}</p></div>
-                  <button onClick={() => setGameState('LOBBY')} className="w-full py-5 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-black rounded-3xl uppercase tracking-widest shadow-xl">Tiếp tục</button>
+                  <div className="mb-16">
+                      <p className="text-xs text-gray-500 font-black uppercase tracking-[0.5em] mb-4">Final Score</p>
+                      <p className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500 drop-shadow-2xl tracking-tighter">{score.toLocaleString()}</p>
+                  </div>
+                  <button onClick={() => { setGameState('LOBBY'); fetchGlobalLeaderboard(); }} 
+                          className="w-full py-6 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black rounded-[2rem] uppercase tracking-[0.3em] shadow-xl hover:scale-105 transition-all">Tiếp tục</button>
               </div>
           </div>
       )}
