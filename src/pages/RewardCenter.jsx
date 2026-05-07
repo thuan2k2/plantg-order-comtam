@@ -55,6 +55,12 @@ const RewardCenter = () => {
     if (window.confirm(`Xác nhận dùng ${reward.cost.toLocaleString()} Xu để đổi lấy ${reward.name}?`)) {
       setIsProcessing(true);
       
+      // Trừ ảo trên giao diện để tránh delay
+      setCustomerInfo(prev => ({
+        ...prev,
+        totalXu: prev.totalXu - reward.cost
+      }));
+
       try {
         // ĐÃ FIX BẢO MẬT: Chuyển toàn bộ logic trừ xu và sinh mã về Cloud Functions
         const exchangeVoucherFn = httpsCallable(functions, 'exchangeVoucher');
@@ -72,9 +78,19 @@ const RewardCenter = () => {
         if (result.data.success) {
           alert(`🎉 Đổi quà thành công! Mã Voucher của bạn là: ${result.data.voucherCode} (Kiểm tra trong Kho mã khi đặt hàng)`);
         } else {
+          // Rollback nếu thất bại
+          setCustomerInfo(prev => ({
+            ...prev,
+            totalXu: prev.totalXu + reward.cost
+          }));
           alert(`❌ Đổi quà thất bại: ${result.data.error}`);
         }
       } catch (error) {
+        // Rollback nếu thất bại
+        setCustomerInfo(prev => ({
+          ...prev,
+          totalXu: prev.totalXu + reward.cost
+        }));
         console.error("Lỗi đổi quà:", error);
         alert(error.message || "Có lỗi xảy ra trong quá trình giao dịch với máy chủ.");
       } finally {
@@ -104,7 +120,7 @@ const RewardCenter = () => {
           </div>
           <div className="mt-6 flex flex-wrap gap-2">
             <p className="text-[9px] font-black bg-white/20 px-3 py-1.5 rounded-full backdrop-blur-md uppercase tracking-wider">
-              1,000đ = 10 Xu
+              1.000đ = 10 Xu
             </p>
             <p className="text-[9px] font-black bg-black/10 px-3 py-1.5 rounded-full backdrop-blur-md uppercase tracking-wider">
               Hạng: {customerInfo?.role === 'user' ? 'Thành viên' : 'Vip'}

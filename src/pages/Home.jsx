@@ -13,6 +13,8 @@ import NotificationCenter from '../components/NotificationCenter';
 import UserAvatar from '../components/UserAvatar';
 import VipBadge from '../components/VipBadge'; 
 import PetEntity from '../components/PetEntity'; 
+// MỚI: Import Mini-game AU Nhân phẩm
+import AuGame from '../components/AuGame';
 import { getRankInfo } from '../utils/rankUtils';
 
 const checkIfOpen = (openTimeStr) => {
@@ -61,6 +63,9 @@ const Home = () => {
   const [showLuckyXu, setShowLuckyXu] = useState(false);
   const [isOpeningLuckyXu, setIsOpeningLuckyXu] = useState(false);
   const [luckyReward, setLuckyReward] = useState(null);
+
+  // MỚI: State hiển thị Game AU
+  const [showAuGame, setShowAuGame] = useState(false);
 
   useEffect(() => {
     const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
@@ -312,6 +317,31 @@ const Home = () => {
     }
   };
 
+  // MỚI: Xử lý kết quả trả về từ Game AU
+  const handleAuGameResult = async (percentReward) => {
+    setShowAuGame(false);
+    if (!savedPhone || !userData) return;
+
+    try {
+        // Trừ 5000 xu gốc (vé vào cửa)
+        let balanceChange = -5000;
+        
+        // Nếu thắng (percentReward !== -1), cộng tiền thưởng
+        if (percentReward !== -1) {
+            balanceChange += 5000 + (5000 * (percentReward / 100));
+        }
+
+        const userRef = doc(db, 'users', savedPhone);
+        await updateDoc(userRef, {
+            totalXu: increment(balanceChange)
+        });
+        
+    } catch (error) {
+        console.error("Lỗi cập nhật xu game AU:", error);
+        alert("Có lỗi khi ghi nhận kết quả, vui lòng thử lại sau.");
+    }
+  };
+
   const isShopActive = sysConfig.isActuallyOpen || sysConfig.canPreOrder;
 
   return (
@@ -500,6 +530,23 @@ const Home = () => {
           KIỂM TRA ĐƠN HÀNG
         </button>
 
+        {/* NÚT: GỌI GAME AU (Chỉ hiện khi đã đăng nhập) */}
+        {hasOrderedBefore && (
+          <button
+            onClick={() => {
+              if (totalXu < 5000) {
+                alert("Bạn không đủ 5.000 Xu để tham gia!");
+                return;
+              }
+              setShowAuGame(true);
+            }}
+            className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-black py-4 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-xs tracking-widest shadow-lg shadow-indigo-200 dark:shadow-none"
+          >
+            <span className="text-lg">🎮</span>
+            AU NHÂN PHẨM (5.000 XU)
+          </button>
+        )}
+
         {!hasOrderedBefore && (
           <div className="flex gap-4 pt-2">
             <button
@@ -584,6 +631,14 @@ const Home = () => {
 
       {rankInfo && rankInfo.current.id === 'CHALLENGER' && userData?.showPet && (
         <PetEntity phone={savedPhone} />
+      )}
+
+      {/* RENDER COMPONENT AU GAME */}
+      {showAuGame && (
+        <AuGame 
+          onCancel={() => setShowAuGame(false)} 
+          onGameEnd={handleAuGameResult} 
+        />
       )}
 
       <UsernamePopup 
