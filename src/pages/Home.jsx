@@ -13,8 +13,6 @@ import NotificationCenter from '../components/NotificationCenter';
 import UserAvatar from '../components/UserAvatar';
 import VipBadge from '../components/VipBadge'; 
 import PetEntity from '../components/PetEntity'; 
-// MỚI: Import Mini-game AU Nhân phẩm
-import AuGame from '../components/AuGame';
 import { getRankInfo } from '../utils/rankUtils';
 
 const checkIfOpen = (openTimeStr) => {
@@ -64,9 +62,6 @@ const Home = () => {
   const [isOpeningLuckyXu, setIsOpeningLuckyXu] = useState(false);
   const [luckyReward, setLuckyReward] = useState(null);
 
-  // MỚI: State hiển thị Game AU
-  const [showAuGame, setShowAuGame] = useState(false);
-
   useEffect(() => {
     const unsubConfig = onSnapshot(doc(db, 'system', 'config'), (docSnap) => {
       if (docSnap.exists()) {
@@ -88,7 +83,7 @@ const Home = () => {
       });
     }, 60000);
 
-    // MỚI: Lắng nghe trạng thái Admin từ Realtime Database thay vì Firestore
+    // Lắng nghe trạng thái Admin từ Realtime Database thay vì Firestore
     const adminStatusRef = ref(rtdb, 'system/admin_status');
     const unsubAdminStatus = onValue(adminStatusRef, (snapshot) => {
       const data = snapshot.val();
@@ -317,31 +312,6 @@ const Home = () => {
     }
   };
 
-  // MỚI: Xử lý kết quả trả về từ Game AU
-  const handleAuGameResult = async (percentReward) => {
-    setShowAuGame(false);
-    if (!savedPhone || !userData) return;
-
-    try {
-        // Trừ 5000 xu gốc (vé vào cửa)
-        let balanceChange = -5000;
-        
-        // Nếu thắng (percentReward !== -1), cộng tiền thưởng
-        if (percentReward !== -1) {
-            balanceChange += 5000 + (5000 * (percentReward / 100));
-        }
-
-        const userRef = doc(db, 'users', savedPhone);
-        await updateDoc(userRef, {
-            totalXu: increment(balanceChange)
-        });
-        
-    } catch (error) {
-        console.error("Lỗi cập nhật xu game AU:", error);
-        alert("Có lỗi khi ghi nhận kết quả, vui lòng thử lại sau.");
-    }
-  };
-
   const isShopActive = sysConfig.isActuallyOpen || sysConfig.canPreOrder;
 
   return (
@@ -530,23 +500,6 @@ const Home = () => {
           KIỂM TRA ĐƠN HÀNG
         </button>
 
-        {/* NÚT: GỌI GAME AU (Chỉ hiện khi đã đăng nhập) */}
-        {hasOrderedBefore && (
-          <button
-            onClick={() => {
-              if (totalXu < 5000) {
-                alert("Bạn không đủ 5.000 Xu để tham gia!");
-                return;
-              }
-              setShowAuGame(true);
-            }}
-            className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-black py-4 rounded-2xl transition-all active:scale-95 flex justify-center items-center gap-3 uppercase text-xs tracking-widest shadow-lg shadow-indigo-200 dark:shadow-none"
-          >
-            <span className="text-lg">🎮</span>
-            AU NHÂN PHẨM (5.000 XU)
-          </button>
-        )}
-
         {!hasOrderedBefore && (
           <div className="flex gap-4 pt-2">
             <button
@@ -568,6 +521,20 @@ const Home = () => {
       <div className="relative z-10 w-full max-w-xs">
          {hasOrderedBefore && <Gamification />}
       </div>
+
+      {/* CẬP NHẬT: NÚT VÀO GAME AU ĐƯỢC CHUYỂN THÀNH DẠNG NỔI BÊN GÓC TRÁI (NẰM DƯỚI NÚT GAMIFICATION) */}
+      {hasOrderedBefore && (
+        <div className="fixed bottom-6 left-6 z-40 pointer-events-auto">
+          <button 
+            onClick={() => navigate('/au')}
+            className="relative w-14 h-14 bg-gradient-to-tr from-purple-500 to-indigo-600 rounded-2xl shadow-xl flex flex-col items-center justify-center border-2 border-indigo-400 transition-all hover:scale-110 active:scale-95 group"
+            title="Chơi AU Nhân Phẩm"
+          >
+            <span className="text-2xl drop-shadow-md group-hover:animate-bounce">🎮</span>
+            <span className="text-[8px] font-black uppercase text-white mt-0.5 tracking-widest leading-none text-center">AU</span>
+          </button>
+        </div>
+      )}
 
       <div className="mt-auto pt-10 pb-6 text-center w-full flex flex-col items-center z-10 relative">
         <div className="flex items-center justify-center gap-2 mb-4 bg-white/50 dark:bg-gray-800/50 px-4 py-2 rounded-full border border-gray-100 dark:border-gray-700 shadow-sm backdrop-blur-sm">
@@ -631,14 +598,6 @@ const Home = () => {
 
       {rankInfo && rankInfo.current.id === 'CHALLENGER' && userData?.showPet && (
         <PetEntity phone={savedPhone} />
-      )}
-
-      {/* RENDER COMPONENT AU GAME */}
-      {showAuGame && (
-        <AuGame 
-          onCancel={() => setShowAuGame(false)} 
-          onGameEnd={handleAuGameResult} 
-        />
       )}
 
       <UsernamePopup 
