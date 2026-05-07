@@ -6,11 +6,11 @@ import { getRankInfo } from '../utils/rankUtils';
 
 const MUSIC_TRACKS = [
     { id: 'track1', src: '/music/track1.mp3', title: "Sôi Động Vinhomes", artist: "DJ Plant G", bpm: 110, difficulty: 'Easy', genre: 'Pop', cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&h=200&fit=crop' },
-    { id: 'track2', src: '/music/track2.mp3', title: "Bass Cực Căng", artist: "Remixer Pro", bpm: 128, difficulty: 'Normal', genre: 'EDM', cover: 'https://images.unsplash.com/photo-1459749411177-042180ce673c?w=200&h=200&fit=crop' },
-    { id: 'track3', src: '/music/track3.mp3', title: "Giai Điệu Buồn", artist: "Lofi Chill", bpm: 95, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1516280440614-37939bb92583?w=200&h=200&fit=crop' },
+    { id: 'track2', src: '/music/track2.mp3', title: "Bass Cực Căng", artist: "Remixer Pro", bpm: 128, difficulty: 'Normal', genre: 'EDM', cover: 'https://i1.sndcdn.com/artworks-dSG4UKCycOQ1r4r2-SHUyrQ-t500x500.jpg' },
+    { id: 'track3', src: '/music/track3.mp3', title: "Giai Điệu Buồn", artist: "Lofi Chill", bpm: 95, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.stockcake.com/public/f/6/8/f68998df-4be1-4cc7-8c6d-139b8bf96143_large/pixel-sky-serenity-stockcake.jpg' },
     { id: 'track4', src: '/music/track4.mp3', title: "Dance Alone", artist: "V-Dance", bpm: 140, difficulty: 'Hard', genre: 'Dance', cover: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=200&h=200&fit=crop' },
     { id: 'track5', src: '/music/track5.mp3', title: "Challenger Anthem", artist: "Plant G VIP", bpm: 155, difficulty: 'Expert', genre: 'Hardstyle', cover: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop', requiredRank: 'CHALLENGER' },
-    { id: 'track6', src: '/music/track6.mp3', title: "đêm tĩnh lặng", artist: "kẻ cô đơn", bpm: 85, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1493225457124-a1a2a5f0b008?w=200&h=200&fit=crop' },
+    { id: 'track6', src: '/music/track6.mp3', title: "đêm tĩnh lặng", artist: "kẻ cô đơn", bpm: 85, difficulty: 'Easy', genre: 'Lofi', cover: 'https://cdn-images.dzcdn.net/images/cover/fb139e580ef4f69cf7d70a68ac9de2a6/1900x1900-000000-80-0-0.jpg' },
     { id: 'track7', src: '/music/track7.mp3', title: "Cơm Tấm Rush", artist: "Bếp Trưởng", bpm: 135, difficulty: 'Hard', genre: 'Electro', cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=200&h=200&fit=crop' },
     { id: 'track8', src: '/music/track8.mp3', title: "Nhịp Đập Phố Đêm", artist: "Night Owl", bpm: 125, difficulty: 'Normal', genre: 'House', cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&h=200&fit=crop' },
     { id: 'track9', src: '/music/track9.mp3', title: "góc tối", artist: "mưa rơi", bpm: 80, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1499946981954-e7f4b234d7fa?w=200&h=200&fit=crop' },
@@ -22,7 +22,7 @@ const MUSIC_TRACKS = [
     { id: 'track15', src: '/music/track15.mp3', title: "WHERE U AT FULL", artist: "THÁI HOÀNG REMIX", bpm: 155, difficulty: 'Hard', genre: 'Dance', cover: 'https://i.ytimg.com/vi/AFEWE3ySRGo/maxresdefault.jpg' },
     { id: 'track16', src: '/music/track16.mp3', title: "chìm vào giấc mơ", artist: "kẻ mộng du", bpm: 75, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=200&h=200&fit=crop' },
     { id: 'track17', src: '/music/track17.mp3', title: "Tốc Độ Ánh Sáng", artist: "Master Tier", bpm: 175, difficulty: 'Expert', genre: 'Hardcore', cover: 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=200&h=200&fit=crop', requiredRank: 'CHALLENGER' },
-    { id: 'track18', src: '/music/track18.mp3', title: "Vương Miện Plant G", artist: "The Boss", bpm: 180, difficulty: 'Expert', genre: 'Hardstyle', cover: 'https://images.unsplash.com/photo-1505506874110-6a7a4f4aa009?w=200&h=200&fit=crop', requiredRank: 'CHALLENGER' }
+    { id: 'track18', src: '/music/track18.mp3', title: "Vương Miện Plant G", artist: "The Boss", bpm: 180, difficulty: 'Expert', genre: 'Hardstyle', cover: 'https://i1.sndcdn.com/avatars-DLmzrzG5Mxl3L1lg-y51Wtw-t500x500.jpg', requiredRank: 'CHALLENGER' }
 ];
 
 const ARROW_SYMBOLS = { UP: '⬆️', DOWN: '⬇️', LEFT: '⬅️', RIGHT: '➡️' };
@@ -36,7 +36,7 @@ const AuGame = () => {
   const [userData, setUserData] = useState({ phone: '', name: '', rankId: '' });
   const [leaderboard, setLeaderboard] = useState([]);
 
-  // Gameplay & UI States
+  // Gameplay States
   const [hp, setHp] = useState(100);
   const [level, setLevel] = useState(4); 
   const [score, setScore] = useState(0);
@@ -50,6 +50,7 @@ const AuGame = () => {
   const [isFailedSeq, setIsFailedSeq] = useState(false);
   const [musicProgress, setMusicProgress] = useState(0);
   
+  // Visual Effects
   const [isShaking, setIsShaking] = useState(false);
   const [burstEffect, setBurstEffect] = useState(false);
   const [loadProgress, setLoadMusicProgress] = useState(0);
@@ -71,7 +72,7 @@ const AuGame = () => {
       } else { navigate('/'); }
     };
     fetchUser();
-    fetchGlobalLeaderboard(); // Lấy BXH toàn cầu ngay khi vào
+    fetchGlobalLeaderboard(); 
   }, [navigate]);
 
   const fetchGlobalLeaderboard = async () => {
@@ -80,13 +81,17 @@ const AuGame = () => {
         const q = query(lbRef, orderBy('bestScore', 'desc'), limit(10));
         const querySnapshot = await getDocs(q);
         setLeaderboard(querySnapshot.docs.map(d => d.data()));
-    } catch (e) { console.error("Lỗi lấy BXH:", e); }
+    } catch (e) {
+        console.warn("Chưa thể lấy BXH (Có thể do chưa cấp quyền Rules hoặc thiếu Index):", e.message);
+        setLeaderboard([]);
+    }
   };
 
   const selectTrack = (track) => {
     if (track.requiredRank && userData.rankId !== track.requiredRank) return;
     setCurrentTrack(track);
     setGameState('LOADING');
+    setLoadMusicProgress(0);
     let prog = 0;
     const interval = setInterval(() => {
         prog += Math.random() * 25;
@@ -120,7 +125,7 @@ const AuGame = () => {
         generateNewSequence(currentTrack.difficulty === 'Expert' ? 8 : currentTrack.difficulty === 'Hard' ? 7 : 4);
       }
     }
-  }, [gameState, prepCountdown]);
+  }, [gameState, prepCountdown, currentTrack]);
 
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused || !currentTrack) return;
@@ -138,8 +143,26 @@ const AuGame = () => {
 
   const handleTimeUpdate = () => {
     if (audioRef.current && gameState === 'PLAYING') {
-        setMusicProgress((audioRef.current.currentTime / audioRef.current.duration) * 100 || 0);
+        const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+        setMusicProgress(progress || 0);
     }
+  };
+
+  const togglePause = () => {
+      if (isPaused) {
+          audioRef.current.play().catch(() => {});
+          setIsPaused(false);
+      } else {
+          audioRef.current.pause();
+          setIsPaused(true);
+      }
+  };
+
+  const handleLeaveGame = () => {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
+      setGameState('LOBBY');
+      setIsPaused(false);
+      fetchGlobalLeaderboard(); // Cập nhật lại BXH khi ra ngoài
   };
 
   const registerJudgment = (judg) => {
@@ -170,19 +193,38 @@ const AuGame = () => {
     generateNewSequence(Math.floor(newLv));
   };
 
+  // Rút ngắn thời gian hiển thị chữ Perfect/Great xuống còn 400ms để không bị kẹt
+  useEffect(() => { 
+      if (judgment) { 
+          const t = setTimeout(() => setJudgment(null), 400); 
+          return () => clearTimeout(t); 
+      } 
+  }, [judgment]);
+
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused) return;
     const handleKeyDown = (e) => {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-        e.preventDefault(); if (isFailedSeq) return;
+        e.preventDefault(); 
+        if (isFailedSeq) return;
+        
         const keyMap = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
+        
         setUserInput((prev) => {
+          // CHỐT CHẶN CRASH: Chống gõ phím khi target chưa tải hoặc gõ lố phím
+          if (!targetSequence || targetSequence.length === 0) return prev;
           if (prev.length >= targetSequence.length) return prev;
+          
           const next = [...prev, keyMap[e.key]];
-          if (targetSequence[prev.length].actual !== keyMap[e.key]) setIsFailedSeq(true);
+          const expectedKey = targetSequence[prev.length]?.actual;
+          
+          if (expectedKey && expectedKey !== keyMap[e.key]) {
+              setIsFailedSeq(true);
+          }
           return next;
         });
       }
+
       if (e.code === 'Space') {
         e.preventDefault();
         if (isFailedSeq || userInput.length < targetSequence.length) registerJudgment('MISS');
@@ -203,7 +245,6 @@ const AuGame = () => {
   const handleGameEnd = async () => {
       setGameState('RESULT');
       try {
-          // Lưu BXH Toàn cầu (Kỷ lục cá nhân cao nhất)
           const globalRef = doc(db, 'au_global_leaderboard', userData.phone);
           const snap = await getDoc(globalRef);
           if (!snap.exists() || snap.data().bestScore < score) {
@@ -214,7 +255,7 @@ const AuGame = () => {
                   timestamp: Date.now() 
               });
           }
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error("Lỗi cập nhật điểm:", e); }
   };
 
   return (
@@ -250,7 +291,7 @@ const AuGame = () => {
                                 ${isLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10 hover:border-purple-500/50 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(168,85,247,0.2)]'}`}>
                                <div className="relative w-20 h-20 flex-shrink-0">
                                    <img src={track.cover} className="w-full h-full rounded-full object-cover border-2 border-white/10 shadow-lg group-hover:border-purple-400 transition-all" alt="cover" />
-                                   {!isLocked && <div className="absolute inset-0 bg-black/20 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">▶️</div>}
+                                   {!isLocked && <div className="absolute inset-0 bg-black/20 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all text-xl">▶️</div>}
                                </div>
                                <div className="flex-1">
                                    <h3 className="font-black text-xl tracking-tight mb-1">{track.title} {track.requiredRank && '👑'}</h3>
@@ -273,7 +314,7 @@ const AuGame = () => {
                                </div>
                                <span className="font-mono font-black text-white/90">{item.bestScore.toLocaleString()}</span>
                            </div>
-                       )) : <p className="text-center text-gray-500 italic py-10 text-xs tracking-widest">Đang tải cao thủ...</p>}
+                       )) : <p className="text-center text-gray-500 italic py-10 text-xs tracking-widest uppercase">Đang tải dữ liệu...</p>}
                    </div>
                </div>
            </div>
@@ -283,7 +324,7 @@ const AuGame = () => {
       {/* LOADING */}
       {gameState === 'LOADING' && (
           <div className="h-screen flex flex-col items-center justify-center bg-black">
-              <div className="w-64 h-1 bg-gray-800 rounded-full overflow-hidden mb-6">
+              <div className="w-64 h-1 bg-white/5 rounded-full overflow-hidden mb-6">
                   <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" style={{ width: `${loadProgress}%` }}></div>
               </div>
               <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.5em] animate-pulse">Entering Stage... {Math.floor(loadProgress)}%</p>
@@ -304,7 +345,7 @@ const AuGame = () => {
           <div className="h-screen relative flex flex-col items-center justify-center p-6">
               <audio ref={audioRef} src={currentTrack?.src} autoPlay onEnded={handleGameEnd} onTimeUpdate={handleTimeUpdate} className="hidden" />
               
-              <button onClick={() => setIsPaused(true)} className="absolute top-8 left-8 z-50 bg-white/5 hover:bg-white/10 p-4 rounded-3xl border border-white/10 backdrop-blur-xl transition-all">
+              <button onClick={togglePause} className="absolute top-8 left-8 z-50 bg-white/5 hover:bg-white/10 p-4 rounded-3xl border border-white/10 backdrop-blur-xl transition-all">
                   <span className="text-xl text-white">⏸️</span>
               </button>
 
@@ -312,22 +353,24 @@ const AuGame = () => {
                   <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
                       <h2 className="text-8xl font-black italic text-white mb-16 tracking-tighter">PAUSED</h2>
                       <div className="flex flex-col gap-6 w-72">
-                          <button onClick={() => { setIsPaused(false); audioRef.current.play(); }} className="py-5 bg-white text-black font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Tiếp tục quẩy</button>
-                          <button onClick={() => { setGameState('LOBBY'); setIsPaused(false); }} className="py-5 bg-red-600 text-white font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Rời sân khấu</button>
+                          <button onClick={togglePause} className="py-5 bg-white text-black font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Tiếp tục</button>
+                          <button onClick={handleLeaveGame} className="py-5 bg-red-600 text-white font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Rời sân khấu</button>
                       </div>
                   </div>
               )}
 
               <div className="absolute top-12 left-1/2 -translate-x-1/2 w-full max-w-md px-10">
-                  <div className="h-4 bg-black/40 rounded-full border border-white/10 p-1 overflow-hidden shadow-2xl">
-                      <div className={`h-full rounded-full transition-all duration-300 ${hp < 30 ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-green-500 to-blue-500'}`} style={{ width: `${hp}%` }}></div>
+                  <div className="h-4 bg-white/5 rounded-full border border-white/5 p-1 overflow-hidden shadow-2xl">
+                      <div className={`h-full rounded-full transition-all duration-300 ${hp < 30 ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-green-400 to-blue-500'}`} style={{ width: `${hp}%` }}></div>
                   </div>
               </div>
 
+              {/* JUDGMENT TEXT FIXED: Kích thước nhỏ lại và không che tầm nhìn */}
               {judgment && (
-                  <div key={judgment.id} className="absolute top-1/4 z-50 animate-bounce text-center">
-                      <h2 className={`text-8xl font-black italic drop-shadow-[0_0_30px_rgba(255,255,255,0.3)] ${judgment.text === 'PERFECT' ? 'text-yellow-400 scale-110' : 'text-blue-400'}`}>{judgment.text}</h2>
-                      {combo > 1 && <p className="text-3xl font-black text-white italic tracking-tighter">COMBO x{combo}</p>}
+                  <div key={judgment.id} className="absolute top-1/4 z-50 animate-bounce pointer-events-none text-center">
+                      <h2 className={`text-6xl font-black italic drop-shadow-[0_0_30px_rgba(255,255,255,0.3)] 
+                        ${judgment.text === 'PERFECT' ? 'text-yellow-400 scale-110' : 'text-blue-400'}`}>{judgment.text}</h2>
+                      {combo > 1 && <p className="text-2xl font-black text-white italic tracking-tighter mt-1">COMBO x{combo}</p>}
                   </div>
               )}
 
@@ -342,7 +385,7 @@ const AuGame = () => {
 
                   <div className={`flex flex-nowrap justify-center gap-4 sm:gap-6 mb-16 transition-all px-8 ${isFailedSeq ? 'opacity-10 blur-md' : ''}`}>
                       {targetSequence.map((item, i) => (
-                          <span key={i} className={`text-6xl sm:text-8xl transition-all duration-150 flex-shrink-0 ${
+                          <span key={i} className={`text-6xl sm:text-7xl transition-all duration-150 flex-shrink-0 ${
                               i < userInput.length ? 'opacity-20 scale-90' : 
                               item.isRed ? 'text-pink-500 drop-shadow-[0_0_20px_rgba(236,72,153,0.6)]' : 'text-green-400 drop-shadow-[0_0_20px_rgba(74,222,128,0.4)]'
                           }`}>
@@ -359,14 +402,13 @@ const AuGame = () => {
                   </div>
               </div>
 
-              {/* MUSIC PLAYER (BOTTOM-CENTER) - ĐÃ DÀI RA VÀ XOAY 360 */}
+              {/* MUSIC PLAYER */}
               <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-full max-w-lg px-4">
                   <div className="bg-black/60 backdrop-blur-3xl p-6 rounded-[2.5rem] border border-white/10 shadow-2xl flex flex-col gap-5">
                       <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
                           <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-200" style={{ width: `${musicProgress}%` }}></div>
                       </div>
                       <div className="flex items-center gap-6">
-                          {/* ALBUM XOAY */}
                           <img src={currentTrack?.cover} 
                                className={`w-16 h-16 rounded-full object-cover border-2 border-white/20 shadow-lg album-rotate ${isPaused ? 'album-rotate-paused' : ''}`} 
                                alt="art" />
@@ -385,7 +427,7 @@ const AuGame = () => {
           <div className="h-screen bg-black flex flex-col items-center justify-center text-center p-6">
               <div className="text-[12rem] mb-12 animate-pulse">💀</div>
               <h2 className="text-7xl font-black text-red-600 uppercase tracking-tighter mb-8 italic">YOU FAILED</h2>
-              <button onClick={() => setGameState('LOBBY')} className="px-16 py-6 bg-white text-black font-black rounded-full uppercase tracking-[0.2em] hover:scale-105 active:scale-95 transition-all">Thử lại sân khấu</button>
+              <button onClick={() => { setGameState('LOBBY'); fetchGlobalLeaderboard(); }} className="px-16 py-6 bg-white text-black font-black rounded-full uppercase tracking-[0.2em] hover:scale-105 active:scale-95 transition-all">Thử lại sân khấu</button>
           </div>
       )}
 
@@ -393,7 +435,7 @@ const AuGame = () => {
       {gameState === 'RESULT' && (
           <div className="h-screen flex items-center justify-center p-6 bg-black w-full">
               <div className="bg-white/5 backdrop-blur-2xl p-16 rounded-[4rem] border border-white/10 shadow-2xl max-w-xl w-full text-center">
-                  <h2 className="text-6xl font-black italic text-white uppercase mb-12 tracking-tighter">BẢN NHẠC XONG!</h2>
+                  <h2 className="text-6xl font-black italic text-white uppercase mb-12 tracking-tighter">COMPLETE!</h2>
                   <div className="grid grid-cols-2 gap-6 mb-12">
                       <div className="bg-white/5 p-6 rounded-[2rem] border border-white/5">
                           <p className="text-[10px] text-purple-400 font-black uppercase tracking-widest mb-2">Max Combo</p>
