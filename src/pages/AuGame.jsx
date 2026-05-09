@@ -48,7 +48,32 @@ const AuGame = () => {
   const userInputRef = useRef([]);
   const isFailedSeqRef = useRef(false);
   const levelRef = useRef(4);
-  const perfectComboRef = useRef(0); // Bộ đếm chuỗi Perfect liên tiếp
+  const perfectComboRef = useRef(0); 
+
+  // --- HỆ THỐNG ÂM THANH (SFX) ---
+  const sfxRef = useRef(null);
+
+  useEffect(() => {
+    // Khởi tạo các file âm thanh vào bộ nhớ
+    sfxRef.current = {
+      perfect: new Audio('/music/7 sould dance/perfect.ogg'),
+      great: new Audio('/music/7 sould dance/good.ogg'), // Map GREAT vào âm thanh good.ogg
+      cool: new Audio('/music/7 sould dance/cool.ogg'),
+      fail: new Audio('/music/7 sould dance/fail.ogg'),
+      missKey: new Audio('/music/7 sould dance/normal_miss.ogg'),
+      readyGo: new Audio('/music/7 sould dance/ready_go.ogg'),
+      countdown: new Audio('/music/7 sould dance/demnguoc.ogg'),
+      end: new Audio('/music/7 sould dance/seg_end.ogg'),
+    };
+  }, []);
+
+  // Hàm gọi phát âm thanh nhanh (Reset lại từ đầu để có thể phát đè liên tục)
+  const playSFX = (type) => {
+    if (sfxRef.current && sfxRef.current[type]) {
+        sfxRef.current[type].currentTime = 0;
+        sfxRef.current[type].play().catch(() => {});
+    }
+  };
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -140,21 +165,26 @@ const AuGame = () => {
     setIsFailedSeq(false);
   };
 
+  // --- LOGIC ĐẾM LÙI CÓ KÈM ÂM THANH (PREPARING) ---
   useEffect(() => {
     if (gameState === 'PREPARING') {
       if (prepCountdown > 0) {
+        playSFX('countdown'); // Phát nhạc đếm ngược 3-2-1
         const t = setTimeout(() => setPrepCountdown(prev => prev - 1), 1000);
         return () => clearTimeout(t);
-      } else {
-        setGameState('PLAYING');
-        const initialLv = currentTrack.difficulty === 'Expert' ? 8 : currentTrack.difficulty === 'Hard' ? 7 : 4;
-        setLevel(initialLv); levelRef.current = initialLv; cycleRef.current = 0; perfectComboRef.current = 0;
-        loadNextMeasure(0);
+      } else if (prepCountdown === 0) {
+        playSFX('readyGo'); // Phát Ready Go khi về 0
+        const t = setTimeout(() => {
+            setGameState('PLAYING');
+            const initialLv = currentTrack.difficulty === 'Expert' ? 8 : currentTrack.difficulty === 'Hard' ? 7 : 4;
+            setLevel(initialLv); levelRef.current = initialLv; cycleRef.current = 0; perfectComboRef.current = 0;
+            loadNextMeasure(0);
+        }, 1500); // Dừng tĩnh 1.5 giây đợi tiếng Ready Go đọc xong rồi mới thả nhạc
+        return () => clearTimeout(t);
       }
     }
   }, [gameState, prepCountdown, currentTrack]);
 
-  // CƠ CHẾ TÍNH ĐIỂM CHUẨN: CHỈ PERFECT MỚI ĐƯỢC NHÂN COMBO VÀ CỘNG DỒN
   const processJudgment = (judg) => {
     setJudgment({ text: judg, id: Date.now() });
     setTimeout(() => setJudgment(prev => prev?.text === judg ? null : prev), 400);
@@ -166,32 +196,36 @@ const AuGame = () => {
     let isSuccess = false;
     let hpAdd = 0;
 
-    // 1 nút = 10 điểm (Tính toán dựa trên số nút thực tế của lượt đó)
     const baseKeyScore = targetSeqRef.current.length * 10;
 
     if (judg === 'PERFECT') {
+        playSFX('perfect');
         perfectComboRef.current += 1;
         scoreAdd = baseKeyScore + (10 * perfectComboRef.current);
         isSuccess = true; hpAdd = 8; 
-        setCombo(perfectComboRef.current); // Tăng Combo cho Perfect
+        setCombo(perfectComboRef.current);
     } else if (judg === 'GREAT') {
-        perfectComboRef.current = 0; // Trượt Perfect -> Đứt chuỗi Perfect
+        playSFX('great');
+        perfectComboRef.current = 0; 
         scoreAdd = baseKeyScore + 5;
         isSuccess = true; hpAdd = 3; 
-        setCombo(0); // Cắt chuỗi
+        setCombo(0); 
     } else if (judg === 'COOL') {
+        playSFX('cool');
         perfectComboRef.current = 0; 
         scoreAdd = baseKeyScore + 2;
         isSuccess = true; hpAdd = 1; 
         setCombo(0); 
     } else if (judg === 'BAD') {
+        playSFX('fail');
         perfectComboRef.current = 0; 
-        scoreAdd = 0; // Không có điểm
+        scoreAdd = 0; 
         hpAdd = -15; 
         setCombo(0); 
     } else { // MISS
+        playSFX('fail');
         perfectComboRef.current = 0; 
-        scoreAdd = 0; // Không có điểm
+        scoreAdd = 0; 
         hpAdd = -25; 
         setCombo(0); 
     }
@@ -206,7 +240,6 @@ const AuGame = () => {
 
     setMaxCombo(prev => Math.max(prev, perfectComboRef.current));
     
-    // Gỡ bỏ hiệu ứng Burst, chỉ giữ lại hiệu ứng Rung màn hình khi Perfect
     if (judg === 'PERFECT') {
         setIsShaking(true);
         setTimeout(() => setIsShaking(false), 300);
@@ -219,13 +252,12 @@ const AuGame = () => {
     });
   };
 
-  // --- QUẢN LÝ DỪNG/PHÁT NHẠC ĐỘC LẬP CHUẨN XÁC ---
   useEffect(() => {
     if (!audioRef.current) return;
     if (gameState === 'PLAYING' && !isPaused) {
         audioRef.current.play().catch(e => console.warn("Audio play issue:", e));
     } else {
-        audioRef.current.pause(); // Nhạc sẽ lập tức dừng khi isPaused = true
+        audioRef.current.pause();
     }
   }, [isPaused, gameState]);
 
@@ -238,7 +270,6 @@ const AuGame = () => {
       setGameState('LOBBY'); setIsPaused(false); fetchGlobalLeaderboard(); 
   };
 
-  // TỰ ĐỘNG CHẠY & CHUYỂN NHỊP (AUTO-SYNC)
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused || !currentTrack) return;
     const bps = currentTrack.bpm / 60;
@@ -251,7 +282,6 @@ const AuGame = () => {
          
          setSliderPos((currentTime % measureSec) / measureSec * 100);
 
-         // Quả cầu trôi đến vạch 100% (Sang vòng mới)
          if (currentCycle > cycleRef.current) {
              if (targetSeqRef.current.length > 0 && !hasJudgedRef.current) {
                  processJudgment('MISS');
@@ -294,9 +324,12 @@ const AuGame = () => {
         setUserInput(nextInput);
         
         const expectedKey = targetSeqRef.current[nextInput.length - 1].actual;
+        
+        // CƠ CHẾ GÕ SAI PHÍM PHÁT ÂM THANH
         if (expectedKey !== pressedKey) {
             isFailedSeqRef.current = true;
             setIsFailedSeq(true);
+            playSFX('missKey'); // Phát tiếng tịt Miss
         }
       }
 
@@ -325,6 +358,8 @@ const AuGame = () => {
 
   const handleGameEnd = async () => {
       setGameState('RESULT');
+      playSFX('end'); // Phát âm thanh chốt điểm bài nhạc
+      
       try {
           if (!userData.phone) return;
           const globalRef = doc(db, 'au_global_leaderboard', userData.phone);
@@ -335,7 +370,6 @@ const AuGame = () => {
       } catch (e) { console.error(e); }
   };
 
-  // TÍNH TOÁN SỐ SAO DỰA TRÊN ĐỘ KHÓ
   const getDifficultyStars = (diff) => {
       switch(diff) {
           case 'Easy': return 2;
@@ -428,7 +462,6 @@ const AuGame = () => {
                   </div>
               )}
 
-              {/* KHU VỰC TRÁI: NĂNG LƯỢNG VÀ ĐIỂM SỐ */}
               <div className="absolute left-8 top-1/3 -translate-y-1/2 flex flex-col">
                   <div className="mb-8 p-4 bg-black/40 backdrop-blur-md rounded-2xl border border-white/5 w-48">
                       <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em] mb-2">ENERGY</p>
@@ -445,7 +478,6 @@ const AuGame = () => {
                   </div>
               </div>
 
-              {/* ĐÁNH GIÁ NỔI BẬT GIỮA MÀN HÌNH */}
               {judgment && (
                   <div key={judgment.id} className="absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 z-50 animate-in zoom-in duration-100 flex flex-col items-center pointer-events-none drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
                       <h2 className={`text-6xl sm:text-7xl font-black italic uppercase tracking-tighter
@@ -459,17 +491,13 @@ const AuGame = () => {
                   </div>
               )}
 
-              {/* KHU VỰC ĐIỀU KHIỂN ĐÁY GIỮA */}
               <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-4">
-                  
-                  {/* Thanh Nhịp điệu */}
                   <div className="relative w-full h-4 bg-black/80 rounded-full border border-white/20 shadow-[0_0_20px_rgba(34,211,238,0.2)]">
                       <div className="absolute left-[75%] right-[5%] inset-y-0 bg-cyan-500/20 rounded-full"></div>
                       <div className="absolute left-[85%] w-[3px] h-[150%] top-[-25%] bg-white shadow-[0_0_10px_white,0_0_20px_cyan] rounded-full z-10"></div>
                       <div className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white shadow-[0_0_15px_white,0_0_30px_cyan] transition-transform z-20" style={{ left: `${sliderPos}%` }}></div>
                   </div>
 
-                  {/* Phím bấm mũi tên */}
                   <div className={`flex justify-center gap-3 sm:gap-4 mt-8 h-20 transition-all ${isFailedSeq ? 'opacity-30 blur-[2px]' : ''}`}>
                       {targetSequence.length > 0 ? targetSequence.map((item, i) => (
                           <span key={i} className={`text-5xl sm:text-6xl font-black drop-shadow-[0_10px_10px_rgba(0,0,0,0.8)] transition-all flex-shrink-0 ${
@@ -481,12 +509,9 @@ const AuGame = () => {
                       )) : <span className="text-white/30 italic font-black uppercase tracking-[0.5em] text-2xl py-4 animate-pulse">Rest Time</span>}
                   </div>
 
-                  {/* Thanh Thông Tin Nhạc + Thanh Tiến Trình Bài Hát (Progress Bar) */}
                   <div className="mt-8 flex flex-col items-center">
                       <div className="flex items-center gap-4 bg-black/60 backdrop-blur-xl border border-white/10 pl-2 pr-6 py-2 rounded-full shadow-2xl relative overflow-hidden">
-                          {/* Thanh tiến trình chạy ngang làm nền mờ */}
                           <div className="absolute bottom-0 left-0 h-1 bg-cyan-400/80 transition-all duration-300" style={{ width: `${musicProgress}%` }}></div>
-                          
                           <img src={currentTrack?.cover} className="w-10 h-10 rounded-full object-cover border border-white/20 z-10" alt="cover" />
                           <div className="flex flex-col z-10">
                               <span className="font-black text-sm text-white tracking-tight">{currentTrack?.title}</span>
@@ -496,7 +521,6 @@ const AuGame = () => {
                   </div>
               </div>
 
-              {/* GÓC TRÁI DƯỚI: ĐỘ KHÓ (SAO) VÀ LEVEL PHÍM */}
               <div className="absolute bottom-10 left-8 flex flex-col gap-1 drop-shadow-[0_5px_10px_rgba(0,0,0,0.8)]">
                   <span className="font-black italic text-2xl text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 uppercase">
                      {currentTrack?.difficulty || 'NORMAL'}
@@ -510,18 +534,18 @@ const AuGame = () => {
           </div>
       )}
 
-      {/* CÁC TRẠNG THÁI LOADING, PREPARING, RESULT, GAME_OVER GIỮ NGUYÊN */}
+      {/* HIỂN THỊ CHỮ READY GO SAU KHI ĐẾM NGƯỢC */}
       {gameState === 'PREPARING' && (
           <div className="h-screen flex items-center justify-center relative z-10">
-              <div className="text-[20rem] leading-none font-black italic text-white drop-shadow-[0_0_50px_cyan] animate-bounce text-center select-none">
-                  {prepCountdown > 0 ? prepCountdown : 'GO!'}
+              <div className="text-[12rem] sm:text-[15rem] leading-none font-black italic text-white drop-shadow-[0_0_50px_cyan] animate-bounce text-center select-none uppercase">
+                  {prepCountdown > 0 ? prepCountdown : 'READY GO!'}
               </div>
           </div>
       )}
       
       {gameState === 'RESULT' && (
           <div className="h-screen flex items-center justify-center p-6 w-full relative z-10">
-              <div className="bg-black/60 backdrop-blur-2xl p-16 rounded-[4rem] border border-white/10 shadow-[0_0_100px_rgba(34,211,238,0.2)] max-w-xl w-full text-center">
+              <div className="bg-black/60 backdrop-blur-2xl p-16 rounded-[4rem] border border-white/10 shadow-[0_0_100px_rgba(34,211,238,0.2)] max-w-xl w-full text-center animate-in zoom-in duration-500">
                   <h2 className="text-6xl font-black italic text-white uppercase mb-12 tracking-tighter">STAGE CLEARED</h2>
                   <div className="grid grid-cols-2 gap-6 mb-12">
                       <div className="bg-white/5 p-6 rounded-[2rem]">
