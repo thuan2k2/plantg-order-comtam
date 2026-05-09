@@ -7,6 +7,31 @@ import { getRankInfo } from '../utils/rankUtils';
 const ARROW_SYMBOLS = { UP: '⬆️', DOWN: '⬇️', LEFT: '⬅️', RIGHT: '➡️' };
 const OPPOSITE_KEYS = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
 
+// --- ĐÃ THÊM: Custom Hook tạo hiệu ứng số nhảy cuộn (Rolling Number) ---
+function useRollingScore(value, duration = 300) {
+    const [displayValue, setDisplayValue] = useState(value);
+    
+    useEffect(() => {
+        let startTimestamp = null;
+        const startValue = displayValue;
+        
+        const step = (timestamp) => {
+            if (!startTimestamp) startTimestamp = timestamp;
+            const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+            
+            setDisplayValue(Math.floor(progress * (value - startValue) + startValue));
+            
+            if (progress < 1) {
+                window.requestAnimationFrame(step);
+            }
+        };
+        
+        window.requestAnimationFrame(step);
+    }, [value, duration]);
+    
+    return displayValue;
+}
+
 const AuGame = () => {
   const navigate = useNavigate();
   const [gameState, setGameState] = useState('LOBBY'); 
@@ -29,6 +54,10 @@ const AuGame = () => {
   const [hp, setHp] = useState(100);
   const [level, setLevel] = useState(4); 
   const [score, setScore] = useState(0);
+  
+  // Tích hợp Hook cuộn điểm cho Score
+  const displayScore = useRollingScore(score, 400); 
+
   const [combo, setCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
   const [judgment, setJudgment] = useState(null); 
@@ -39,6 +68,9 @@ const AuGame = () => {
   const [isFailedSeq, setIsFailedSeq] = useState(false);
   const [musicProgress, setMusicProgress] = useState(0);
   const [measureIndex, setMeasureIndex] = useState(0);
+
+  // Trạng thái dùng để kích hoạt hiệu ứng Rest Wave
+  const [isResting, setIsResting] = useState(false);
 
   // Visual Effects
   const [isShaking, setIsShaking] = useState(false);
@@ -206,6 +238,7 @@ const AuGame = () => {
                 setGameState('PREPARING'); 
                 setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMeasureIndex(0); setMusicProgress(0);
                 prevLevelRangeRef.current = null; 
+                setIsResting(false);
             }, 500);
         } else setLoadMusicProgress(prog);
     }, 150);
@@ -237,17 +270,21 @@ const AuGame = () => {
 
     if (len > 0) {
         hasStartedNotesRef.current = true; 
+        setIsResting(false); // Đang có phím -> Tắt hiệu ứng Rest Wave
     }
 
     if (currentRange > 1 && currentRange !== prevLevelRangeRef.current) {
         playSFX(`level${currentRange}`, 'sfx');
-    } else if (currentRange === 0 && hasStartedNotesRef.current && prevLevelRangeRef.current !== 0) {
-        const restSFX = ['rest1', 'rest2', 'rest3', 'rest4'];
-        const available = restSFX.filter(r => r !== lastRestMusicRef.current);
-        const randomSFX = available[Math.floor(Math.random() * available.length)];
-        
-        playSFX(randomSFX, 'sfx');
-        lastRestMusicRef.current = randomSFX; 
+    } else if (currentRange === 0 && hasStartedNotesRef.current) {
+        setIsResting(true); // Nhịp rỗng -> Bật hiệu ứng Rest Wave
+        if (prevLevelRangeRef.current !== 0) {
+            const restSFX = ['rest1', 'rest2', 'rest3', 'rest4'];
+            const available = restSFX.filter(r => r !== lastRestMusicRef.current);
+            const randomSFX = available[Math.floor(Math.random() * available.length)];
+            
+            playSFX(randomSFX, 'sfx');
+            lastRestMusicRef.current = randomSFX; 
+        }
     }
     
     prevLevelRangeRef.current = currentRange; 
@@ -485,7 +522,7 @@ const AuGame = () => {
       
       <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"></div>
 
-      {/* --- CSS CHO TIẾN TRÌNH VIỀN (EDGE PROGRESS & PILL PROGRESS) --- */}
+      {/* --- CSS CHO TIẾN TRÌNH VIỀN VÀ CÁC HIỆU ỨNG MỚI --- */}
       <style>{`
         .modern-impact { animation: impact 0.2s cubic-bezier(.36,.07,.19,.97) both; }
         @keyframes impact { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02) translateY(5px); } }
@@ -495,21 +532,39 @@ const AuGame = () => {
         
         .edge-progress {
             position: absolute; inset: 0; pointer-events: none; z-index: 30;
-            padding: 4px; /* Độ dày viền xung quanh màn hình */
+            padding: 4px; 
             background: conic-gradient(from 0deg at 50% 50%, #22d3ee var(--music-progress), transparent 0);
             -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
             -webkit-mask-composite: xor;
             mask-composite: exclude;
+            transition: all 0.3s ease;
         }
+
+        /* ĐÃ THÊM: Class viền sóng phát sáng khi Rest Time */
+        .edge-rest-wave {
+            background: linear-gradient(90deg, #22d3ee, #a855f7, #22d3ee);
+            background-size: 200% 200%;
+            animation: waveFlow 2s linear infinite, glowPulse 1.5s ease-in-out infinite alternate;
+            padding: 8px; /* Dày hơn lúc bình thường */
+            box-shadow: inset 0 0 50px rgba(34,211,238,0.5);
+        }
+        @keyframes waveFlow { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+        @keyframes glowPulse { 0% { opacity: 0.7; filter: drop-shadow(0 0 10px #22d3ee); } 100% { opacity: 1; filter: drop-shadow(0 0 30px #a855f7); } }
+
         .pill-progress {
             position: absolute; inset: 0; pointer-events: none; z-index: 0;
             border-radius: 9999px;
-            padding: 3px; /* Độ dày viền xung quanh thông tin nhạc */
+            padding: 3px; 
             background: conic-gradient(from 0deg at 50% 50%, #22d3ee var(--music-progress), transparent 0);
             -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
             -webkit-mask-composite: xor;
             mask-composite: exclude;
         }
+
+        /* ĐÃ THÊM: Xoay đĩa đệm (Avatar Nhạc) */
+        .album-rotate { animation: spin 4s linear infinite; }
+        .album-rotate-paused { animation-play-state: paused; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
       `}</style>
 
       {/* --- CÀI ĐẶT ÂM THANH MODAL --- */}
@@ -605,14 +660,14 @@ const AuGame = () => {
       {gameState === 'PLAYING' && (
           <div className="h-screen relative z-10 w-full overflow-hidden">
               
-              {/* --- ĐÃ THÊM: Viền Màn Hình Chạy Nhịp --- */}
-              <div className="edge-progress" style={{ '--music-progress': `${musicProgress}%` }}></div>
+              {/* --- ĐÃ SỬA: Viền Màn Hình Chạy Nhịp (Thêm hiệu ứng Rest) --- */}
+              <div className={`edge-progress ${isResting ? 'edge-rest-wave' : ''}`} style={{ '--music-progress': `${musicProgress}%` }}></div>
 
               <audio ref={audioRef} src={currentTrack?.src} onEnded={handleGameEnd} onTimeUpdate={handleTimeUpdate} className="hidden" />
               
-              <button onClick={togglePause} className="absolute top-8 right-8 z-50 bg-black/50 p-4 rounded-2xl border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all">⏸️</button>
+              {/* --- ĐÃ ĐỔI VỊ TRÍ: Nút Pause chuyển sang Góc Trái --- */}
+              <button onClick={togglePause} className="absolute top-8 left-8 z-50 bg-black/50 p-4 rounded-2xl border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all">⏸️</button>
 
-              {/* --- ĐÃ SỬA: Lớp mờ khi Pause --- */}
               {isPaused && (
                   <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[100] flex flex-col items-center justify-center animate-in fade-in">
                       <h2 className="text-8xl font-black italic text-white mb-16 tracking-tighter drop-shadow-[0_0_20px_rgba(0,0,0,0.8)]">PAUSED</h2>
@@ -623,7 +678,7 @@ const AuGame = () => {
                   </div>
               )}
 
-              {/* --- ĐÃ ĐỔI CHỖ: KHU VỰC TOP-CENTER (NĂNG LƯỢNG) --- */}
+              {/* KHU VỰC TOP-CENTER (NĂNG LƯỢNG) */}
               <div className="absolute top-8 left-1/2 -translate-x-1/2 flex flex-col items-center w-full max-w-md z-40">
                   <div className="w-full bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 shadow-lg">
                       <div className="flex justify-between items-end mb-2 px-1">
@@ -636,12 +691,13 @@ const AuGame = () => {
                   </div>
               </div>
 
-              {/* --- ĐÃ SỬA: KHU VỰC TRÁI (ĐIỂM SỐ KHÔNG BỊ CẮT) --- */}
-              <div className="absolute left-8 top-1/3 -translate-y-1/2 flex flex-col w-64 sm:w-80 lg:w-96">
+              {/* KHU VỰC TRÁI GIỮA (ĐIỂM SỐ DẠNG CUỘN) */}
+              <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col w-64 sm:w-80 lg:w-96">
                   <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full">
                       <p className="text-sm font-black italic text-white/50 uppercase tracking-[0.5em] mb-[-5px]">SCORE</p>
                       <p className="text-5xl sm:text-6xl lg:text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 tracking-tighter break-words leading-none py-2">
-                          {score.toLocaleString()}
+                          {/* SỬ DỤNG BIẾN ĐIỂM SỐ CUỘN */}
+                          {displayScore.toLocaleString()}
                       </p>
                   </div>
               </div>
@@ -663,7 +719,7 @@ const AuGame = () => {
               {/* KHU VỰC ĐIỀU KHIỂN ĐÁY GIỮA */}
               <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-4">
                   
-                  {/* --- ĐÃ SỬA: Thanh Nhịp điệu và Level --- */}
+                  {/* Thanh Nhịp điệu và Level */}
                   <div className="flex items-center gap-4 w-full px-4">
                       <span className="font-black italic text-cyan-400 text-xl tracking-wider drop-shadow-[0_0_10px_cyan]">
                           LV {Math.floor(level)}
@@ -686,12 +742,14 @@ const AuGame = () => {
                       )) : <span className="text-white/30 italic font-black uppercase tracking-[0.5em] text-2xl py-4 animate-pulse">Rest Time</span>}
                   </div>
 
-                  {/* --- ĐÃ SỬA: Thanh Thông Tin Nhạc + Viền Progress (Pill) --- */}
+                  {/* Thanh Thông Tin Nhạc + Viền Progress (Pill) */}
                   <div className="mt-8 flex flex-col items-center">
                       <div className="flex items-center gap-4 bg-black/60 backdrop-blur-xl pl-3 pr-8 py-3 rounded-full shadow-2xl relative">
                           <div className="pill-progress" style={{ '--music-progress': `${musicProgress}%` }}></div>
                           
-                          <img src={currentTrack?.cover} className="w-14 h-14 rounded-full object-cover border border-white/20 z-10" alt="cover" />
+                          {/* --- ĐÃ SỬA: Ảnh Avatar Xoay (Dừng khi Pause) --- */}
+                          <img src={currentTrack?.cover} className={`w-14 h-14 rounded-full object-cover border border-white/20 z-10 album-rotate ${isPaused ? 'album-rotate-paused' : ''}`} alt="cover" />
+                          
                           <div className="flex flex-col z-10">
                               <span className="font-black text-lg text-white tracking-tight leading-none mb-1">{currentTrack?.title}</span>
                               <span className="text-xs text-cyan-400 font-bold uppercase tracking-widest leading-none">{currentTrack?.artist}</span>
@@ -700,6 +758,7 @@ const AuGame = () => {
                   </div>
               </div>
 
+              {/* GÓC TRÁI DƯỚI: ĐỘ KHÓ (SAO) */}
               <div className="absolute bottom-10 left-8 flex flex-col gap-1 drop-shadow-[0_5px_10px_rgba(0,0,0,0.8)]">
                   <span className="font-black italic text-2xl text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 uppercase">
                      {currentTrack?.difficulty || 'NORMAL'}
