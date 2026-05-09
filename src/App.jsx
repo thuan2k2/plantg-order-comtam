@@ -13,13 +13,12 @@ import Order from './pages/Order';
 import CheckOrder from './pages/CheckOrder';
 import UserSettings from './pages/UserSettings'; 
 import RewardCenter from './pages/RewardCenter'; 
-// MỚI: Import trang Game AU Nhân phẩm
 import AuGame from './pages/AuGame';
 
 // Import Widget Chat dành cho Khách hàng
 import CustomerChat from './components/CustomerChat';
 
-// --- MỚI: Import Vệ sĩ Bảo mật ---
+// Import Vệ sĩ Bảo mật
 import SecurityGuard from './components/SecurityGuard';
 
 // Admin Pages
@@ -38,9 +37,10 @@ import ManageEvents from './pages/Admin/ManageEvents';
 import ManageRatings from './pages/Admin/ManageRatings'; 
 import ManageAllOrders from './pages/Admin/ManageAllOrders'; 
 import ManageRanks from './pages/Admin/ManageRanks';
-
-// MỚI: Import trang AdminLogs
 import AdminLogs from './pages/Admin/AdminLogs';
+
+// MỚI: Import Tool tạo Nhịp cho game Au
+import BeatmapMaker from './pages/BeatmapMaker';
 
 // CSS Toàn cục
 import './index.css';
@@ -76,11 +76,9 @@ const ProtectedAdminRoute = ({ children }) => {
 };
 
 function App() {
-  // --- MỚI: State lưu SĐT để truyền cho Security Guard ---
   const [phone, setPhone] = useState('');
 
   useEffect(() => {
-    // ĐÃ TỐI ƯU: Sử dụng Event Listener thay vì setInterval để giảm tải trình duyệt và phản hồi tức thì
     const checkPhone = () => {
       try {
         const recentPhones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
@@ -93,11 +91,10 @@ function App() {
       }
     };
     
-    checkPhone(); // Check ngay khi load
+    checkPhone(); 
     
-    // Lắng nghe thay đổi từ LocalStorage (khi đăng nhập/đăng xuất)
     window.addEventListener('storage', checkPhone);
-    window.addEventListener('auth-change', checkPhone); // Custom event cho update nội bộ
+    window.addEventListener('auth-change', checkPhone); 
     
     return () => {
       window.removeEventListener('storage', checkPhone);
@@ -118,8 +115,6 @@ function App() {
             <Route path="/checkorder" element={<CheckOrder />} />
             <Route path="/settings" element={<UserSettings />} /> 
             <Route path="/rewards" element={<RewardCenter />} />
-            
-            {/* CẬP NHẬT: Thêm định tuyến cho game AU */}
             <Route path="/au" element={<AuGame />} />
 
             {/* --- Cấu trúc các trang dành cho Admin --- */}
@@ -143,14 +138,13 @@ function App() {
               <Route path="communication" element={<ManageCommunication />} />
               <Route path="events" element={<ManageEvents />} />
               <Route path="ratings" element={<ManageRatings />} />
-              
               <Route path="all-orders" element={<ManageAllOrders />} />
               <Route path="ranks" element={<ManageRanks />} />
-              
-              {/* ĐÃ THÊM: Route cho trang Nhật ký Bảo mật */}
               <Route path="security-logs" element={<AdminLogs />} />
-              
               <Route path="settings" element={<AdminSettings />} /> 
+
+              {/* ĐÃ THÊM: Route cho Tool tạo nhịp Au */}
+              <Route path="beatmap" element={<BeatmapMaker />} />
             </Route>
 
             {/* --- Route xử lý lỗi 404 --- */}
@@ -174,8 +168,6 @@ function App() {
           </Routes>
 
           <CustomerChat />
-
-          {/* --- MỚI: Tích hợp Vệ sĩ Bảo vệ Toàn hệ thống --- */}
           <SecurityGuard phone={phone} />
           
         </div>
