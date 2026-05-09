@@ -30,11 +30,11 @@ const AuGame = () => {
   const [userInput, setUserInput] = useState([]);
   const [targetSequence, setTargetSequence] = useState([]);
   const [isFailedSeq, setIsFailedSeq] = useState(false);
+  const [musicProgress, setMusicProgress] = useState(0);
   const [measureIndex, setMeasureIndex] = useState(0);
 
   // Visual Effects
   const [isShaking, setIsShaking] = useState(false);
-  const [burstEffect, setBurstEffect] = useState(false);
   const [loadProgress, setLoadMusicProgress] = useState(0);
   const [prepCountdown, setPrepCountdown] = useState(3);
 
@@ -109,7 +109,7 @@ const AuGame = () => {
             setLoadMusicProgress(100); clearInterval(interval);
             setTimeout(() => {
                 setGameState('PREPARING'); 
-                setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMeasureIndex(0);
+                setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMeasureIndex(0); setMusicProgress(0);
             }, 500);
         } else setLoadMusicProgress(prog);
     }, 150);
@@ -154,7 +154,7 @@ const AuGame = () => {
     }
   }, [gameState, prepCountdown, currentTrack]);
 
-  // CƠ CHẾ TÍNH ĐIỂM MỚI (1 NÚT = 10 ĐIỂM)
+  // CƠ CHẾ TÍNH ĐIỂM CHUẨN: CHỈ PERFECT MỚI ĐƯỢC NHÂN COMBO VÀ CỘNG DỒN
   const processJudgment = (judg) => {
     setJudgment({ text: judg, id: Date.now() });
     setTimeout(() => setJudgment(prev => prev?.text === judg ? null : prev), 400);
@@ -172,23 +172,28 @@ const AuGame = () => {
     if (judg === 'PERFECT') {
         perfectComboRef.current += 1;
         scoreAdd = baseKeyScore + (10 * perfectComboRef.current);
-        isSuccess = true; hpAdd = 8; setCombo(c => c + 1);
+        isSuccess = true; hpAdd = 8; 
+        setCombo(perfectComboRef.current); // Tăng Combo cho Perfect
     } else if (judg === 'GREAT') {
         perfectComboRef.current = 0; // Trượt Perfect -> Đứt chuỗi Perfect
         scoreAdd = baseKeyScore + 5;
-        isSuccess = true; hpAdd = 3; setCombo(c => c + 1);
+        isSuccess = true; hpAdd = 3; 
+        setCombo(0); // Cắt chuỗi
     } else if (judg === 'COOL') {
         perfectComboRef.current = 0; 
         scoreAdd = baseKeyScore + 2;
-        isSuccess = true; hpAdd = 1; setCombo(c => c + 1);
+        isSuccess = true; hpAdd = 1; 
+        setCombo(0); 
     } else if (judg === 'BAD') {
         perfectComboRef.current = 0; 
-        scoreAdd = 0; // BAD: Không có điểm
-        hpAdd = -15; setCombo(0);
+        scoreAdd = 0; // Không có điểm
+        hpAdd = -15; 
+        setCombo(0); 
     } else { // MISS
         perfectComboRef.current = 0; 
-        scoreAdd = 0; // MISS: Không có điểm
-        hpAdd = -25; setCombo(0);
+        scoreAdd = 0; // Không có điểm
+        hpAdd = -25; 
+        setCombo(0); 
     }
 
     setScore(s => s + scoreAdd);
@@ -199,11 +204,12 @@ const AuGame = () => {
         return newHp;
     });
 
-    setMaxCombo(prev => Math.max(prev, combo + (isSuccess ? 1 : 0)));
+    setMaxCombo(prev => Math.max(prev, perfectComboRef.current));
     
+    // Gỡ bỏ hiệu ứng Burst, chỉ giữ lại hiệu ứng Rung màn hình khi Perfect
     if (judg === 'PERFECT') {
-        setBurstEffect(true); setIsShaking(true);
-        setTimeout(() => { setBurstEffect(false); setIsShaking(false); }, 300);
+        setIsShaking(true);
+        setTimeout(() => setIsShaking(false), 300);
     }
 
     setLevel(prev => {
@@ -211,6 +217,25 @@ const AuGame = () => {
         levelRef.current = Math.floor(newLv);
         return Math.floor(newLv);
     });
+  };
+
+  // --- QUẢN LÝ DỪNG/PHÁT NHẠC ĐỘC LẬP CHUẨN XÁC ---
+  useEffect(() => {
+    if (!audioRef.current) return;
+    if (gameState === 'PLAYING' && !isPaused) {
+        audioRef.current.play().catch(e => console.warn("Audio play issue:", e));
+    } else {
+        audioRef.current.pause(); // Nhạc sẽ lập tức dừng khi isPaused = true
+    }
+  }, [isPaused, gameState]);
+
+  const togglePause = () => {
+      setIsPaused(prev => !prev);
+  };
+
+  const handleLeaveGame = () => {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
+      setGameState('LOBBY'); setIsPaused(false); fetchGlobalLeaderboard(); 
   };
 
   // TỰ ĐỘNG CHẠY & CHUYỂN NHỊP (AUTO-SYNC)
@@ -228,11 +253,9 @@ const AuGame = () => {
 
          // Quả cầu trôi đến vạch 100% (Sang vòng mới)
          if (currentCycle > cycleRef.current) {
-             // Kéo mảng phím ở vòng VỪA QUA xem người chơi có bỏ lỡ không (Chỉ phạt nếu có phím)
              if (targetSeqRef.current.length > 0 && !hasJudgedRef.current) {
                  processJudgment('MISS');
              }
-             // Tự động load nhịp mới (Nếu là Rest thì targetSeqRef sẽ rỗng)
              cycleRef.current = currentCycle;
              setMeasureIndex(currentCycle);
              loadNextMeasure(currentCycle);
@@ -244,26 +267,21 @@ const AuGame = () => {
     return () => cancelAnimationFrame(requestRef.current);
   }, [gameState, isPaused, currentTrack]);
 
-  const togglePause = () => {
-      if (isPaused) { audioRef.current.play().catch(() => {}); setIsPaused(false); } 
-      else { audioRef.current.pause(); setIsPaused(true); }
-  };
-
-  const handleLeaveGame = () => {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
-      setGameState('LOBBY'); setIsPaused(false); fetchGlobalLeaderboard(); 
+  const handleTimeUpdate = () => {
+    if (audioRef.current && gameState === 'PLAYING') {
+        const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+        setMusicProgress(progress || 0);
+    }
   };
 
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused) return;
     const handleKeyDown = (e) => {
-      // 1. Nhịp trống (Rest Time) hoặc đã chốt điểm -> Khóa phím
       if (targetSeqRef.current.length === 0) return;
       if (hasJudgedRef.current) return;
 
       const keyMap = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
       
-      // XỬ LÝ MŨI TÊN
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault(); 
         if (isFailedSeqRef.current) return;
@@ -282,7 +300,6 @@ const AuGame = () => {
         }
       }
 
-      // XỬ LÝ SPACE TÍNH ĐIỂM
       if (e.code === 'Space') {
         e.preventDefault();
         hasJudgedRef.current = true; 
@@ -316,6 +333,17 @@ const AuGame = () => {
               await setDoc(globalRef, { name: userData.name, bestScore: score, phone: userData.phone, timestamp: Date.now() });
           }
       } catch (e) { console.error(e); }
+  };
+
+  // TÍNH TOÁN SỐ SAO DỰA TRÊN ĐỘ KHÓ
+  const getDifficultyStars = (diff) => {
+      switch(diff) {
+          case 'Easy': return 2;
+          case 'Normal': return 4;
+          case 'Hard': return 6;
+          case 'Expert': return 8;
+          default: return 4;
+      }
   };
 
   return (
@@ -383,12 +411,12 @@ const AuGame = () => {
         </div>
       )}
 
-      {/* MÀN HÌNH CHƠI CHÍNH */}
+      {/* MÀN HÌNH CHƠI CHÍNH SLEEK UI */}
       {gameState === 'PLAYING' && (
           <div className="h-screen relative z-10 w-full">
-              <audio ref={audioRef} src={currentTrack?.src} autoPlay onEnded={handleGameEnd} className="hidden" />
+              <audio ref={audioRef} src={currentTrack?.src} onEnded={handleGameEnd} onTimeUpdate={handleTimeUpdate} className="hidden" />
               
-              <button onClick={() => setIsPaused(true)} className="absolute top-8 right-8 z-50 bg-black/50 p-4 rounded-2xl border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all">⏸️</button>
+              <button onClick={togglePause} className="absolute top-8 right-8 z-50 bg-black/50 p-4 rounded-2xl border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all">⏸️</button>
 
               {isPaused && (
                   <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex flex-col items-center justify-center animate-in fade-in">
@@ -417,7 +445,7 @@ const AuGame = () => {
                   </div>
               </div>
 
-              {/* ĐÁNH GIÁ (PERFECT/GREAT) NỔI BẬT GIỮA MÀN HÌNH */}
+              {/* ĐÁNH GIÁ NỔI BẬT GIỮA MÀN HÌNH */}
               {judgment && (
                   <div key={judgment.id} className="absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 z-50 animate-in zoom-in duration-100 flex flex-col items-center pointer-events-none drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
                       <h2 className={`text-6xl sm:text-7xl font-black italic uppercase tracking-tighter
@@ -434,11 +462,10 @@ const AuGame = () => {
               {/* KHU VỰC ĐIỀU KHIỂN ĐÁY GIỮA */}
               <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-4">
                   
-                  {/* Thanh Nhịp điệu (Slider) */}
+                  {/* Thanh Nhịp điệu */}
                   <div className="relative w-full h-4 bg-black/80 rounded-full border border-white/20 shadow-[0_0_20px_rgba(34,211,238,0.2)]">
                       <div className="absolute left-[75%] right-[5%] inset-y-0 bg-cyan-500/20 rounded-full"></div>
                       <div className="absolute left-[85%] w-[3px] h-[150%] top-[-25%] bg-white shadow-[0_0_10px_white,0_0_20px_cyan] rounded-full z-10"></div>
-                      {burstEffect && <div className="absolute top-1/2 left-[85%] -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-cyan-400/50 animate-ping z-0 pointer-events-none"></div>}
                       <div className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white shadow-[0_0_15px_white,0_0_30px_cyan] transition-transform z-20" style={{ left: `${sliderPos}%` }}></div>
                   </div>
 
@@ -451,33 +478,39 @@ const AuGame = () => {
                           }`}>
                               {ARROW_SYMBOLS[item.display]}
                           </span>
-                      )) : <span className="text-white/30 italic font-black uppercase tracking-[0.5em] text-2xl py-4 animate-pulse">Wait for beat...</span>}
+                      )) : <span className="text-white/30 italic font-black uppercase tracking-[0.5em] text-2xl py-4 animate-pulse">Rest Time</span>}
                   </div>
 
-                  {/* Thông tin bài nhạc thu gọn */}
-                  <div className="mt-8 flex items-center gap-4 bg-black/60 backdrop-blur-xl border border-white/10 pl-2 pr-6 py-2 rounded-full shadow-2xl">
-                      <img src={currentTrack?.cover} className="w-10 h-10 rounded-full object-cover border border-white/20" alt="cover" />
-                      <div className="flex flex-col">
-                          <span className="font-black text-sm text-white tracking-tight">{currentTrack?.title}</span>
-                          <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest">{currentTrack?.artist}</span>
+                  {/* Thanh Thông Tin Nhạc + Thanh Tiến Trình Bài Hát (Progress Bar) */}
+                  <div className="mt-8 flex flex-col items-center">
+                      <div className="flex items-center gap-4 bg-black/60 backdrop-blur-xl border border-white/10 pl-2 pr-6 py-2 rounded-full shadow-2xl relative overflow-hidden">
+                          {/* Thanh tiến trình chạy ngang làm nền mờ */}
+                          <div className="absolute bottom-0 left-0 h-1 bg-cyan-400/80 transition-all duration-300" style={{ width: `${musicProgress}%` }}></div>
+                          
+                          <img src={currentTrack?.cover} className="w-10 h-10 rounded-full object-cover border border-white/20 z-10" alt="cover" />
+                          <div className="flex flex-col z-10">
+                              <span className="font-black text-sm text-white tracking-tight">{currentTrack?.title}</span>
+                              <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest">{currentTrack?.artist}</span>
+                          </div>
                       </div>
                   </div>
               </div>
 
-              {/* GÓC TRÁI DƯỚI: ĐỘ KHÓ (SAO) */}
+              {/* GÓC TRÁI DƯỚI: ĐỘ KHÓ (SAO) VÀ LEVEL PHÍM */}
               <div className="absolute bottom-10 left-8 flex flex-col gap-1 drop-shadow-[0_5px_10px_rgba(0,0,0,0.8)]">
-                  <span className="font-black italic text-2xl text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">
-                     LV {Math.floor(level)}
+                  <span className="font-black italic text-2xl text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 uppercase">
+                     {currentTrack?.difficulty || 'NORMAL'}
                   </span>
                   <div className="flex gap-1 text-yellow-400 text-lg drop-shadow-[0_0_10px_yellow]">
-                      {[...Array(Math.floor(level))].map((_, i) => <span key={i}>★</span>)}
+                      {[...Array(getDifficultyStars(currentTrack?.difficulty))].map((_, i) => <span key={i}>★</span>)}
                   </div>
+                  <span className="text-white/40 font-black text-[10px] mt-1 tracking-widest uppercase">Phím: {Math.floor(level)}</span>
               </div>
 
           </div>
       )}
 
-      {/* CÁC TRẠNG THÁI KHÁC */}
+      {/* CÁC TRẠNG THÁI LOADING, PREPARING, RESULT, GAME_OVER GIỮ NGUYÊN */}
       {gameState === 'PREPARING' && (
           <div className="h-screen flex items-center justify-center relative z-10">
               <div className="text-[20rem] leading-none font-black italic text-white drop-shadow-[0_0_50px_cyan] animate-bounce text-center select-none">
