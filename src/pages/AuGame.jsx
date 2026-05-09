@@ -85,11 +85,10 @@ const AuGame = () => {
       rest4: new Audio('/music/giua tran/Outdoor_fireworks.ogg'),
     };
 
-    // Khởi tạo Nhạc Sảnh ngẫu nhiên
     const lobbyTracks = [1, 2, 3, 4, 5, 6].map(n => `/music/nhac cho/loverDance_FinishTime_${n}.ogg`);
     const randomTrack = lobbyTracks[Math.floor(Math.random() * lobbyTracks.length)];
     lobbyAudioRef.current = new Audio(randomTrack);
-    lobbyAudioRef.current.loop = true;
+    lobbyAudioRef.current.loop = false;
 
     return () => {
         clearInterval(fadeIntervalRef.current);
@@ -97,7 +96,6 @@ const AuGame = () => {
     };
   }, []);
 
-  // Thay đổi cài đặt âm lượng
   const handleVolumeChange = (key, value) => {
       const newVols = { ...volumes, [key]: parseFloat(value) };
       setVolumes(newVols);
@@ -111,10 +109,8 @@ const AuGame = () => {
       }
   };
 
-  // Quản lý trạng thái phát Nhạc Sảnh (Kèm Fade-in)
   useEffect(() => {
       if (!lobbyAudioRef.current) return;
-
       if (gameState === 'LOBBY') {
           const targetVolume = volumes.lobby;
           lobbyAudioRef.current.volume = 0;
@@ -128,21 +124,19 @@ const AuGame = () => {
                   lobbyAudioRef.current.volume = targetVolume;
                   clearInterval(fadeIntervalRef.current);
               }
-          }, 200); // Tăng dần mỗi 200ms
+          }, 200); 
       } else {
           clearInterval(fadeIntervalRef.current);
           lobbyAudioRef.current.pause();
       }
   }, [gameState]);
 
-  // Cập nhật âm lượng nhạc nhảy mỗi khi chuyển bài
   useEffect(() => {
       if (audioRef.current) {
           audioRef.current.volume = volumes.track;
       }
   }, [currentTrack, volumes.track]);
 
-  // Hàm phát âm thanh kèm Volume tùy chỉnh
   const playSFX = (type, category = 'sfx') => {
     if (sfxRef.current && sfxRef.current[type]) {
         sfxRef.current[type].currentTime = 0;
@@ -491,12 +485,31 @@ const AuGame = () => {
       
       <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"></div>
 
+      {/* --- CSS CHO TIẾN TRÌNH VIỀN (EDGE PROGRESS & PILL PROGRESS) --- */}
       <style>{`
         .modern-impact { animation: impact 0.2s cubic-bezier(.36,.07,.19,.97) both; }
         @keyframes impact { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02) translateY(5px); } }
         .custom-scrollbar::-webkit-scrollbar { width: 5px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
         .glass-card { background: rgba(0, 0, 0, 0.4); backdrop-blur: 20px; border: 1px solid rgba(255, 255, 255, 0.1); }
+        
+        .edge-progress {
+            position: absolute; inset: 0; pointer-events: none; z-index: 30;
+            padding: 4px; /* Độ dày viền xung quanh màn hình */
+            background: conic-gradient(from 0deg at 50% 50%, #22d3ee var(--music-progress), transparent 0);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+        }
+        .pill-progress {
+            position: absolute; inset: 0; pointer-events: none; z-index: 0;
+            border-radius: 9999px;
+            padding: 3px; /* Độ dày viền xung quanh thông tin nhạc */
+            background: conic-gradient(from 0deg at 50% 50%, #22d3ee var(--music-progress), transparent 0);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+        }
       `}</style>
 
       {/* --- CÀI ĐẶT ÂM THANH MODAL --- */}
@@ -507,7 +520,6 @@ const AuGame = () => {
                       <h2 className="text-2xl font-black italic text-cyan-400 uppercase tracking-widest">Cài đặt Âm thanh</h2>
                       <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-white text-2xl transition-colors">✖</button>
                   </div>
-                  
                   <div className="space-y-6">
                       <div>
                           <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Nhạc Sảnh (Lobby)</span><span>{Math.round(volumes.lobby * 100)}%</span></label>
@@ -591,37 +603,50 @@ const AuGame = () => {
 
       {/* MÀN HÌNH CHƠI CHÍNH SLEEK UI */}
       {gameState === 'PLAYING' && (
-          <div className="h-screen relative z-10 w-full">
+          <div className="h-screen relative z-10 w-full overflow-hidden">
+              
+              {/* --- ĐÃ THÊM: Viền Màn Hình Chạy Nhịp --- */}
+              <div className="edge-progress" style={{ '--music-progress': `${musicProgress}%` }}></div>
+
               <audio ref={audioRef} src={currentTrack?.src} onEnded={handleGameEnd} onTimeUpdate={handleTimeUpdate} className="hidden" />
               
               <button onClick={togglePause} className="absolute top-8 right-8 z-50 bg-black/50 p-4 rounded-2xl border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all">⏸️</button>
 
+              {/* --- ĐÃ SỬA: Lớp mờ khi Pause --- */}
               {isPaused && (
-                  <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex flex-col items-center justify-center animate-in fade-in">
-                      <h2 className="text-8xl font-black italic text-white mb-16 tracking-tighter">PAUSED</h2>
+                  <div className="fixed inset-0 bg-black/40 backdrop-blur-md z-[100] flex flex-col items-center justify-center animate-in fade-in">
+                      <h2 className="text-8xl font-black italic text-white mb-16 tracking-tighter drop-shadow-[0_0_20px_rgba(0,0,0,0.8)]">PAUSED</h2>
                       <div className="flex gap-6">
                           <button onClick={togglePause} className="px-10 py-4 bg-cyan-500 text-black font-black rounded-full uppercase tracking-widest hover:scale-105 transition-all">Tiếp tục</button>
-                          <button onClick={handleLeaveGame} className="px-10 py-4 bg-white/10 text-white font-black rounded-full uppercase tracking-widest hover:bg-red-500 transition-all">Thoát</button>
+                          <button onClick={handleLeaveGame} className="px-10 py-4 bg-white/10 text-white font-black rounded-full uppercase tracking-widest hover:bg-red-500 transition-all border border-white/20">Thoát</button>
                       </div>
                   </div>
               )}
 
-              <div className="absolute left-8 top-1/3 -translate-y-1/2 flex flex-col">
-                  <div className="mb-8 p-4 bg-black/40 backdrop-blur-md rounded-2xl border border-white/5 w-48">
-                      <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em] mb-2">ENERGY</p>
+              {/* --- ĐÃ ĐỔI CHỖ: KHU VỰC TOP-CENTER (NĂNG LƯỢNG) --- */}
+              <div className="absolute top-8 left-1/2 -translate-x-1/2 flex flex-col items-center w-full max-w-md z-40">
+                  <div className="w-full bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 shadow-lg">
+                      <div className="flex justify-between items-end mb-2 px-1">
+                          <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em]">ENERGY</p>
+                          <p className="text-[10px] text-white/50 font-black">{Math.floor(hp)}%</p>
+                      </div>
                       <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
                           <div className={`h-full transition-all duration-300 ${hp < 30 ? 'bg-red-500 shadow-[0_0_10px_red]' : 'bg-cyan-400 shadow-[0_0_10px_cyan]'}`} style={{ width: `${hp}%` }}></div>
                       </div>
                   </div>
+              </div>
 
-                  <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)]">
-                      <p className="text-sm font-black italic text-white/50 uppercase tracking-[0.5em] mb-[-10px]">SCORE</p>
-                      <p className="text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 tracking-tighter">
+              {/* --- ĐÃ SỬA: KHU VỰC TRÁI (ĐIỂM SỐ KHÔNG BỊ CẮT) --- */}
+              <div className="absolute left-8 top-1/3 -translate-y-1/2 flex flex-col w-64 sm:w-80 lg:w-96">
+                  <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full">
+                      <p className="text-sm font-black italic text-white/50 uppercase tracking-[0.5em] mb-[-5px]">SCORE</p>
+                      <p className="text-5xl sm:text-6xl lg:text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 tracking-tighter break-words leading-none py-2">
                           {score.toLocaleString()}
                       </p>
                   </div>
               </div>
 
+              {/* ĐÁNH GIÁ NỔI BẬT GIỮA MÀN HÌNH */}
               {judgment && (
                   <div key={judgment.id} className="absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 z-50 animate-in zoom-in duration-100 flex flex-col items-center pointer-events-none drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
                       <h2 className={`text-6xl sm:text-7xl font-black italic uppercase tracking-tighter
@@ -635,11 +660,19 @@ const AuGame = () => {
                   </div>
               )}
 
+              {/* KHU VỰC ĐIỀU KHIỂN ĐÁY GIỮA */}
               <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-4">
-                  <div className="relative w-full h-4 bg-black/80 rounded-full border border-white/20 shadow-[0_0_20px_rgba(34,211,238,0.2)]">
-                      <div className="absolute left-[75%] right-[5%] inset-y-0 bg-cyan-500/20 rounded-full"></div>
-                      <div className="absolute left-[85%] w-[3px] h-[150%] top-[-25%] bg-white shadow-[0_0_10px_white,0_0_20px_cyan] rounded-full z-10"></div>
-                      <div className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white shadow-[0_0_15px_white,0_0_30px_cyan] transition-transform z-20" style={{ left: `${sliderPos}%` }}></div>
+                  
+                  {/* --- ĐÃ SỬA: Thanh Nhịp điệu và Level --- */}
+                  <div className="flex items-center gap-4 w-full px-4">
+                      <span className="font-black italic text-cyan-400 text-xl tracking-wider drop-shadow-[0_0_10px_cyan]">
+                          LV {Math.floor(level)}
+                      </span>
+                      <div className="relative flex-1 h-4 bg-black/80 rounded-full border border-white/20 shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+                          <div className="absolute left-[75%] right-[5%] inset-y-0 bg-cyan-500/20 rounded-full"></div>
+                          <div className="absolute left-[85%] w-[3px] h-[150%] top-[-25%] bg-white shadow-[0_0_10px_white,0_0_20px_cyan] rounded-full z-10"></div>
+                          <div className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white shadow-[0_0_15px_white,0_0_30px_cyan] transition-transform z-20" style={{ left: `${sliderPos}%` }}></div>
+                      </div>
                   </div>
 
                   <div className={`flex justify-center gap-3 sm:gap-4 mt-8 h-20 transition-all ${isFailedSeq ? 'opacity-30 blur-[2px]' : ''}`}>
@@ -653,13 +686,15 @@ const AuGame = () => {
                       )) : <span className="text-white/30 italic font-black uppercase tracking-[0.5em] text-2xl py-4 animate-pulse">Rest Time</span>}
                   </div>
 
+                  {/* --- ĐÃ SỬA: Thanh Thông Tin Nhạc + Viền Progress (Pill) --- */}
                   <div className="mt-8 flex flex-col items-center">
-                      <div className="flex items-center gap-4 bg-black/60 backdrop-blur-xl border border-white/10 pl-2 pr-6 py-2 rounded-full shadow-2xl relative overflow-hidden">
-                          <div className="absolute bottom-0 left-0 h-1 bg-cyan-400/80 transition-all duration-300" style={{ width: `${musicProgress}%` }}></div>
-                          <img src={currentTrack?.cover} className="w-10 h-10 rounded-full object-cover border border-white/20 z-10" alt="cover" />
+                      <div className="flex items-center gap-4 bg-black/60 backdrop-blur-xl pl-3 pr-8 py-3 rounded-full shadow-2xl relative">
+                          <div className="pill-progress" style={{ '--music-progress': `${musicProgress}%` }}></div>
+                          
+                          <img src={currentTrack?.cover} className="w-14 h-14 rounded-full object-cover border border-white/20 z-10" alt="cover" />
                           <div className="flex flex-col z-10">
-                              <span className="font-black text-sm text-white tracking-tight">{currentTrack?.title}</span>
-                              <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest">{currentTrack?.artist}</span>
+                              <span className="font-black text-lg text-white tracking-tight leading-none mb-1">{currentTrack?.title}</span>
+                              <span className="text-xs text-cyan-400 font-bold uppercase tracking-widest leading-none">{currentTrack?.artist}</span>
                           </div>
                       </div>
                   </div>
@@ -672,7 +707,6 @@ const AuGame = () => {
                   <div className="flex gap-1 text-yellow-400 text-lg drop-shadow-[0_0_10px_yellow]">
                       {[...Array(getDifficultyStars(currentTrack?.difficulty))].map((_, i) => <span key={i}>★</span>)}
                   </div>
-                  <span className="text-white/40 font-black text-[10px] mt-1 tracking-widest uppercase">Phím: {Math.floor(level)}</span>
               </div>
 
           </div>
