@@ -30,7 +30,6 @@ const AuGame = () => {
   const [userInput, setUserInput] = useState([]);
   const [targetSequence, setTargetSequence] = useState([]);
   const [isFailedSeq, setIsFailedSeq] = useState(false);
-  const [musicProgress, setMusicProgress] = useState(0);
   const [measureIndex, setMeasureIndex] = useState(0);
 
   // Visual Effects
@@ -42,7 +41,7 @@ const AuGame = () => {
   const audioRef = useRef(null);
   const requestRef = useRef();
 
-  // --- REFS CHO AUTO-SYNC VÀ TÍNH ĐIỂM (Không bị delay bởi State) ---
+  // --- REFS CHO AUTO-SYNC VÀ TÍNH ĐIỂM ---
   const cycleRef = useRef(0);
   const hasJudgedRef = useRef(false);
   const targetSeqRef = useRef([]);
@@ -65,7 +64,6 @@ const AuGame = () => {
           } else { navigate('/'); }
       } catch (error) { console.error("Lỗi lấy thông tin:", error); }
     };
-    
     fetchUser();
     fetchGlobalLeaderboard(); 
     fetchMusicTracks(); 
@@ -76,9 +74,8 @@ const AuGame = () => {
     try {
         const q = query(collection(db, 'au_tracks'), orderBy('createdAt', 'desc'));
         const snapshot = await getDocs(q);
-        const tracks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setMusicList(tracks);
-    } catch (e) { console.error("Lỗi lấy danh sách bài hát:", e); }
+        setMusicList(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    } catch (e) { console.error(e); }
     setIsLoadingMusic(false);
   };
 
@@ -88,15 +85,11 @@ const AuGame = () => {
         const q = query(lbRef, orderBy('bestScore', 'desc'), limit(10));
         const querySnapshot = await getDocs(q);
         setLeaderboard(querySnapshot.docs.map(d => d.data()));
-    } catch (e) {
-        console.warn("Chưa thể lấy BXH:", e.message);
-        setLeaderboard([]);
-    }
+    } catch (e) { setLeaderboard([]); }
   };
 
   const selectTrack = async (track) => {
     if (track.requiredRank && userData.rankId !== track.requiredRank) return;
-    
     setCurrentTrack(track);
     setGameState('LOADING');
     setLoadMusicProgress(0);
@@ -107,9 +100,7 @@ const AuGame = () => {
         if (response.ok) { loadedBeatmap = await response.json(); }
     } catch (e) {}
 
-    // Gắn thêm beatmap kéo từ Firebase (nếu có) vào track
-    const finalTrack = { ...track, beatmap: loadedBeatmap || track.beatmap };
-    setCurrentTrack(finalTrack);
+    setCurrentTrack({ ...track, beatmap: loadedBeatmap || track.beatmap });
 
     let prog = 0;
     const interval = setInterval(() => {
@@ -118,13 +109,12 @@ const AuGame = () => {
             setLoadMusicProgress(100); clearInterval(interval);
             setTimeout(() => {
                 setGameState('PREPARING'); 
-                setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMusicProgress(0); setMeasureIndex(0);
+                setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMeasureIndex(0);
             }, 500);
         } else setLoadMusicProgress(prog);
     }, 150);
   };
 
-  // NẠP KỊCH BẢN PHÍM TỪ BEATMAP VÀO LƯỢT TIẾP THEO
   const loadNextMeasure = (index) => {
     let newSeq = [];
     const currentLv = levelRef.current;
@@ -132,7 +122,6 @@ const AuGame = () => {
     if (currentTrack && currentTrack.beatmap && currentTrack.beatmap[index]) {
         newSeq = currentTrack.beatmap[index];
     } else if (currentTrack && !currentTrack.beatmap) {
-        // Tự sinh phím nếu bài này chưa có file Beatmap
         const redChance = currentLv > 6 ? (currentLv - 5) * 0.12 : 0;
         for(let i = 0; i < currentLv; i++) {
             const dir = ['UP', 'DOWN', 'LEFT', 'RIGHT'][Math.floor(Math.random() * 4)];
@@ -159,16 +148,13 @@ const AuGame = () => {
       } else {
         setGameState('PLAYING');
         const initialLv = currentTrack.difficulty === 'Expert' ? 8 : currentTrack.difficulty === 'Hard' ? 7 : 4;
-        setLevel(initialLv);
-        levelRef.current = initialLv;
-        cycleRef.current = 0;
-        perfectComboRef.current = 0;
+        setLevel(initialLv); levelRef.current = initialLv; cycleRef.current = 0; perfectComboRef.current = 0;
         loadNextMeasure(0);
       }
     }
   }, [gameState, prepCountdown, currentTrack]);
 
-  // HÀM XỬ LÝ KẾT QUẢ TÍNH ĐIỂM MỚI
+  // CƠ CHẾ TÍNH ĐIỂM MỚI (1 NÚT = 10 ĐIỂM)
   const processJudgment = (judg) => {
     setJudgment({ text: judg, id: Date.now() });
     setTimeout(() => setJudgment(prev => prev?.text === judg ? null : prev), 400);
@@ -180,37 +166,29 @@ const AuGame = () => {
     let isSuccess = false;
     let hpAdd = 0;
 
-    // 1 nút = 10 điểm
+    // 1 nút = 10 điểm (Tính toán dựa trên số nút thực tế của lượt đó)
     const baseKeyScore = targetSeqRef.current.length * 10;
 
     if (judg === 'PERFECT') {
         perfectComboRef.current += 1;
         scoreAdd = baseKeyScore + (10 * perfectComboRef.current);
-        isSuccess = true;
-        hpAdd = 8;
-        setCombo(c => c + 1);
+        isSuccess = true; hpAdd = 8; setCombo(c => c + 1);
     } else if (judg === 'GREAT') {
-        perfectComboRef.current = 0; // Đứt chuỗi Perfect
+        perfectComboRef.current = 0; // Trượt Perfect -> Đứt chuỗi Perfect
         scoreAdd = baseKeyScore + 5;
-        isSuccess = true;
-        hpAdd = 3;
-        setCombo(c => c + 1);
+        isSuccess = true; hpAdd = 3; setCombo(c => c + 1);
     } else if (judg === 'COOL') {
-        perfectComboRef.current = 0;
+        perfectComboRef.current = 0; 
         scoreAdd = baseKeyScore + 2;
-        isSuccess = true;
-        hpAdd = 1;
-        setCombo(c => c + 1);
+        isSuccess = true; hpAdd = 1; setCombo(c => c + 1);
     } else if (judg === 'BAD') {
-        perfectComboRef.current = 0;
-        scoreAdd = baseKeyScore + 0;
-        hpAdd = -15;
-        setCombo(0);
+        perfectComboRef.current = 0; 
+        scoreAdd = 0; // BAD: Không có điểm
+        hpAdd = -15; setCombo(0);
     } else { // MISS
-        perfectComboRef.current = 0;
-        scoreAdd = 0;
-        hpAdd = -25;
-        setCombo(0);
+        perfectComboRef.current = 0; 
+        scoreAdd = 0; // MISS: Không có điểm
+        hpAdd = -25; setCombo(0);
     }
 
     setScore(s => s + scoreAdd);
@@ -235,7 +213,7 @@ const AuGame = () => {
     });
   };
 
-  // --- GAME LOOP: TỰ ĐỘNG CHẠY & CHUYỂN NHỊP (AUTO-SYNC) ---
+  // TỰ ĐỘNG CHẠY & CHUYỂN NHỊP (AUTO-SYNC)
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused || !currentTrack) return;
     const bps = currentTrack.bpm / 60;
@@ -248,14 +226,13 @@ const AuGame = () => {
          
          setSliderPos((currentTime % measureSec) / measureSec * 100);
 
-         // Khi quả cầu chạm mốc 100% và sang vòng mới
+         // Quả cầu trôi đến vạch 100% (Sang vòng mới)
          if (currentCycle > cycleRef.current) {
-             // Kéo mảng phím ở vòng VỪA QUA xem người chơi có bỏ lỡ không
+             // Kéo mảng phím ở vòng VỪA QUA xem người chơi có bỏ lỡ không (Chỉ phạt nếu có phím)
              if (targetSeqRef.current.length > 0 && !hasJudgedRef.current) {
                  processJudgment('MISS');
              }
-
-             // Cập nhật vòng hiện tại và load phím mới
+             // Tự động load nhịp mới (Nếu là Rest thì targetSeqRef sẽ rỗng)
              cycleRef.current = currentCycle;
              setMeasureIndex(currentCycle);
              loadNextMeasure(currentCycle);
@@ -267,13 +244,6 @@ const AuGame = () => {
     return () => cancelAnimationFrame(requestRef.current);
   }, [gameState, isPaused, currentTrack]);
 
-  const handleTimeUpdate = () => {
-    if (audioRef.current && gameState === 'PLAYING') {
-        const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
-        setMusicProgress(progress || 0);
-    }
-  };
-
   const togglePause = () => {
       if (isPaused) { audioRef.current.play().catch(() => {}); setIsPaused(false); } 
       else { audioRef.current.pause(); setIsPaused(true); }
@@ -281,22 +251,19 @@ const AuGame = () => {
 
   const handleLeaveGame = () => {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
-      setGameState('LOBBY');
-      setIsPaused(false);
-      fetchGlobalLeaderboard(); 
+      setGameState('LOBBY'); setIsPaused(false); fetchGlobalLeaderboard(); 
   };
 
-  // --- LẮNG NGHE BÀN PHÍM TỨC THÌ (Zero Latency) ---
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused) return;
     const handleKeyDown = (e) => {
-      // 1. Nếu Lượt này là Rest (trống) HOẶC người chơi đã bấm Space xong rồi -> Vô hiệu hóa phím
+      // 1. Nhịp trống (Rest Time) hoặc đã chốt điểm -> Khóa phím
       if (targetSeqRef.current.length === 0) return;
       if (hasJudgedRef.current) return;
 
       const keyMap = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
       
-      // Xử lý mũi tên
+      // XỬ LÝ MŨI TÊN
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault(); 
         if (isFailedSeqRef.current) return;
@@ -315,10 +282,10 @@ const AuGame = () => {
         }
       }
 
-      // Xử lý nút Space
+      // XỬ LÝ SPACE TÍNH ĐIỂM
       if (e.code === 'Space') {
         e.preventDefault();
-        hasJudgedRef.current = true; // Khóa mảng lại, đợi quả cầu chạy qua nhịp mới
+        hasJudgedRef.current = true; 
 
         if (isFailedSeqRef.current || userInputRef.current.length < targetSeqRef.current.length) {
             processJudgment('MISS');
@@ -346,39 +313,30 @@ const AuGame = () => {
           const globalRef = doc(db, 'au_global_leaderboard', userData.phone);
           const snap = await getDoc(globalRef);
           if (!snap.exists() || snap.data().bestScore < score) {
-              await setDoc(globalRef, { 
-                  name: userData.name, 
-                  bestScore: score, 
-                  phone: userData.phone, 
-                  timestamp: Date.now() 
-              });
+              await setDoc(globalRef, { name: userData.name, bestScore: score, phone: userData.phone, timestamp: Date.now() });
           }
-      } catch (e) { console.error("Lỗi cập nhật điểm:", e); }
+      } catch (e) { console.error(e); }
   };
 
   return (
-    <div className={`min-h-screen bg-gray-900 text-white font-sans overflow-hidden relative transition-all ${isShaking ? 'modern-impact' : ''}`}>
+    <div className={`min-h-screen bg-[url('https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1920&auto=format&fit=crop')] bg-cover bg-center text-white font-sans overflow-hidden relative transition-all ${isShaking ? 'modern-impact' : ''}`}>
       
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"></div>
+
       <style>{`
-        .modern-impact { animation: impact 0.3s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes impact {
-          0%, 100% { transform: scale(1); filter: brightness(1); }
-          50% { transform: scale(1.02); filter: brightness(1.8); }
-        }
-        .album-rotate { animation: rotate 8s linear infinite; }
-        .album-rotate-paused { animation-play-state: paused; }
-        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .modern-impact { animation: impact 0.2s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes impact { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02) translateY(5px); } }
         .custom-scrollbar::-webkit-scrollbar { width: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-        .glass-card { background: rgba(255, 255, 255, 0.03); backdrop-blur: 15px; border: 1px solid rgba(255, 255, 255, 0.05); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+        .glass-card { background: rgba(0, 0, 0, 0.4); backdrop-blur: 20px; border: 1px solid rgba(255, 255, 255, 0.1); }
       `}</style>
 
       {/* LOBBY */}
       {gameState === 'LOBBY' && (
-        <div className="max-w-6xl mx-auto py-12 px-6 animate-in fade-in duration-500">
+        <div className="relative z-10 max-w-6xl mx-auto py-12 px-6 animate-in fade-in duration-500">
            <header className="flex justify-between items-center mb-12">
-               <h1 className="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">AU PLANT G</h1>
-               <button onClick={() => navigate('/')} className="bg-white/5 hover:bg-white/10 backdrop-blur-md px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/5 transition-all">Trở về</button>
+               <h1 className="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">AU PLANT G</h1>
+               <button onClick={() => navigate('/')} className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/10 transition-all">Trở về</button>
            </header>
            
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
@@ -386,185 +344,177 @@ const AuGame = () => {
                    {isLoadingMusic ? (
                        <div className="flex flex-col items-center justify-center h-full text-white/50 space-y-4">
                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white"></div>
-                           <p className="text-xs font-black tracking-widest uppercase">Đang tải máy chủ âm nhạc...</p>
-                       </div>
-                   ) : musicList.length === 0 ? (
-                       <div className="flex flex-col items-center justify-center h-full text-white/30 text-center">
-                           <p className="text-4xl mb-4">🎵</p>
-                           <p className="text-sm font-black tracking-widest uppercase">Máy chủ chưa có bài nhạc nào</p>
+                           <p className="text-xs font-black tracking-widest uppercase">Đang tải máy chủ...</p>
                        </div>
                    ) : (
                        musicList.map(track => {
                            const isLocked = track.requiredRank && userData.rankId !== track.requiredRank;
                            return (
                                <div key={track.id} onClick={() => !isLocked && selectTrack(track)} 
-                                    className={`group relative glass-card p-5 rounded-[2.5rem] flex items-center gap-6 transition-all 
-                                    ${isLocked ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10 hover:border-purple-500/40 hover:-translate-y-1.5 hover:shadow-[0_20px_50px_rgba(168,85,247,0.15)]'}`}>
-                                   <div className="relative w-20 h-20 flex-shrink-0">
-                                       <img src={track.cover} className="w-full h-full rounded-full object-cover border-2 border-white/5 shadow-2xl group-hover:scale-105 transition-transform" alt="cover" />
-                                       {!isLocked && <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all text-xl">▶️</div>}
-                                   </div>
+                                    className={`group glass-card p-5 rounded-[2rem] flex items-center gap-6 transition-all 
+                                    ${isLocked ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10 hover:border-cyan-500/50 hover:shadow-[0_0_30px_rgba(34,211,238,0.2)]'}`}>
+                                   <img src={track.cover} className="w-20 h-20 rounded-xl object-cover shadow-2xl group-hover:scale-105 transition-transform" alt="cover" />
                                    <div className="flex-1">
                                        <h3 className="font-black text-xl tracking-tight mb-1">{track.title} {track.requiredRank && '👑'}</h3>
-                                       <p className="text-white/40 text-[10px] font-black uppercase tracking-widest">{track.artist} • <span className="text-purple-400">{track.bpm} BPM</span></p>
+                                       <p className="text-cyan-400 text-[10px] font-bold uppercase tracking-widest">{track.artist} • {track.bpm} BPM</p>
                                    </div>
-                                   <div className={`px-4 py-2 rounded-2xl font-black text-[9px] uppercase tracking-tighter ${track.difficulty === 'Expert' ? 'bg-purple-500/20 text-purple-300' : 'bg-white/5 text-white/30'}`}>{track.difficulty}</div>
-                                   {isLocked && <div className="absolute right-8 top-1/2 -translate-y-1/2 text-2xl">🔒</div>}
+                                   <div className={`px-4 py-2 rounded-2xl font-black text-[9px] uppercase tracking-tighter ${track.difficulty === 'Expert' ? 'bg-purple-500/30 text-purple-300' : 'bg-white/10 text-white/50'}`}>{track.difficulty}</div>
                                </div>
                            );
                        })
                    )}
                </div>
 
-               <div className="glass-card p-8 rounded-[3.5rem] h-fit">
-                   <h2 className="text-[10px] font-black text-purple-400 uppercase tracking-[0.4em] mb-8 flex items-center gap-2">🏆 Global Top 10</h2>
-                   <div className="space-y-5">
-                       {leaderboard.length > 0 ? leaderboard.map((item, i) => (
-                           <div key={i} className={`flex justify-between items-center bg-white/5 p-4 rounded-3xl border-l-4 ${i === 0 ? 'border-yellow-400' : 'border-white/10'}`}>
+               <div className="glass-card p-8 rounded-[3rem] h-fit">
+                   <h2 className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.4em] mb-8 flex items-center gap-2">🏆 TOP THẦN NHẢY</h2>
+                   <div className="space-y-4">
+                       {leaderboard.map((item, i) => (
+                           <div key={i} className={`flex justify-between items-center bg-black/40 p-4 rounded-2xl border-l-4 ${i === 0 ? 'border-yellow-400' : 'border-white/10'}`}>
                                <div className="flex items-center gap-4">
-                                   <span className={`font-black italic text-lg ${i === 0 ? 'text-yellow-400' : 'text-white/20'}`}>{i+1}</span>
+                                   <span className={`font-black italic text-lg ${i === 0 ? 'text-yellow-400' : 'text-white/30'}`}>{i+1}</span>
                                    <span className="font-bold text-sm truncate max-w-[110px]">{item.name}</span>
                                </div>
-                               <span className="font-mono font-black text-white">{item.bestScore?.toLocaleString()}</span>
+                               <span className="font-mono font-black text-cyan-300">{item.bestScore?.toLocaleString()}</span>
                            </div>
-                       )) : <p className="text-center text-white/10 italic py-10 text-xs tracking-widest uppercase">No data found</p>}
+                       ))}
                    </div>
                </div>
            </div>
         </div>
       )}
 
-      {/* LOADING */}
-      {gameState === 'LOADING' && (
-          <div className="h-screen flex flex-col items-center justify-center bg-black">
-              <div className="w-64 h-1 bg-white/5 rounded-full overflow-hidden mb-6">
-                  <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" style={{ width: `${loadProgress}%` }}></div>
+      {/* MÀN HÌNH CHƠI CHÍNH */}
+      {gameState === 'PLAYING' && (
+          <div className="h-screen relative z-10 w-full">
+              <audio ref={audioRef} src={currentTrack?.src} autoPlay onEnded={handleGameEnd} className="hidden" />
+              
+              <button onClick={() => setIsPaused(true)} className="absolute top-8 right-8 z-50 bg-black/50 p-4 rounded-2xl border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all">⏸️</button>
+
+              {isPaused && (
+                  <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex flex-col items-center justify-center animate-in fade-in">
+                      <h2 className="text-8xl font-black italic text-white mb-16 tracking-tighter">PAUSED</h2>
+                      <div className="flex gap-6">
+                          <button onClick={togglePause} className="px-10 py-4 bg-cyan-500 text-black font-black rounded-full uppercase tracking-widest hover:scale-105 transition-all">Tiếp tục</button>
+                          <button onClick={handleLeaveGame} className="px-10 py-4 bg-white/10 text-white font-black rounded-full uppercase tracking-widest hover:bg-red-500 transition-all">Thoát</button>
+                      </div>
+                  </div>
+              )}
+
+              {/* KHU VỰC TRÁI: NĂNG LƯỢNG VÀ ĐIỂM SỐ */}
+              <div className="absolute left-8 top-1/3 -translate-y-1/2 flex flex-col">
+                  <div className="mb-8 p-4 bg-black/40 backdrop-blur-md rounded-2xl border border-white/5 w-48">
+                      <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em] mb-2">ENERGY</p>
+                      <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
+                          <div className={`h-full transition-all duration-300 ${hp < 30 ? 'bg-red-500 shadow-[0_0_10px_red]' : 'bg-cyan-400 shadow-[0_0_10px_cyan]'}`} style={{ width: `${hp}%` }}></div>
+                      </div>
+                  </div>
+
+                  <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)]">
+                      <p className="text-sm font-black italic text-white/50 uppercase tracking-[0.5em] mb-[-10px]">SCORE</p>
+                      <p className="text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 tracking-tighter">
+                          {score.toLocaleString()}
+                      </p>
+                  </div>
               </div>
-              <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.5em] animate-pulse">Entering Stage... {Math.floor(loadProgress)}%</p>
+
+              {/* ĐÁNH GIÁ (PERFECT/GREAT) NỔI BẬT GIỮA MÀN HÌNH */}
+              {judgment && (
+                  <div key={judgment.id} className="absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 z-50 animate-in zoom-in duration-100 flex flex-col items-center pointer-events-none drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
+                      <h2 className={`text-6xl sm:text-7xl font-black italic uppercase tracking-tighter
+                          ${judgment.text === 'PERFECT' ? 'text-yellow-400 drop-shadow-[0_0_20px_yellow]' : 
+                            judgment.text === 'GREAT' ? 'text-green-400 drop-shadow-[0_0_20px_green]' : 
+                            judgment.text === 'COOL' ? 'text-blue-400 drop-shadow-[0_0_20px_blue]' : 
+                            judgment.text === 'BAD' ? 'text-gray-400' : 'text-red-500 drop-shadow-[0_0_20px_red]'}`}>
+                          {judgment.text}
+                      </h2>
+                      {combo > 1 && <p className="text-4xl font-black text-white italic tracking-tighter mt-1 drop-shadow-xl">x{combo}</p>}
+                  </div>
+              )}
+
+              {/* KHU VỰC ĐIỀU KHIỂN ĐÁY GIỮA */}
+              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-4">
+                  
+                  {/* Thanh Nhịp điệu (Slider) */}
+                  <div className="relative w-full h-4 bg-black/80 rounded-full border border-white/20 shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+                      <div className="absolute left-[75%] right-[5%] inset-y-0 bg-cyan-500/20 rounded-full"></div>
+                      <div className="absolute left-[85%] w-[3px] h-[150%] top-[-25%] bg-white shadow-[0_0_10px_white,0_0_20px_cyan] rounded-full z-10"></div>
+                      {burstEffect && <div className="absolute top-1/2 left-[85%] -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full border-4 border-cyan-400/50 animate-ping z-0 pointer-events-none"></div>}
+                      <div className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white shadow-[0_0_15px_white,0_0_30px_cyan] transition-transform z-20" style={{ left: `${sliderPos}%` }}></div>
+                  </div>
+
+                  {/* Phím bấm mũi tên */}
+                  <div className={`flex justify-center gap-3 sm:gap-4 mt-8 h-20 transition-all ${isFailedSeq ? 'opacity-30 blur-[2px]' : ''}`}>
+                      {targetSequence.length > 0 ? targetSequence.map((item, i) => (
+                          <span key={i} className={`text-5xl sm:text-6xl font-black drop-shadow-[0_10px_10px_rgba(0,0,0,0.8)] transition-all flex-shrink-0 ${
+                              i < userInput.length ? 'opacity-0 scale-50' : 
+                              item.isRed ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]' : 'text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.8)]'
+                          }`}>
+                              {ARROW_SYMBOLS[item.display]}
+                          </span>
+                      )) : <span className="text-white/30 italic font-black uppercase tracking-[0.5em] text-2xl py-4 animate-pulse">Wait for beat...</span>}
+                  </div>
+
+                  {/* Thông tin bài nhạc thu gọn */}
+                  <div className="mt-8 flex items-center gap-4 bg-black/60 backdrop-blur-xl border border-white/10 pl-2 pr-6 py-2 rounded-full shadow-2xl">
+                      <img src={currentTrack?.cover} className="w-10 h-10 rounded-full object-cover border border-white/20" alt="cover" />
+                      <div className="flex flex-col">
+                          <span className="font-black text-sm text-white tracking-tight">{currentTrack?.title}</span>
+                          <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest">{currentTrack?.artist}</span>
+                      </div>
+                  </div>
+              </div>
+
+              {/* GÓC TRÁI DƯỚI: ĐỘ KHÓ (SAO) */}
+              <div className="absolute bottom-10 left-8 flex flex-col gap-1 drop-shadow-[0_5px_10px_rgba(0,0,0,0.8)]">
+                  <span className="font-black italic text-2xl text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">
+                     LV {Math.floor(level)}
+                  </span>
+                  <div className="flex gap-1 text-yellow-400 text-lg drop-shadow-[0_0_10px_yellow]">
+                      {[...Array(Math.floor(level))].map((_, i) => <span key={i}>★</span>)}
+                  </div>
+              </div>
+
           </div>
       )}
 
-      {/* PREPARING */}
+      {/* CÁC TRẠNG THÁI KHÁC */}
       {gameState === 'PREPARING' && (
-          <div className="h-screen flex items-center justify-center">
-              <div className="text-[18rem] leading-none font-black italic text-transparent bg-clip-text bg-gradient-to-b from-purple-400 to-pink-600 animate-bounce text-center w-full select-none">
+          <div className="h-screen flex items-center justify-center relative z-10">
+              <div className="text-[20rem] leading-none font-black italic text-white drop-shadow-[0_0_50px_cyan] animate-bounce text-center select-none">
                   {prepCountdown > 0 ? prepCountdown : 'GO!'}
               </div>
           </div>
       )}
-
-      {/* PLAYING */}
-      {gameState === 'PLAYING' && (
-          <div className="h-screen relative flex flex-col items-center justify-center p-6">
-              <audio ref={audioRef} src={currentTrack?.src} autoPlay onEnded={handleGameEnd} onTimeUpdate={handleTimeUpdate} className="hidden" />
-              
-              <button onClick={togglePause} className="absolute top-8 left-8 z-50 bg-white/5 hover:bg-white/10 p-4 rounded-3xl border border-white/10 backdrop-blur-xl transition-all">
-                  <span className="text-xl text-white">⏸️</span>
-              </button>
-
-              {isPaused && (
-                  <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
-                      <h2 className="text-8xl font-black italic text-white mb-16 tracking-tighter">PAUSED</h2>
-                      <div className="flex flex-col gap-6 w-72">
-                          <button onClick={togglePause} className="py-5 bg-white text-black font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Continue</button>
-                          <button onClick={handleLeaveGame} className="py-5 bg-red-600 text-white font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Exit Stage</button>
-                      </div>
-                  </div>
-              )}
-
-              <div className="absolute top-12 left-1/2 -translate-x-1/2 w-full max-w-md px-10">
-                  <div className="h-4 bg-white/5 rounded-full border border-white/5 p-1 overflow-hidden shadow-2xl">
-                      <div className={`h-full rounded-full transition-all duration-300 ${hp < 30 ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-green-400 to-blue-500'}`} style={{ width: `${hp}%` }}></div>
-                  </div>
-              </div>
-
-              {judgment && (
-                  <div key={judgment.id} className="absolute top-1/4 z-50 animate-bounce pointer-events-none text-center">
-                      <h2 className={`text-6xl font-black italic drop-shadow-[0_0_30px_rgba(255,255,255,0.3)] 
-                        ${judgment.text === 'PERFECT' ? 'text-yellow-400 scale-110' : 'text-blue-400'}`}>{judgment.text}</h2>
-                      {combo > 1 && <p className="text-3xl font-black text-white italic tracking-tighter mt-1">COMBO x{combo}</p>}
-                  </div>
-              )}
-
-              <div className="glass-card rounded-[4.5rem] p-14 border border-white/5 shadow-2xl relative overflow-hidden">
-                  <div className="flex justify-between items-end mb-12 px-4">
-                      <div className="text-5xl font-black italic text-white/5">TURN {measureIndex + 1}</div>
-                      <div className="text-right">
-                          <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.4em] mb-1">Total Score</p>
-                          <p className="text-6xl font-black text-white tracking-tighter">{score.toLocaleString()}</p>
-                      </div>
-                  </div>
-
-                  <div className={`flex flex-nowrap justify-center gap-4 sm:gap-6 mb-16 transition-all px-8 ${isFailedSeq ? 'opacity-10 blur-md' : ''}`}>
-                      {targetSequence.length > 0 ? targetSequence.map((item, i) => (
-                          <span key={i} className={`text-6xl sm:text-8xl transition-all duration-150 flex-shrink-0 ${
-                              i < userInput.length ? 'opacity-20 scale-90' : 
-                              item.isRed ? 'text-pink-500 drop-shadow-[0_0_20px_rgba(236,72,153,0.6)]' : 'text-green-400 drop-shadow-[0_0_20px_rgba(74,222,128,0.4)]'
-                          }`}>
-                              {ARROW_SYMBOLS[item.display]}
-                          </span>
-                      )) : <span className="text-white/20 italic font-black uppercase tracking-[0.4em] text-4xl py-6 animate-pulse">Rest Time</span>}
-                  </div>
-
-                  <div className="relative h-20 bg-black/40 rounded-full border-[6px] border-white/5 shadow-inner overflow-hidden">
-                      <div className="absolute inset-y-0 left-[75%] right-[5%] bg-blue-500/10"></div>
-                      <div className="absolute inset-y-0 left-[85%] w-3 bg-white shadow-[0_0_40px_#fff] z-10"></div>
-                      {burstEffect && <div className="absolute top-1/2 left-[85%] -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full border-8 border-white/20 animate-ping z-0 pointer-events-none"></div>}
-                      <div className={`absolute top-1/2 -translate-y-1/2 w-12 h-12 rounded-full border-[6px] border-white shadow-2xl transition-transform z-20 ${userData.rankId === 'CHALLENGER' ? 'bg-gradient-to-r from-purple-500 to-pink-500' : 'bg-yellow-400'}`} style={{ left: `${sliderPos}%` }}></div>
-                  </div>
-              </div>
-
-              {/* MUSIC PLAYER */}
-              <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-full max-w-lg px-4">
-                  <div className="bg-black/60 backdrop-blur-3xl p-6 rounded-[2.5rem] border border-white/10 shadow-2xl flex flex-col gap-5">
-                      <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-200" style={{ width: `${musicProgress}%` }}></div>
-                      </div>
-                      <div className="flex items-center gap-6">
-                          <img src={currentTrack?.cover} 
-                               className={`w-16 h-16 rounded-full object-cover border-2 border-white/20 shadow-lg album-rotate ${isPaused ? 'album-rotate-paused' : ''}`} 
-                               alt="art" />
-                          <div className="overflow-hidden flex-1">
-                              <p className="text-lg font-black text-white truncate leading-none mb-2">{currentTrack?.title}</p>
-                              <p className="text-xs text-white/40 font-black truncate uppercase tracking-widest">{currentTrack?.artist}</p>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* GAME OVER */}
-      {gameState === 'GAME_OVER' && (
-          <div className="h-screen bg-black flex flex-col items-center justify-center text-center p-6">
-              <div className="text-[12rem] mb-12 animate-pulse">💀</div>
-              <h2 className="text-7xl font-black text-red-600 uppercase tracking-tighter mb-8 italic">YOU FAILED</h2>
-              <button onClick={() => { setGameState('LOBBY'); fetchGlobalLeaderboard(); }} className="px-16 py-6 bg-white text-black font-black rounded-full uppercase tracking-[0.2em] hover:scale-105 active:scale-95 transition-all">Thử lại sân khấu</button>
-          </div>
-      )}
-
-      {/* RESULT */}
+      
       {gameState === 'RESULT' && (
-          <div className="h-screen flex items-center justify-center p-6 bg-black w-full">
-              <div className="bg-white/5 backdrop-blur-2xl p-16 rounded-[4rem] border border-white/10 shadow-2xl max-w-xl w-full text-center">
-                  <h2 className="text-6xl font-black italic text-white uppercase mb-12 tracking-tighter">COMPLETE!</h2>
+          <div className="h-screen flex items-center justify-center p-6 w-full relative z-10">
+              <div className="bg-black/60 backdrop-blur-2xl p-16 rounded-[4rem] border border-white/10 shadow-[0_0_100px_rgba(34,211,238,0.2)] max-w-xl w-full text-center">
+                  <h2 className="text-6xl font-black italic text-white uppercase mb-12 tracking-tighter">STAGE CLEARED</h2>
                   <div className="grid grid-cols-2 gap-6 mb-12">
-                      <div className="bg-white/5 p-6 rounded-[2rem] border border-white/5">
-                          <p className="text-[10px] text-purple-400 font-black uppercase tracking-widest mb-2">Max Combo</p>
+                      <div className="bg-white/5 p-6 rounded-[2rem]">
+                          <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest mb-2">Max Combo</p>
                           <p className="text-4xl font-black text-white">{maxCombo}</p>
                       </div>
-                      <div className="bg-white/5 p-6 rounded-[2rem] border border-white/5">
-                          <p className="text-[10px] text-green-400 font-black uppercase tracking-widest mb-2">Perfects</p>
+                      <div className="bg-white/5 p-6 rounded-[2rem]">
+                          <p className="text-[10px] text-yellow-400 font-black uppercase tracking-widest mb-2">Perfects</p>
                           <p className="text-4xl font-black text-white">{stats.perfect}</p>
                       </div>
                   </div>
                   <div className="mb-16">
-                      <p className="text-xs text-gray-500 font-black uppercase tracking-[0.5em] mb-4">Final Score</p>
-                      <p className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500 drop-shadow-2xl tracking-tighter">{score.toLocaleString()}</p>
+                      <p className="text-xs text-white/50 font-black uppercase tracking-[0.5em] mb-4">Final Score</p>
+                      <p className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-cyan-400 drop-shadow-2xl tracking-tighter">{score.toLocaleString()}</p>
                   </div>
                   <button onClick={() => { setGameState('LOBBY'); fetchGlobalLeaderboard(); }} 
-                          className="w-full py-6 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-black rounded-[2rem] uppercase tracking-[0.3em] shadow-xl hover:scale-105 transition-all">Tiếp tục</button>
+                          className="w-full py-6 bg-cyan-600 text-black font-black rounded-[2rem] uppercase tracking-[0.3em] shadow-[0_0_20px_cyan] hover:scale-105 transition-all">Trở về sảnh</button>
               </div>
+          </div>
+      )}
+
+      {gameState === 'GAME_OVER' && (
+          <div className="h-screen flex flex-col items-center justify-center text-center p-6 relative z-10 bg-black/80 backdrop-blur-md">
+              <h2 className="text-[10rem] font-black text-red-600 uppercase tracking-tighter mb-4 italic drop-shadow-[0_0_50px_red]">FAILED</h2>
+              <p className="text-xl font-bold text-gray-400 mb-12 uppercase tracking-[0.5em]">Hãy luyện tập thêm</p>
+              <button onClick={() => { setGameState('LOBBY'); fetchGlobalLeaderboard(); }} className="px-16 py-6 bg-white text-black font-black rounded-full uppercase tracking-[0.2em] hover:scale-105 transition-all">Thử lại</button>
           </div>
       )}
 

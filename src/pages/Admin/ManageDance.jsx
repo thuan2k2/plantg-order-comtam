@@ -19,8 +19,12 @@ const ManageDance = () => {
     beatmapJson: ''
   });
   const [audioFile, setAudioFile] = useState(null);
-  const [coverFile, setCoverFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  // --- ĐÃ THÊM: State hỗ trợ 2 kiểu nhập Cover ---
+  const [coverInputType, setCoverInputType] = useState('file'); // 'file' hoặc 'url'
+  const [coverFile, setCoverFile] = useState(null);
+  const [coverUrlInput, setCoverUrlInput] = useState('');
 
   // Lấy danh sách nhạc hiện có
   const fetchTracks = async () => {
@@ -75,8 +79,20 @@ const ManageDance = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!audioFile || !coverFile || !formData.beatmapJson) {
-      alert("Vui lòng chọn đủ File Nhạc, Ảnh Cover và nhập Beatmap JSON!");
+    
+    // Validate cơ bản
+    if (!audioFile || !formData.beatmapJson) {
+      alert("Vui lòng chọn File Nhạc và nhập Beatmap JSON!");
+      return;
+    }
+
+    // Validate riêng cho Cover
+    if (coverInputType === 'file' && !coverFile) {
+      alert("Vui lòng chọn File ảnh bìa!");
+      return;
+    }
+    if (coverInputType === 'url' && !coverUrlInput) {
+      alert("Vui lòng nhập Link ảnh bìa!");
       return;
     }
 
@@ -89,7 +105,6 @@ const ManageDance = () => {
       return;
     }
 
-    // --- ĐÃ THÊM: FIX LỖI NESTED ARRAYS CỦA FIRESTORE ---
     // Chuyển mảng 2 chiều [ [phím], [phím] ] thành Object { "0": [phím], "1": [phím] }
     const firestoreBeatmap = {};
     parsedBeatmap.forEach((measure, index) => {
@@ -100,8 +115,13 @@ const ManageDance = () => {
     setUploadProgress(0);
 
     try {
-      // 1. Upload ảnh cover
-      const coverUrl = await uploadFile(coverFile, 'au_covers');
+      // 1. Xử lý ảnh Cover (Tải lên file HOẶC dùng link trực tiếp)
+      let finalCoverUrl = '';
+      if (coverInputType === 'file') {
+        finalCoverUrl = await uploadFile(coverFile, 'au_covers');
+      } else {
+        finalCoverUrl = coverUrlInput;
+      }
       
       // 2. Upload file audio
       const audioUrl = await uploadFile(audioFile, 'au_audios');
@@ -114,20 +134,22 @@ const ManageDance = () => {
         difficulty: formData.difficulty,
         genre: formData.genre,
         requiredRank: formData.requiredRank || null,
-        cover: coverUrl,
+        cover: finalCoverUrl, // Dùng biến cover cuối cùng đã xử lý
         src: audioUrl,
-        beatmap: firestoreBeatmap, // LƯU OBJECT THAY VÌ MẢNG LỒNG NHAU
+        beatmap: firestoreBeatmap, 
         createdAt: serverTimestamp()
       };
 
       await addDoc(collection(db, 'au_tracks'), trackData);
 
       alert("🎉 Thêm bài nhạc thành công!");
+      
+      // Reset form
       setFormData({ title: '', artist: '', bpm: '', difficulty: 'Normal', genre: 'Pop', requiredRank: '', beatmapJson: '' });
       setAudioFile(null);
       setCoverFile(null);
+      setCoverUrlInput('');
       
-      // Reset input file (Do React không bind value của input type file)
       document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
 
       fetchTracks();
@@ -202,13 +224,23 @@ const ManageDance = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 rounded-xl text-center">
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 rounded-xl text-center flex flex-col justify-center">
                  <label className="block text-xs font-bold uppercase mb-2 text-blue-500 cursor-pointer">🎧 Chọn File Nhạc (.mp3, .ogg)</label>
                  <input required type="file" accept="audio/mp3, audio/ogg" onChange={handleAudioChange} className="text-xs w-full overflow-hidden" />
               </div>
-              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 rounded-xl text-center">
-                 <label className="block text-xs font-bold uppercase mb-2 text-pink-500 cursor-pointer">🖼️ Chọn Ảnh Bìa (Cover)</label>
-                 <input required type="file" accept="image/*" onChange={handleCoverChange} className="text-xs w-full overflow-hidden" />
+              
+              {/* ĐÃ THÊM: Khu vực Chọn Ảnh Bìa tích hợp 2 chế độ */}
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 rounded-xl flex flex-col justify-center">
+                 <div className="flex justify-center gap-2 mb-3">
+                     <button type="button" onClick={() => setCoverInputType('file')} className={`text-xs font-bold px-2 py-1 rounded transition-all ${coverInputType === 'file' ? 'bg-pink-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'}`}>Tải từ máy</button>
+                     <button type="button" onClick={() => setCoverInputType('url')} className={`text-xs font-bold px-2 py-1 rounded transition-all ${coverInputType === 'url' ? 'bg-pink-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'}`}>Dùng Link</button>
+                 </div>
+                 
+                 {coverInputType === 'file' ? (
+                     <input required={coverInputType === 'file'} type="file" accept="image/*" onChange={handleCoverChange} className="text-xs w-full overflow-hidden" />
+                 ) : (
+                     <input required={coverInputType === 'url'} type="url" placeholder="Nhập link ảnh (https://...)" value={coverUrlInput} onChange={(e) => setCoverUrlInput(e.target.value)} className="text-xs w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-2 py-1.5 rounded outline-none" />
+                 )}
               </div>
             </div>
 
