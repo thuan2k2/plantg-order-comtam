@@ -39,8 +39,9 @@ import ManageAllOrders from './pages/Admin/ManageAllOrders';
 import ManageRanks from './pages/Admin/ManageRanks';
 import AdminLogs from './pages/Admin/AdminLogs';
 
-// MỚI: Import Tool tạo Nhịp cho game Au
+// MỚI: Import Tool tạo Nhịp và Quản lý Nhạc cho game Au
 import BeatmapMaker from './pages/BeatmapMaker';
+import ManageDance from './pages/Admin/ManageDance';
 
 // CSS Toàn cục
 import './index.css';
@@ -143,8 +144,9 @@ function App() {
               <Route path="security-logs" element={<AdminLogs />} />
               <Route path="settings" element={<AdminSettings />} /> 
 
-              {/* ĐÃ THÊM: Route cho Tool tạo nhịp Au */}
+              {/* ĐÃ THÊM: Route cho Tool tạo nhịp và quản lý nhạc Au */}
               <Route path="beatmap" element={<BeatmapMaker />} />
+              <Route path="dance" element={<ManageDance />} />
             </Route>
 
             {/* --- Route xử lý lỗi 404 --- */}

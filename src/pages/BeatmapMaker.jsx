@@ -70,6 +70,15 @@ const BeatmapMaker = () => {
     setSavedMeasures(prev => prev.slice(0, -1));
   };
 
+  // ĐÃ THÊM: Xóa toàn bộ dữ liệu Beatmap
+  const clearAllMeasures = () => {
+    if (savedMeasures.length === 0) return;
+    if (window.confirm("⚠️ Bạn có chắc chắn muốn xóa TOÀN BỘ dữ liệu Beatmap đã ghi không?")) {
+      setSavedMeasures([]);
+      setCurrentSequence([]);
+    }
+  };
+
   // Copy JSON ra Clipboard
   const copyJson = () => {
     const jsonString = JSON.stringify(savedMeasures, null, 2);
@@ -144,7 +153,12 @@ const BeatmapMaker = () => {
         <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl flex flex-col h-[75vh]">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="font-bold uppercase text-gray-400 tracking-widest text-xs">3. Dữ liệu Beatmap ({savedMeasures.length} Lượt)</h2>
-                <button onClick={undoLastMeasure} className="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all">↩️ Undo Lượt Cuối</button>
+                
+                {/* ĐÃ SỬA: Thêm cụm nút quản lý */}
+                <div className="flex gap-2">
+                    <button onClick={undoLastMeasure} className="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all">↩️ Undo</button>
+                    <button onClick={clearAllMeasures} className="bg-red-900/40 hover:bg-red-600 text-red-300 hover:text-white border border-red-800/50 px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all">🗑️ Xóa hết</button>
+                </div>
             </div>
             
             <div className="flex-1 overflow-y-auto bg-black/50 p-4 rounded-xl space-y-3 font-mono text-sm border border-gray-700">

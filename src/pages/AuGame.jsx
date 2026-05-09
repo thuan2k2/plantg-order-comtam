@@ -4,27 +4,6 @@ import { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs } from 
 import { db } from '../firebase/config';
 import { getRankInfo } from '../utils/rankUtils';
 
-const MUSIC_TRACKS = [
-    { id: 'track1', src: '/music/track1.mp3', title: "Sôi Động Vinhomes", artist: "DJ Plant G", bpm: 110, difficulty: 'Easy', genre: 'Pop', cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&h=200&fit=crop' },
-    { id: 'track2', src: '/music/track2.mp3', title: "Bass Cực Căng", artist: "Remixer Pro", bpm: 128, difficulty: 'Normal', genre: 'EDM', cover: 'https://i1.sndcdn.com/artworks-dSG4UKCycOQ1r4r2-SHUyrQ-t500x500.jpg' },
-    { id: 'track3', src: '/music/track3.mp3', title: "Giai Điệu Buồn", artist: "Lofi Chill", bpm: 95, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.stockcake.com/public/f/6/8/f68998df-4be1-4cc7-8c6d-139b8bf96143_large/pixel-sky-serenity-stockcake.jpg' },
-    { id: 'track4', src: '/music/track4.mp3', title: "Dance Alone", artist: "V-Dance", bpm: 140, difficulty: 'Hard', genre: 'Dance', cover: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=200&h=200&fit=crop' },
-    { id: 'track5', src: '/music/track5.mp3', title: "Challenger Anthem", artist: "Plant G VIP", bpm: 155, difficulty: 'Expert', genre: 'Hardstyle', cover: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=200&h=200&fit=crop', requiredRank: 'CHALLENGER' },
-    { id: 'track6', src: '/music/track6.mp3', title: "đêm tĩnh lặng", artist: "kẻ cô đơn", bpm: 85, difficulty: 'Easy', genre: 'Lofi', cover: 'https://cdn-images.dzcdn.net/images/cover/fb139e580ef4f69cf7d70a68ac9de2a6/1900x1900-000000-80-0-0.jpg' },
-    { id: 'track7', src: '/music/track7.mp3', title: "Cơm Tấm Rush", artist: "Bếp Trưởng", bpm: 135, difficulty: 'Hard', genre: 'Electro', cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=200&h=200&fit=crop' },
-    { id: 'track8', src: '/music/track8.mp3', title: "Nhịp Đập Phố Đêm", artist: "Night Owl", bpm: 125, difficulty: 'Normal', genre: 'House', cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=200&h=200&fit=crop' },
-    { id: 'track9', src: '/music/track9.mp3', title: "góc tối", artist: "mưa rơi", bpm: 80, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1499946981954-e7f4b234d7fa?w=200&h=200&fit=crop' },
-    { id: 'track10', src: '/music/track10.mp3', title: "Spacebar Smasher", artist: "Keyboard Warrior", bpm: 150, difficulty: 'Hard', genre: 'Techno', cover: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=200&h=200&fit=crop' },
-    { id: 'track11', src: '/music/track11.mp3', title: "Vũ Điệu Giao Hàng", artist: "Shipper Boy", bpm: 105, difficulty: 'Normal', genre: 'HipHop', cover: 'https://images.unsplash.com/photo-1483032469466-b937c425697b?w=200&h=200&fit=crop' },
-    { id: 'track12', src: '/music/track12.mp3', title: "nỗi buồn để lại", artist: "hư không", bpm: 90, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1458560871784-56d23406c091?w=200&h=200&fit=crop' },
-    { id: 'track13', src: '/music/track13.mp3', title: "Speed Limit", artist: "Sonic", bpm: 160, difficulty: 'Expert', genre: 'Trance', cover: 'https://images.unsplash.com/photo-1478147427282-58a87a120781?w=200&h=200&fit=crop' },
-    { id: 'track14', src: '/music/track14.mp3', title: "Plant G Party", artist: "All Stars", bpm: 120, difficulty: 'Normal', genre: 'Pop', cover: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=200&h=200&fit=crop' },
-    { id: 'track15', src: '/music/track15.mp3', title: "WHERE U AT FULL", artist: "THÁI HOÀNG REMIX", bpm: 155, difficulty: 'Hard', genre: 'Dance', cover: 'https://i.ytimg.com/vi/AFEWE3ySRGo/maxresdefault.jpg' },
-    { id: 'track16', src: '/music/track16.mp3', title: "chìm vào giấc mơ", artist: "kẻ mộng du", bpm: 75, difficulty: 'Easy', genre: 'Lofi', cover: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=200&h=200&fit=crop' },
-    { id: 'track17', src: '/music/track17.mp3', title: "Tốc Độ Ánh Sáng", artist: "Master Tier", bpm: 175, difficulty: 'Expert', genre: 'Hardcore', cover: 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=200&h=200&fit=crop', requiredRank: 'CHALLENGER' },
-    { id: 'track18', src: '/music/track18.mp3', title: "Vương Miện Plant G", artist: "The Boss", bpm: 180, difficulty: 'Expert', genre: 'Hardstyle', cover: 'https://i1.sndcdn.com/avatars-DLmzrzG5Mxl3L1lg-y51Wtw-t500x500.jpg', requiredRank: 'CHALLENGER' }
-];
-
 const ARROW_SYMBOLS = { UP: '⬆️', DOWN: '⬇️', LEFT: '⬅️', RIGHT: '➡️' };
 const OPPOSITE_KEYS = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
 
@@ -35,6 +14,10 @@ const AuGame = () => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [userData, setUserData] = useState({ phone: '', name: '', rankId: '' });
   const [leaderboard, setLeaderboard] = useState([]);
+  
+  // ĐÃ THÊM: State lưu danh sách nhạc tải từ Firebase
+  const [musicList, setMusicList] = useState([]);
+  const [isLoadingMusic, setIsLoadingMusic] = useState(true);
 
   // Gameplay States
   const [hp, setHp] = useState(100);
@@ -49,7 +32,8 @@ const AuGame = () => {
   const [targetSequence, setTargetSequence] = useState([]);
   const [isFailedSeq, setIsFailedSeq] = useState(false);
   const [musicProgress, setMusicProgress] = useState(0);
-  
+  const [measureIndex, setMeasureIndex] = useState(0);
+
   // Visual Effects
   const [isShaking, setIsShaking] = useState(false);
   const [burstEffect, setBurstEffect] = useState(false);
@@ -61,19 +45,37 @@ const AuGame = () => {
 
   useEffect(() => {
     const fetchUser = async () => {
-      const phones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
-      if (phones.length > 0) {
-        const userSnap = await getDoc(doc(db, 'users', phones[0]));
-        if (userSnap.exists()) {
-          const data = userSnap.data();
-          const rankInfo = getRankInfo(data.totalSpend || 0, data.manualRankId);
-          setUserData({ phone: phones[0], name: data.fullName || 'Người chơi', rankId: rankInfo.current.id });
-        }
-      } else { navigate('/'); }
+      try {
+          const phones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
+          if (phones.length > 0) {
+              const userSnap = await getDoc(doc(db, 'users', phones[0]));
+              if (userSnap.exists()) {
+                  const data = userSnap.data();
+                  const rankInfo = getRankInfo(data.totalSpend || 0, data.manualRankId);
+                  setUserData({ phone: phones[0], name: data.fullName || 'Người chơi', rankId: rankInfo.current.id });
+              }
+          } else { navigate('/'); }
+      } catch (error) { console.error("Lỗi lấy thông tin:", error); }
     };
+    
     fetchUser();
     fetchGlobalLeaderboard(); 
+    fetchMusicTracks(); // Gọi hàm lấy nhạc khi mở game
   }, [navigate]);
+
+  // ĐÃ THÊM: Hàm kéo danh sách nhạc từ Firebase
+  const fetchMusicTracks = async () => {
+    setIsLoadingMusic(true);
+    try {
+        const q = query(collection(db, 'au_tracks'), orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
+        const tracks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setMusicList(tracks);
+    } catch (e) {
+        console.error("Lỗi lấy danh sách bài hát:", e);
+    }
+    setIsLoadingMusic(false);
+  };
 
   const fetchGlobalLeaderboard = async () => {
     try {
@@ -82,37 +84,46 @@ const AuGame = () => {
         const querySnapshot = await getDocs(q);
         setLeaderboard(querySnapshot.docs.map(d => d.data()));
     } catch (e) {
-        console.warn("Chưa thể lấy BXH (Có thể do chưa cấp quyền Rules hoặc thiếu Index):", e.message);
+        console.warn("Chưa thể lấy BXH:", e.message);
         setLeaderboard([]);
     }
   };
 
   const selectTrack = (track) => {
     if (track.requiredRank && userData.rankId !== track.requiredRank) return;
+    
     setCurrentTrack(track);
     setGameState('LOADING');
     setLoadMusicProgress(0);
+    
     let prog = 0;
     const interval = setInterval(() => {
         prog += Math.random() * 25;
         if (prog >= 100) {
             setLoadMusicProgress(100); clearInterval(interval);
             setTimeout(() => {
-                setGameState('PREPARING'); setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMusicProgress(0);
+                setGameState('PREPARING'); 
+                setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMusicProgress(0); setMeasureIndex(0);
             }, 500);
         } else setLoadMusicProgress(prog);
     }, 150);
   };
 
-  const generateNewSequence = (lv) => {
-    const seq = [];
-    const redChance = lv > 6 ? (lv - 5) * 0.12 : 0;
-    for(let i = 0; i < lv; i++) {
-        const dir = ['UP', 'DOWN', 'LEFT', 'RIGHT'][Math.floor(Math.random() * 4)];
-        const isRed = Math.random() < redChance;
-        seq.push({ display: dir, actual: isRed ? OPPOSITE_KEYS[dir] : dir, isRed });
+  const loadNextMeasure = (index, currentLv) => {
+    if (currentTrack && currentTrack.beatmap && currentTrack.beatmap[index]) {
+        setTargetSequence(currentTrack.beatmap[index]);
+    } else {
+        const seq = [];
+        const redChance = currentLv > 6 ? (currentLv - 5) * 0.12 : 0;
+        for(let i = 0; i < currentLv; i++) {
+            const dir = ['UP', 'DOWN', 'LEFT', 'RIGHT'][Math.floor(Math.random() * 4)];
+            const isRed = Math.random() < redChance;
+            seq.push({ display: dir, actual: isRed ? OPPOSITE_KEYS[dir] : dir, isRed });
+        }
+        setTargetSequence(seq);
     }
-    setTargetSequence(seq); setUserInput([]); setIsFailedSeq(false);
+    setUserInput([]); 
+    setIsFailedSeq(false);
   };
 
   useEffect(() => {
@@ -122,7 +133,9 @@ const AuGame = () => {
         return () => clearTimeout(t);
       } else {
         setGameState('PLAYING');
-        generateNewSequence(currentTrack.difficulty === 'Expert' ? 8 : currentTrack.difficulty === 'Hard' ? 7 : 4);
+        const initialLv = currentTrack.difficulty === 'Expert' ? 8 : currentTrack.difficulty === 'Hard' ? 7 : 4;
+        setLevel(initialLv);
+        loadNextMeasure(0, initialLv);
       }
     }
   }, [gameState, prepCountdown, currentTrack]);
@@ -162,44 +175,46 @@ const AuGame = () => {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
       setGameState('LOBBY');
       setIsPaused(false);
-      fetchGlobalLeaderboard(); // Cập nhật lại BXH khi ra ngoài
+      fetchGlobalLeaderboard(); 
   };
 
   const registerJudgment = (judg) => {
     setJudgment({ text: judg, id: Date.now() });
+    setTimeout(() => setJudgment(prev => prev?.text === judg ? null : prev), 400);
+
     const k = judg.toLowerCase();
     setStats(prev => ({ ...prev, [k]: prev[k] + 1 }));
-    let scoreAdd = 0, hpAdd = 0, isSuccess = false;
+    let scoreAdd = 0, isSuccess = false;
 
     if (judg === 'PERFECT') {
-        scoreAdd = 500 + (combo * 50); hpAdd = 8; setCombo(c => c + 1); setBurstEffect(true); setIsShaking(true);
+        scoreAdd = 500 + (combo * 50); setCombo(c => c + 1); setBurstEffect(true); setIsShaking(true);
         setTimeout(() => { setBurstEffect(false); setIsShaking(false); }, 300);
         isSuccess = true;
-    } else if (judg === 'GREAT') { scoreAdd = 300; hpAdd = 3; setCombo(0); isSuccess = true; }
-    else if (judg === 'COOL') { scoreAdd = 100; hpAdd = 1; setCombo(0); isSuccess = true; }
-    else if (judg === 'BAD') { scoreAdd = 20; hpAdd = -15; setCombo(0); }
-    else { scoreAdd = 0; hpAdd = -25; setCombo(0); }
+    } else if (judg === 'GREAT') { scoreAdd = 300; setCombo(0); isSuccess = true; }
+    else if (judg === 'COOL') { scoreAdd = 100; setCombo(0); isSuccess = true; }
+    else if (judg === 'BAD') { scoreAdd = 20; setCombo(0); }
+    else { scoreAdd = 0; setCombo(0); }
 
     setScore(s => s + scoreAdd);
+    
     setHp(prev => {
-        const newHp = Math.max(0, Math.min(100, prev + hpAdd));
+        const newHp = judg === 'MISS' ? Math.max(0, prev - 25) : 
+                      judg === 'BAD' ? Math.max(0, prev - 15) : 
+                      Math.min(100, prev + (judg === 'PERFECT' ? 8 : judg === 'GREAT' ? 3 : 1));
+        
         if (newHp <= 0) { setGameState('GAME_OVER'); audioRef.current.pause(); }
         return newHp;
     });
 
     if (combo + 1 > maxCombo) setMaxCombo(combo + 1);
+    
     let newLv = isSuccess ? Math.min(11, level + 0.5) : (judg === 'MISS' ? Math.max(4, level - 1) : level);
     setLevel(Math.floor(newLv));
-    generateNewSequence(Math.floor(newLv));
+    
+    const nextIdx = measureIndex + 1;
+    setMeasureIndex(nextIdx);
+    loadNextMeasure(nextIdx, Math.floor(newLv));
   };
-
-  // Rút ngắn thời gian hiển thị chữ Perfect/Great xuống còn 400ms để không bị kẹt
-  useEffect(() => { 
-      if (judgment) { 
-          const t = setTimeout(() => setJudgment(null), 400); 
-          return () => clearTimeout(t); 
-      } 
-  }, [judgment]);
 
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused) return;
@@ -211,7 +226,6 @@ const AuGame = () => {
         const keyMap = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
         
         setUserInput((prev) => {
-          // CHỐT CHẶN CRASH: Chống gõ phím khi target chưa tải hoặc gõ lố phím
           if (!targetSequence || targetSequence.length === 0) return prev;
           if (prev.length >= targetSequence.length) return prev;
           
@@ -240,11 +254,12 @@ const AuGame = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gameState, targetSequence, userInput, sliderPos, isFailedSeq, isPaused]);
+  }, [gameState, targetSequence, userInput, sliderPos, isFailedSeq, isPaused, measureIndex, level]);
 
   const handleGameEnd = async () => {
       setGameState('RESULT');
       try {
+          if (!userData.phone) return;
           const globalRef = doc(db, 'au_global_leaderboard', userData.phone);
           const snap = await getDoc(globalRef);
           if (!snap.exists() || snap.data().bestScore < score) {
@@ -259,19 +274,20 @@ const AuGame = () => {
   };
 
   return (
-    <div className={`min-h-screen bg-gray-900 text-white font-sans overflow-hidden relative transition-all ${isShaking ? 'modern-shake' : ''}`}>
+    <div className={`min-h-screen bg-gray-900 text-white font-sans overflow-hidden relative transition-all ${isShaking ? 'modern-impact' : ''}`}>
       
       <style>{`
-        .modern-shake { animation: modernShake 0.3s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes modernShake {
+        .modern-impact { animation: impact 0.3s cubic-bezier(.36,.07,.19,.97) both; }
+        @keyframes impact {
           0%, 100% { transform: scale(1); filter: brightness(1); }
-          50% { transform: scale(1.03); filter: brightness(1.5); }
+          50% { transform: scale(1.02); filter: brightness(1.8); }
         }
-        .album-rotate { animation: rotate 10s linear infinite; }
+        .album-rotate { animation: rotate 8s linear infinite; }
         .album-rotate-paused { animation-play-state: paused; }
         @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .glass-card { background: rgba(255, 255, 255, 0.03); backdrop-blur: 15px; border: 1px solid rgba(255, 255, 255, 0.05); }
       `}</style>
 
       {/* LOBBY */}
@@ -279,42 +295,57 @@ const AuGame = () => {
         <div className="max-w-6xl mx-auto py-12 px-6 animate-in fade-in duration-500">
            <header className="flex justify-between items-center mb-12">
                <h1 className="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">AU PLANT G</h1>
-               <button onClick={() => navigate('/')} className="bg-white/10 hover:bg-white/20 backdrop-blur-md px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/10 transition-all">Trở về</button>
+               <button onClick={() => navigate('/')} className="bg-white/5 hover:bg-white/10 backdrop-blur-md px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/5 transition-all">Trở về</button>
            </header>
+           
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-               <div className="lg:col-span-2 space-y-4 max-h-[70vh] overflow-y-auto pr-4 custom-scrollbar">
-                   {MUSIC_TRACKS.map(track => {
-                       const isLocked = track.requiredRank && userData.rankId !== track.requiredRank;
-                       return (
-                           <div key={track.id} onClick={() => !isLocked && selectTrack(track)} 
-                                className={`relative group bg-white/5 backdrop-blur-sm p-5 rounded-[2rem] border border-white/5 flex items-center gap-6 transition-all 
-                                ${isLocked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10 hover:border-purple-500/50 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(168,85,247,0.2)]'}`}>
-                               <div className="relative w-20 h-20 flex-shrink-0">
-                                   <img src={track.cover} className="w-full h-full rounded-full object-cover border-2 border-white/10 shadow-lg group-hover:border-purple-400 transition-all" alt="cover" />
-                                   {!isLocked && <div className="absolute inset-0 bg-black/20 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all text-xl">▶️</div>}
+               {/* DANH SÁCH NHẠC LẤY TỪ FIREBASE */}
+               <div className="lg:col-span-2 space-y-4 max-h-[72vh] overflow-y-auto pr-4 custom-scrollbar">
+                   {isLoadingMusic ? (
+                       <div className="flex flex-col items-center justify-center h-full text-white/50 space-y-4">
+                           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white"></div>
+                           <p className="text-xs font-black tracking-widest uppercase">Đang tải máy chủ âm nhạc...</p>
+                       </div>
+                   ) : musicList.length === 0 ? (
+                       <div className="flex flex-col items-center justify-center h-full text-white/30 text-center">
+                           <p className="text-4xl mb-4">🎵</p>
+                           <p className="text-sm font-black tracking-widest uppercase">Máy chủ chưa có bài nhạc nào</p>
+                       </div>
+                   ) : (
+                       musicList.map(track => {
+                           const isLocked = track.requiredRank && userData.rankId !== track.requiredRank;
+                           return (
+                               <div key={track.id} onClick={() => !isLocked && selectTrack(track)} 
+                                    className={`group relative glass-card p-5 rounded-[2.5rem] flex items-center gap-6 transition-all 
+                                    ${isLocked ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10 hover:border-purple-500/40 hover:-translate-y-1.5 hover:shadow-[0_20px_50px_rgba(168,85,247,0.15)]'}`}>
+                                   <div className="relative w-20 h-20 flex-shrink-0">
+                                       <img src={track.cover} className="w-full h-full rounded-full object-cover border-2 border-white/5 shadow-2xl group-hover:scale-105 transition-transform" alt="cover" />
+                                       {!isLocked && <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all text-xl">▶️</div>}
+                                   </div>
+                                   <div className="flex-1">
+                                       <h3 className="font-black text-xl tracking-tight mb-1">{track.title} {track.requiredRank && '👑'}</h3>
+                                       <p className="text-white/40 text-[10px] font-black uppercase tracking-widest">{track.artist} • <span className="text-purple-400">{track.bpm} BPM</span></p>
+                                   </div>
+                                   <div className={`px-4 py-2 rounded-2xl font-black text-[9px] uppercase tracking-tighter ${track.difficulty === 'Expert' ? 'bg-purple-500/20 text-purple-300' : 'bg-white/5 text-white/30'}`}>{track.difficulty}</div>
+                                   {isLocked && <div className="absolute right-8 top-1/2 -translate-y-1/2 text-2xl">🔒</div>}
                                </div>
-                               <div className="flex-1">
-                                   <h3 className="font-black text-xl tracking-tight mb-1">{track.title} {track.requiredRank && '👑'}</h3>
-                                   <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{track.artist} • <span className="text-purple-400">{track.bpm} BPM</span></p>
-                               </div>
-                               <div className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase ${track.difficulty === 'Expert' ? 'bg-purple-600/30 text-purple-300' : 'bg-white/5 text-gray-400'}`}>{track.difficulty}</div>
-                               {isLocked && <div className="absolute right-6 top-1/2 -translate-y-1/2 text-2xl">🔒</div>}
-                           </div>
-                       );
-                   })}
+                           );
+                       })
+                   )}
                </div>
-               <div className="bg-white/5 backdrop-blur-xl p-8 rounded-[3rem] border border-white/10 shadow-2xl h-fit">
-                   <h2 className="text-xs font-black text-purple-400 uppercase tracking-[0.3em] mb-8 flex items-center gap-2">🏆 Top 10 Thần Nhảy</h2>
+
+               <div className="glass-card p-8 rounded-[3.5rem] h-fit">
+                   <h2 className="text-[10px] font-black text-purple-400 uppercase tracking-[0.4em] mb-8 flex items-center gap-2">🏆 Global Top 10</h2>
                    <div className="space-y-5">
                        {leaderboard.length > 0 ? leaderboard.map((item, i) => (
-                           <div key={i} className={`flex justify-between items-center bg-white/5 p-4 rounded-2xl border-l-4 ${i === 0 ? 'border-yellow-400 bg-yellow-400/5' : 'border-blue-500'}`}>
+                           <div key={i} className={`flex justify-between items-center bg-white/5 p-4 rounded-3xl border-l-4 ${i === 0 ? 'border-yellow-400' : 'border-white/10'}`}>
                                <div className="flex items-center gap-4">
-                                   <span className={`font-black italic text-lg ${i === 0 ? 'text-yellow-400' : 'text-gray-600'}`}>{i+1}</span>
-                                   <span className="font-bold text-sm truncate max-w-[120px]">{item.name}</span>
+                                   <span className={`font-black italic text-lg ${i === 0 ? 'text-yellow-400' : 'text-white/20'}`}>{i+1}</span>
+                                   <span className="font-bold text-sm truncate max-w-[110px]">{item.name}</span>
                                </div>
-                               <span className="font-mono font-black text-white/90">{item.bestScore.toLocaleString()}</span>
+                               <span className="font-mono font-black text-white">{item.bestScore?.toLocaleString()}</span>
                            </div>
-                       )) : <p className="text-center text-gray-500 italic py-10 text-xs tracking-widest uppercase">Đang tải dữ liệu...</p>}
+                       )) : <p className="text-center text-white/10 italic py-10 text-xs tracking-widest uppercase">No data found</p>}
                    </div>
                </div>
            </div>
@@ -345,7 +376,7 @@ const AuGame = () => {
           <div className="h-screen relative flex flex-col items-center justify-center p-6">
               <audio ref={audioRef} src={currentTrack?.src} autoPlay onEnded={handleGameEnd} onTimeUpdate={handleTimeUpdate} className="hidden" />
               
-              <button onClick={togglePause} className="absolute top-8 left-8 z-50 bg-white/5 hover:bg-white/10 p-4 rounded-3xl border border-white/10 backdrop-blur-xl transition-all">
+              <button onClick={() => setIsPaused(true)} className="absolute top-8 left-8 z-50 bg-white/5 hover:bg-white/10 p-4 rounded-3xl border border-white/10 backdrop-blur-xl transition-all">
                   <span className="text-xl text-white">⏸️</span>
               </button>
 
@@ -353,8 +384,8 @@ const AuGame = () => {
                   <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex flex-col items-center justify-center animate-in fade-in duration-300">
                       <h2 className="text-8xl font-black italic text-white mb-16 tracking-tighter">PAUSED</h2>
                       <div className="flex flex-col gap-6 w-72">
-                          <button onClick={togglePause} className="py-5 bg-white text-black font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Tiếp tục</button>
-                          <button onClick={handleLeaveGame} className="py-5 bg-red-600 text-white font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Rời sân khấu</button>
+                          <button onClick={() => { setIsPaused(false); audioRef.current.play().catch(()=>{}); }} className="py-5 bg-white text-black font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Continue</button>
+                          <button onClick={() => { handleLeaveGame(); }} className="py-5 bg-red-600 text-white font-black rounded-[2rem] uppercase tracking-widest hover:scale-105 transition-all">Exit Stage</button>
                       </div>
                   </div>
               )}
@@ -365,33 +396,33 @@ const AuGame = () => {
                   </div>
               </div>
 
-              {/* JUDGMENT TEXT FIXED: Kích thước nhỏ lại và không che tầm nhìn */}
+              {/* JUDGMENT TEXT */}
               {judgment && (
                   <div key={judgment.id} className="absolute top-1/4 z-50 animate-bounce pointer-events-none text-center">
                       <h2 className={`text-6xl font-black italic drop-shadow-[0_0_30px_rgba(255,255,255,0.3)] 
                         ${judgment.text === 'PERFECT' ? 'text-yellow-400 scale-110' : 'text-blue-400'}`}>{judgment.text}</h2>
-                      {combo > 1 && <p className="text-2xl font-black text-white italic tracking-tighter mt-1">COMBO x{combo}</p>}
+                      {combo > 1 && <p className="text-3xl font-black text-white italic tracking-tighter mt-1">COMBO x{combo}</p>}
                   </div>
               )}
 
-              <div className="w-fit min-w-[600px] max-w-[95vw] bg-white/5 backdrop-blur-2xl rounded-[4rem] p-12 border border-white/10 shadow-[0_20px_80px_rgba(0,0,0,0.5)] relative overflow-hidden">
+              <div className="glass-card rounded-[4.5rem] p-14 border border-white/5 shadow-2xl relative overflow-hidden">
                   <div className="flex justify-between items-end mb-12 px-4">
-                      <div className="text-5xl font-black italic text-white/10">LVL {level}</div>
+                      <div className="text-5xl font-black italic text-white/5">TURN {measureIndex + 1}</div>
                       <div className="text-right">
-                          <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.4em] mb-1">Current Score</p>
+                          <p className="text-[10px] font-black text-purple-400 uppercase tracking-[0.4em] mb-1">Total Score</p>
                           <p className="text-6xl font-black text-white tracking-tighter">{score.toLocaleString()}</p>
                       </div>
                   </div>
 
                   <div className={`flex flex-nowrap justify-center gap-4 sm:gap-6 mb-16 transition-all px-8 ${isFailedSeq ? 'opacity-10 blur-md' : ''}`}>
-                      {targetSequence.map((item, i) => (
-                          <span key={i} className={`text-6xl sm:text-7xl transition-all duration-150 flex-shrink-0 ${
+                      {targetSequence.length > 0 ? targetSequence.map((item, i) => (
+                          <span key={i} className={`text-6xl sm:text-8xl transition-all duration-150 flex-shrink-0 ${
                               i < userInput.length ? 'opacity-20 scale-90' : 
                               item.isRed ? 'text-pink-500 drop-shadow-[0_0_20px_rgba(236,72,153,0.6)]' : 'text-green-400 drop-shadow-[0_0_20px_rgba(74,222,128,0.4)]'
                           }`}>
                               {ARROW_SYMBOLS[item.display]}
                           </span>
-                      ))}
+                      )) : <span className="text-white/20 italic font-black uppercase tracking-widest text-4xl py-6">Rest / Free Style</span>}
                   </div>
 
                   <div className="relative h-20 bg-black/40 rounded-full border-[6px] border-white/5 shadow-inner overflow-hidden">

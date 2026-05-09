@@ -122,8 +122,61 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* MỚI: Bổ sung lối tắt đến Trang Nhật ký bảo mật (Security Logs) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* LỐI TẮT TRUY CẬP NHANH (MỞ RỘNG THÀNH 4 CỘT) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        
+        {/* Lối tắt 1: Quản lý Đơn hàng */}
+        <div 
+          onClick={() => navigate('/admin/orders')}
+          className="cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 p-6 rounded-[2rem] flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">
+              📦
+            </div>
+            <div>
+              <h3 className="font-black text-gray-700 uppercase tracking-widest text-xs">Quản lý Đơn</h3>
+              <p className="text-[10px] font-bold text-gray-500 mt-1">Xử lý đơn đặt hàng</p>
+            </div>
+          </div>
+          <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+        </div>
+
+        {/* Lối tắt 2: Quản lý Nhạc (ĐÃ THÊM) */}
+        <div 
+          onClick={() => navigate('/admin/dance')}
+          className="cursor-pointer bg-purple-50 hover:bg-purple-100 transition-colors border border-purple-200 p-6 rounded-[2rem] flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-purple-200 text-purple-600 rounded-full flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">
+              🎵
+            </div>
+            <div>
+              <h3 className="font-black text-purple-700 uppercase tracking-widest text-xs">Quản lý Nhạc Au</h3>
+              <p className="text-[10px] font-bold text-purple-500 mt-1">Cập nhật hệ thống nhạc</p>
+            </div>
+          </div>
+          <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+        </div>
+
+        {/* Lối tắt 3: Beatmap Maker (ĐÃ THÊM) */}
+        <div 
+          onClick={() => navigate('/admin/beatmap')}
+          className="cursor-pointer bg-indigo-50 hover:bg-indigo-100 transition-colors border border-indigo-200 p-6 rounded-[2rem] flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-indigo-200 text-indigo-600 rounded-full flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">
+              🎹
+            </div>
+            <div>
+              <h3 className="font-black text-indigo-700 uppercase tracking-widest text-xs">Beatmap Maker</h3>
+              <p className="text-[10px] font-bold text-indigo-500 mt-1">Công cụ tạo nhịp tự động</p>
+            </div>
+          </div>
+          <svg className="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+        </div>
+
+        {/* Lối tắt 4: Nhật ký Bảo mật */}
         <div 
           onClick={() => navigate('/admin/security-logs')}
           className="cursor-pointer bg-red-50 hover:bg-red-100 transition-colors border border-red-200 p-6 rounded-[2rem] flex items-center justify-between group"
@@ -134,27 +187,12 @@ const Dashboard = () => {
             </div>
             <div>
               <h3 className="font-black text-red-700 uppercase tracking-widest text-xs">Nhật ký Bảo mật</h3>
-              <p className="text-[10px] font-bold text-red-500 mt-1">Giám sát số dư và phát hiện Hack/Cheat</p>
+              <p className="text-[10px] font-bold text-red-500 mt-1">Phát hiện Hack/Cheat</p>
             </div>
           </div>
           <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
         </div>
 
-        <div 
-          onClick={() => navigate('/admin/orders')}
-          className="cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 p-6 rounded-[2rem] flex items-center justify-between group"
-        >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center text-xl shadow-inner group-hover:scale-110 transition-transform">
-              📦
-            </div>
-            <div>
-              <h3 className="font-black text-gray-700 uppercase tracking-widest text-xs">Quản lý Đơn hàng</h3>
-              <p className="text-[10px] font-bold text-gray-500 mt-1">Xử lý đơn đặt hàng của khách hàng</p>
-            </div>
-          </div>
-          <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
-        </div>
       </div>
 
       {/* Bảng đơn hàng mới nhất và Phím tắt Voucher */}
