@@ -89,6 +89,13 @@ const ManageDance = () => {
       return;
     }
 
+    // --- ĐÃ THÊM: FIX LỖI NESTED ARRAYS CỦA FIRESTORE ---
+    // Chuyển mảng 2 chiều [ [phím], [phím] ] thành Object { "0": [phím], "1": [phím] }
+    const firestoreBeatmap = {};
+    parsedBeatmap.forEach((measure, index) => {
+        firestoreBeatmap[index.toString()] = measure;
+    });
+
     setIsUploading(true);
     setUploadProgress(0);
 
@@ -109,7 +116,7 @@ const ManageDance = () => {
         requiredRank: formData.requiredRank || null,
         cover: coverUrl,
         src: audioUrl,
-        beatmap: parsedBeatmap,
+        beatmap: firestoreBeatmap, // LƯU OBJECT THAY VÌ MẢNG LỒNG NHAU
         createdAt: serverTimestamp()
       };
 
@@ -119,6 +126,10 @@ const ManageDance = () => {
       setFormData({ title: '', artist: '', bpm: '', difficulty: 'Normal', genre: 'Pop', requiredRank: '', beatmapJson: '' });
       setAudioFile(null);
       setCoverFile(null);
+      
+      // Reset input file (Do React không bind value của input type file)
+      document.querySelectorAll('input[type="file"]').forEach(input => input.value = '');
+
       fetchTracks();
 
     } catch (error) {
