@@ -18,6 +18,13 @@ const AuGame = () => {
   const [musicList, setMusicList] = useState([]);
   const [isLoadingMusic, setIsLoadingMusic] = useState(true);
 
+  // --- QUẢN LÝ ÂM LƯỢNG (Lưu vào LocalStorage) ---
+  const [volumes, setVolumes] = useState(() => {
+      const saved = localStorage.getItem('auVolumes');
+      return saved ? JSON.parse(saved) : { lobby: 0.5, track: 0.8, sfx: 0.8, judgment: 0.8, end: 0.8 };
+  });
+  const [showSettings, setShowSettings] = useState(false);
+
   // Gameplay States
   const [hp, setHp] = useState(100);
   const [level, setLevel] = useState(4); 
@@ -41,7 +48,7 @@ const AuGame = () => {
   const audioRef = useRef(null);
   const requestRef = useRef();
 
-  // --- REFS CHO AUTO-SYNC VÀ TÍNH ĐIỂM ---
+  // Refs Tracking
   const cycleRef = useRef(0);
   const hasJudgedRef = useRef(false);
   const targetSeqRef = useRef([]);
@@ -49,28 +56,97 @@ const AuGame = () => {
   const isFailedSeqRef = useRef(false);
   const levelRef = useRef(4);
   const perfectComboRef = useRef(0); 
+  const prevLevelRangeRef = useRef(null);
+  const hasStartedNotesRef = useRef(false); 
+  const lastRestMusicRef = useRef(null); 
 
-  // --- HỆ THỐNG ÂM THANH (SFX) ---
+  // --- HỆ THỐNG ÂM THANH (SFX & LOBBY) ---
   const sfxRef = useRef(null);
+  const lobbyAudioRef = useRef(null);
+  const fadeIntervalRef = useRef(null);
 
   useEffect(() => {
-    // Khởi tạo các file âm thanh vào bộ nhớ
     sfxRef.current = {
       perfect: new Audio('/music/7 sould dance/perfect.ogg'),
-      great: new Audio('/music/7 sould dance/good.ogg'), // Map GREAT vào âm thanh good.ogg
+      great: new Audio('/music/7 sould dance/good.ogg'), 
       cool: new Audio('/music/7 sould dance/cool.ogg'),
       fail: new Audio('/music/7 sould dance/fail.ogg'),
       missKey: new Audio('/music/7 sould dance/normal_miss.ogg'),
       readyGo: new Audio('/music/7 sould dance/ready_go.ogg'),
       countdown: new Audio('/music/7 sould dance/demnguoc.ogg'),
       end: new Audio('/music/7 sould dance/seg_end.ogg'),
+      level2: new Audio('/music/cap do/Level2.ogg'),
+      level3: new Audio('/music/cap do/Level3.ogg'),
+      level4: new Audio('/music/cap do/Level4.ogg'),
+      level5: new Audio('/music/cap do/Level5.ogg'),
+      rest1: new Audio('/music/giua tran/loverDance_FinishTimeBegin.ogg'),
+      rest2: new Audio('/music/giua tran/loverDance_ShowTimeBegin.ogg'),
+      rest3: new Audio('/music/giua tran/Outdoor_applause.ogg'),
+      rest4: new Audio('/music/giua tran/Outdoor_fireworks.ogg'),
+    };
+
+    // Khởi tạo Nhạc Sảnh ngẫu nhiên
+    const lobbyTracks = [1, 2, 3, 4, 5, 6].map(n => `/music/nhac cho/loverDance_FinishTime_${n}.ogg`);
+    const randomTrack = lobbyTracks[Math.floor(Math.random() * lobbyTracks.length)];
+    lobbyAudioRef.current = new Audio(randomTrack);
+    lobbyAudioRef.current.loop = true;
+
+    return () => {
+        clearInterval(fadeIntervalRef.current);
+        if (lobbyAudioRef.current) lobbyAudioRef.current.pause();
     };
   }, []);
 
-  // Hàm gọi phát âm thanh nhanh (Reset lại từ đầu để có thể phát đè liên tục)
-  const playSFX = (type) => {
+  // Thay đổi cài đặt âm lượng
+  const handleVolumeChange = (key, value) => {
+      const newVols = { ...volumes, [key]: parseFloat(value) };
+      setVolumes(newVols);
+      localStorage.setItem('auVolumes', JSON.stringify(newVols));
+      
+      if (key === 'lobby' && lobbyAudioRef.current && gameState === 'LOBBY') {
+          lobbyAudioRef.current.volume = parseFloat(value);
+      }
+      if (key === 'track' && audioRef.current) {
+          audioRef.current.volume = parseFloat(value);
+      }
+  };
+
+  // Quản lý trạng thái phát Nhạc Sảnh (Kèm Fade-in)
+  useEffect(() => {
+      if (!lobbyAudioRef.current) return;
+
+      if (gameState === 'LOBBY') {
+          const targetVolume = volumes.lobby;
+          lobbyAudioRef.current.volume = 0;
+          lobbyAudioRef.current.play().catch(e => console.warn("Lobby Music block:", e));
+          
+          clearInterval(fadeIntervalRef.current);
+          fadeIntervalRef.current = setInterval(() => {
+              if (lobbyAudioRef.current.volume + 0.05 < targetVolume) {
+                  lobbyAudioRef.current.volume += 0.05;
+              } else {
+                  lobbyAudioRef.current.volume = targetVolume;
+                  clearInterval(fadeIntervalRef.current);
+              }
+          }, 200); // Tăng dần mỗi 200ms
+      } else {
+          clearInterval(fadeIntervalRef.current);
+          lobbyAudioRef.current.pause();
+      }
+  }, [gameState]);
+
+  // Cập nhật âm lượng nhạc nhảy mỗi khi chuyển bài
+  useEffect(() => {
+      if (audioRef.current) {
+          audioRef.current.volume = volumes.track;
+      }
+  }, [currentTrack, volumes.track]);
+
+  // Hàm phát âm thanh kèm Volume tùy chỉnh
+  const playSFX = (type, category = 'sfx') => {
     if (sfxRef.current && sfxRef.current[type]) {
         sfxRef.current[type].currentTime = 0;
+        sfxRef.current[type].volume = volumes[category];
         sfxRef.current[type].play().catch(() => {});
     }
   };
@@ -135,6 +211,7 @@ const AuGame = () => {
             setTimeout(() => {
                 setGameState('PREPARING'); 
                 setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMeasureIndex(0); setMusicProgress(0);
+                prevLevelRangeRef.current = null; 
             }, 500);
         } else setLoadMusicProgress(prog);
     }, 150);
@@ -155,6 +232,32 @@ const AuGame = () => {
         }
     } 
 
+    const len = newSeq.length;
+    let currentRange = 0; 
+    
+    if (len >= 9) currentRange = 5;       
+    else if (len >= 7) currentRange = 4;  
+    else if (len >= 5) currentRange = 3;  
+    else if (len >= 3) currentRange = 2;  
+    else if (len >= 1) currentRange = 1;  
+
+    if (len > 0) {
+        hasStartedNotesRef.current = true; 
+    }
+
+    if (currentRange > 1 && currentRange !== prevLevelRangeRef.current) {
+        playSFX(`level${currentRange}`, 'sfx');
+    } else if (currentRange === 0 && hasStartedNotesRef.current && prevLevelRangeRef.current !== 0) {
+        const restSFX = ['rest1', 'rest2', 'rest3', 'rest4'];
+        const available = restSFX.filter(r => r !== lastRestMusicRef.current);
+        const randomSFX = available[Math.floor(Math.random() * available.length)];
+        
+        playSFX(randomSFX, 'sfx');
+        lastRestMusicRef.current = randomSFX; 
+    }
+    
+    prevLevelRangeRef.current = currentRange; 
+
     targetSeqRef.current = newSeq;
     userInputRef.current = [];
     isFailedSeqRef.current = false;
@@ -165,21 +268,25 @@ const AuGame = () => {
     setIsFailedSeq(false);
   };
 
-  // --- LOGIC ĐẾM LÙI CÓ KÈM ÂM THANH (PREPARING) ---
   useEffect(() => {
     if (gameState === 'PREPARING') {
       if (prepCountdown > 0) {
-        playSFX('countdown'); // Phát nhạc đếm ngược 3-2-1
+        playSFX('countdown', 'sfx'); 
         const t = setTimeout(() => setPrepCountdown(prev => prev - 1), 1000);
         return () => clearTimeout(t);
       } else if (prepCountdown === 0) {
-        playSFX('readyGo'); // Phát Ready Go khi về 0
+        playSFX('readyGo', 'sfx'); 
         const t = setTimeout(() => {
             setGameState('PLAYING');
             const initialLv = currentTrack.difficulty === 'Expert' ? 8 : currentTrack.difficulty === 'Hard' ? 7 : 4;
             setLevel(initialLv); levelRef.current = initialLv; cycleRef.current = 0; perfectComboRef.current = 0;
+            
+            hasStartedNotesRef.current = false; 
+            prevLevelRangeRef.current = null;
+            lastRestMusicRef.current = null;
+            
             loadNextMeasure(0);
-        }, 1500); // Dừng tĩnh 1.5 giây đợi tiếng Ready Go đọc xong rồi mới thả nhạc
+        }, 1500); 
         return () => clearTimeout(t);
       }
     }
@@ -199,31 +306,31 @@ const AuGame = () => {
     const baseKeyScore = targetSeqRef.current.length * 10;
 
     if (judg === 'PERFECT') {
-        playSFX('perfect');
+        playSFX('perfect', 'judgment');
         perfectComboRef.current += 1;
         scoreAdd = baseKeyScore + (10 * perfectComboRef.current);
         isSuccess = true; hpAdd = 8; 
         setCombo(perfectComboRef.current);
     } else if (judg === 'GREAT') {
-        playSFX('great');
+        playSFX('great', 'judgment');
         perfectComboRef.current = 0; 
         scoreAdd = baseKeyScore + 5;
         isSuccess = true; hpAdd = 3; 
         setCombo(0); 
     } else if (judg === 'COOL') {
-        playSFX('cool');
+        playSFX('cool', 'judgment');
         perfectComboRef.current = 0; 
         scoreAdd = baseKeyScore + 2;
         isSuccess = true; hpAdd = 1; 
         setCombo(0); 
     } else if (judg === 'BAD') {
-        playSFX('fail');
+        playSFX('fail', 'judgment');
         perfectComboRef.current = 0; 
         scoreAdd = 0; 
         hpAdd = -15; 
         setCombo(0); 
     } else { // MISS
-        playSFX('fail');
+        playSFX('fail', 'judgment');
         perfectComboRef.current = 0; 
         scoreAdd = 0; 
         hpAdd = -25; 
@@ -325,11 +432,10 @@ const AuGame = () => {
         
         const expectedKey = targetSeqRef.current[nextInput.length - 1].actual;
         
-        // CƠ CHẾ GÕ SAI PHÍM PHÁT ÂM THANH
         if (expectedKey !== pressedKey) {
             isFailedSeqRef.current = true;
             setIsFailedSeq(true);
-            playSFX('missKey'); // Phát tiếng tịt Miss
+            playSFX('missKey', 'judgment');
         }
       }
 
@@ -358,7 +464,7 @@ const AuGame = () => {
 
   const handleGameEnd = async () => {
       setGameState('RESULT');
-      playSFX('end'); // Phát âm thanh chốt điểm bài nhạc
+      playSFX('end', 'end'); 
       
       try {
           if (!userData.phone) return;
@@ -393,12 +499,50 @@ const AuGame = () => {
         .glass-card { background: rgba(0, 0, 0, 0.4); backdrop-blur: 20px; border: 1px solid rgba(255, 255, 255, 0.1); }
       `}</style>
 
+      {/* --- CÀI ĐẶT ÂM THANH MODAL --- */}
+      {showSettings && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center animate-in fade-in">
+              <div className="bg-gray-900 border border-white/20 p-8 rounded-[2rem] w-full max-w-md shadow-[0_0_50px_rgba(34,211,238,0.1)]">
+                  <div className="flex justify-between items-center mb-8">
+                      <h2 className="text-2xl font-black italic text-cyan-400 uppercase tracking-widest">Cài đặt Âm thanh</h2>
+                      <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-white text-2xl transition-colors">✖</button>
+                  </div>
+                  
+                  <div className="space-y-6">
+                      <div>
+                          <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Nhạc Sảnh (Lobby)</span><span>{Math.round(volumes.lobby * 100)}%</span></label>
+                          <input type="range" min="0" max="1" step="0.05" value={volumes.lobby} onChange={(e) => handleVolumeChange('lobby', e.target.value)} className="w-full accent-cyan-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                      </div>
+                      <div>
+                          <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Nhạc Nhảy (Main Track)</span><span>{Math.round(volumes.track * 100)}%</span></label>
+                          <input type="range" min="0" max="1" step="0.05" value={volumes.track} onChange={(e) => handleVolumeChange('track', e.target.value)} className="w-full accent-cyan-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                      </div>
+                      <div>
+                          <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Hiệu ứng Trận (Level, Nhịp nghỉ)</span><span>{Math.round(volumes.sfx * 100)}%</span></label>
+                          <input type="range" min="0" max="1" step="0.05" value={volumes.sfx} onChange={(e) => handleVolumeChange('sfx', e.target.value)} className="w-full accent-cyan-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                      </div>
+                      <div>
+                          <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Đánh giá (Perfect, Great, Sai nút)</span><span>{Math.round(volumes.judgment * 100)}%</span></label>
+                          <input type="range" min="0" max="1" step="0.05" value={volumes.judgment} onChange={(e) => handleVolumeChange('judgment', e.target.value)} className="w-full accent-cyan-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                      </div>
+                      <div>
+                          <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Nhạc Kết thúc trận</span><span>{Math.round(volumes.end * 100)}%</span></label>
+                          <input type="range" min="0" max="1" step="0.05" value={volumes.end} onChange={(e) => handleVolumeChange('end', e.target.value)} className="w-full accent-cyan-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* LOBBY */}
       {gameState === 'LOBBY' && (
         <div className="relative z-10 max-w-6xl mx-auto py-12 px-6 animate-in fade-in duration-500">
            <header className="flex justify-between items-center mb-12">
                <h1 className="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">AU PLANT G</h1>
-               <button onClick={() => navigate('/')} className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/10 transition-all">Trở về</button>
+               <div className="flex gap-4">
+                   <button onClick={() => setShowSettings(true)} className="bg-white/5 hover:bg-white/10 px-4 py-2 rounded-2xl text-lg transition-all border border-white/10 shadow-[0_0_15px_rgba(34,211,238,0.1)]">⚙️</button>
+                   <button onClick={() => navigate('/')} className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/10 transition-all">Trở về</button>
+               </div>
            </header>
            
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
