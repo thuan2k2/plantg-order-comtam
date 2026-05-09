@@ -14,10 +14,11 @@ const AuGame = () => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [userData, setUserData] = useState({ phone: '', name: '', rankId: '' });
   const [leaderboard, setLeaderboard] = useState([]);
+  
   const [musicList, setMusicList] = useState([]);
   const [isLoadingMusic, setIsLoadingMusic] = useState(true);
 
-  // Gameplay States (UI)
+  // Gameplay States
   const [hp, setHp] = useState(100);
   const [level, setLevel] = useState(4); 
   const [score, setScore] = useState(0);
@@ -41,13 +42,14 @@ const AuGame = () => {
   const audioRef = useRef(null);
   const requestRef = useRef();
 
-  // --- REFS CHO GAME LOOP (Phản hồi tức thì, không bị delay bởi State) ---
-  const cycleRef = useRef(0); // Theo dõi số vòng của quả cầu
-  const hasJudgedRef = useRef(false); // Đã bấm Space ở vòng này chưa?
-  const targetSeqRef = useRef([]); // Dãy phím hiện tại
-  const userInputRef = useRef([]); // Phím người chơi vừa gõ
-  const isFailedSeqRef = useRef(false); // Gõ sai chưa?
-  const levelRef = useRef(4); // Cấp độ hiện tại
+  // --- REFS CHO AUTO-SYNC VÀ TÍNH ĐIỂM (Không bị delay bởi State) ---
+  const cycleRef = useRef(0);
+  const hasJudgedRef = useRef(false);
+  const targetSeqRef = useRef([]);
+  const userInputRef = useRef([]);
+  const isFailedSeqRef = useRef(false);
+  const levelRef = useRef(4);
+  const perfectComboRef = useRef(0); // Bộ đếm chuỗi Perfect liên tiếp
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -63,6 +65,7 @@ const AuGame = () => {
           } else { navigate('/'); }
       } catch (error) { console.error("Lỗi lấy thông tin:", error); }
     };
+    
     fetchUser();
     fetchGlobalLeaderboard(); 
     fetchMusicTracks(); 
@@ -75,7 +78,7 @@ const AuGame = () => {
         const snapshot = await getDocs(q);
         const tracks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setMusicList(tracks);
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Lỗi lấy danh sách bài hát:", e); }
     setIsLoadingMusic(false);
   };
 
@@ -85,21 +88,28 @@ const AuGame = () => {
         const q = query(lbRef, orderBy('bestScore', 'desc'), limit(10));
         const querySnapshot = await getDocs(q);
         setLeaderboard(querySnapshot.docs.map(d => d.data()));
-    } catch (e) { setLeaderboard([]); }
+    } catch (e) {
+        console.warn("Chưa thể lấy BXH:", e.message);
+        setLeaderboard([]);
+    }
   };
 
   const selectTrack = async (track) => {
     if (track.requiredRank && userData.rankId !== track.requiredRank) return;
+    
+    setCurrentTrack(track);
     setGameState('LOADING');
     setLoadMusicProgress(0);
-
+    
     let loadedBeatmap = null;
     try {
         const response = await fetch(`/music/beatmap/${track.id}.json`);
         if (response.ok) { loadedBeatmap = await response.json(); }
     } catch (e) {}
 
-    setCurrentTrack({ ...track, beatmap: loadedBeatmap });
+    // Gắn thêm beatmap kéo từ Firebase (nếu có) vào track
+    const finalTrack = { ...track, beatmap: loadedBeatmap || track.beatmap };
+    setCurrentTrack(finalTrack);
 
     let prog = 0;
     const interval = setInterval(() => {
@@ -108,7 +118,7 @@ const AuGame = () => {
             setLoadMusicProgress(100); clearInterval(interval);
             setTimeout(() => {
                 setGameState('PREPARING'); 
-                setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMusicProgress(0);
+                setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMusicProgress(0); setMeasureIndex(0);
             }, 500);
         } else setLoadMusicProgress(prog);
     }, 150);
@@ -121,8 +131,8 @@ const AuGame = () => {
 
     if (currentTrack && currentTrack.beatmap && currentTrack.beatmap[index]) {
         newSeq = currentTrack.beatmap[index];
-    } else if (!currentTrack.beatmap) {
-        // Chỉ tự sinh phím nếu bài này chưa có file Beatmap
+    } else if (currentTrack && !currentTrack.beatmap) {
+        // Tự sinh phím nếu bài này chưa có file Beatmap
         const redChance = currentLv > 6 ? (currentLv - 5) * 0.12 : 0;
         for(let i = 0; i < currentLv; i++) {
             const dir = ['UP', 'DOWN', 'LEFT', 'RIGHT'][Math.floor(Math.random() * 4)];
@@ -130,15 +140,12 @@ const AuGame = () => {
             newSeq.push({ display: dir, actual: isRed ? OPPOSITE_KEYS[dir] : dir, isRed });
         }
     } 
-    // Nếu có file beatmap nhưng hết mảng (beatmap[index] undefined) -> newSeq = [] (Coi như nghỉ)
 
-    // Reset các trạng thái cho lượt mới
     targetSeqRef.current = newSeq;
     userInputRef.current = [];
     isFailedSeqRef.current = false;
     hasJudgedRef.current = false;
 
-    // Cập nhật UI
     setTargetSequence(newSeq);
     setUserInput([]);
     setIsFailedSeq(false);
@@ -155,13 +162,13 @@ const AuGame = () => {
         setLevel(initialLv);
         levelRef.current = initialLv;
         cycleRef.current = 0;
-        setMeasureIndex(0);
+        perfectComboRef.current = 0;
         loadNextMeasure(0);
       }
     }
   }, [gameState, prepCountdown, currentTrack]);
 
-  // HÀM XỬ LÝ KẾT QUẢ TÍNH ĐIỂM
+  // HÀM XỬ LÝ KẾT QUẢ TÍNH ĐIỂM MỚI
   const processJudgment = (judg) => {
     setJudgment({ text: judg, id: Date.now() });
     setTimeout(() => setJudgment(prev => prev?.text === judg ? null : prev), 400);
@@ -171,26 +178,51 @@ const AuGame = () => {
 
     let scoreAdd = 0;
     let isSuccess = false;
+    let hpAdd = 0;
 
-    setCombo(prevCombo => {
-        let newCombo = 0;
-        if (judg === 'PERFECT') { scoreAdd = 500 + (prevCombo * 50); newCombo = prevCombo + 1; isSuccess = true; }
-        else if (judg === 'GREAT') { scoreAdd = 300; isSuccess = true; }
-        else if (judg === 'COOL') { scoreAdd = 100; isSuccess = true; }
-        setMaxCombo(max => Math.max(max, newCombo));
-        return newCombo;
-    });
+    // 1 nút = 10 điểm
+    const baseKeyScore = targetSeqRef.current.length * 10;
+
+    if (judg === 'PERFECT') {
+        perfectComboRef.current += 1;
+        scoreAdd = baseKeyScore + (10 * perfectComboRef.current);
+        isSuccess = true;
+        hpAdd = 8;
+        setCombo(c => c + 1);
+    } else if (judg === 'GREAT') {
+        perfectComboRef.current = 0; // Đứt chuỗi Perfect
+        scoreAdd = baseKeyScore + 5;
+        isSuccess = true;
+        hpAdd = 3;
+        setCombo(c => c + 1);
+    } else if (judg === 'COOL') {
+        perfectComboRef.current = 0;
+        scoreAdd = baseKeyScore + 2;
+        isSuccess = true;
+        hpAdd = 1;
+        setCombo(c => c + 1);
+    } else if (judg === 'BAD') {
+        perfectComboRef.current = 0;
+        scoreAdd = baseKeyScore + 0;
+        hpAdd = -15;
+        setCombo(0);
+    } else { // MISS
+        perfectComboRef.current = 0;
+        scoreAdd = 0;
+        hpAdd = -25;
+        setCombo(0);
+    }
 
     setScore(s => s + scoreAdd);
-
+    
     setHp(prev => {
-        const newHp = judg === 'MISS' ? Math.max(0, prev - 25) : 
-                      judg === 'BAD' ? Math.max(0, prev - 15) : 
-                      Math.min(100, prev + (judg === 'PERFECT' ? 8 : judg === 'GREAT' ? 3 : 1));
+        const newHp = Math.max(0, Math.min(100, prev + hpAdd));
         if (newHp <= 0) { setGameState('GAME_OVER'); if(audioRef.current) audioRef.current.pause(); }
         return newHp;
     });
 
+    setMaxCombo(prev => Math.max(prev, combo + (isSuccess ? 1 : 0)));
+    
     if (judg === 'PERFECT') {
         setBurstEffect(true); setIsShaking(true);
         setTimeout(() => { setBurstEffect(false); setIsShaking(false); }, 300);
@@ -203,7 +235,7 @@ const AuGame = () => {
     });
   };
 
-  // --- GAME LOOP: TỰ ĐỘNG CHẠY & CHUYỂN NHỊP ---
+  // --- GAME LOOP: TỰ ĐỘNG CHẠY & CHUYỂN NHỊP (AUTO-SYNC) ---
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused || !currentTrack) return;
     const bps = currentTrack.bpm / 60;
@@ -214,17 +246,16 @@ const AuGame = () => {
          const currentTime = audioRef.current.currentTime;
          const currentCycle = Math.floor(currentTime / measureSec);
          
-         // Cập nhật con chạy
          setSliderPos((currentTime % measureSec) / measureSec * 100);
 
-         // TỰ ĐỘNG QUA NHỊP MỚI KHI HẾT 1 VÒNG
+         // Khi quả cầu chạm mốc 100% và sang vòng mới
          if (currentCycle > cycleRef.current) {
-             // 1. Kiểm tra lượt cũ: Nếu có phím mà người chơi chưa Space -> Báo MISS
+             // Kéo mảng phím ở vòng VỪA QUA xem người chơi có bỏ lỡ không
              if (targetSeqRef.current.length > 0 && !hasJudgedRef.current) {
                  processJudgment('MISS');
              }
 
-             // 2. Chuyển sang lượt mới
+             // Cập nhật vòng hiện tại và load phím mới
              cycleRef.current = currentCycle;
              setMeasureIndex(currentCycle);
              loadNextMeasure(currentCycle);
@@ -238,7 +269,8 @@ const AuGame = () => {
 
   const handleTimeUpdate = () => {
     if (audioRef.current && gameState === 'PLAYING') {
-        setMusicProgress((audioRef.current.currentTime / audioRef.current.duration) * 100 || 0);
+        const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+        setMusicProgress(progress || 0);
     }
   };
 
@@ -249,21 +281,22 @@ const AuGame = () => {
 
   const handleLeaveGame = () => {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
-      setGameState('LOBBY'); setIsPaused(false); fetchGlobalLeaderboard(); 
+      setGameState('LOBBY');
+      setIsPaused(false);
+      fetchGlobalLeaderboard(); 
   };
 
-  // --- LẮNG NGHE BÀN PHÍM TỨC THÌ ---
+  // --- LẮNG NGHE BÀN PHÍM TỨC THÌ (Zero Latency) ---
   useEffect(() => {
     if (gameState !== 'PLAYING' || isPaused) return;
-    
     const handleKeyDown = (e) => {
-      // Bỏ qua nếu là Lượt nghỉ (Không có phím) hoặc đã bấm Space rồi
+      // 1. Nếu Lượt này là Rest (trống) HOẶC người chơi đã bấm Space xong rồi -> Vô hiệu hóa phím
       if (targetSeqRef.current.length === 0) return;
       if (hasJudgedRef.current) return;
 
       const keyMap = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
       
-      // XỬ LÝ PHÍM MŨI TÊN
+      // Xử lý mũi tên
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault(); 
         if (isFailedSeqRef.current) return;
@@ -272,7 +305,6 @@ const AuGame = () => {
         const pressedKey = keyMap[e.key];
         const nextInput = [...userInputRef.current, pressedKey];
         
-        // Cập nhật Ref (Nhanh) và State (Đồ họa UI)
         userInputRef.current = nextInput;
         setUserInput(nextInput);
         
@@ -283,15 +315,14 @@ const AuGame = () => {
         }
       }
 
-      // XỬ LÝ PHÍM SPACE (Chốt điểm)
+      // Xử lý nút Space
       if (e.code === 'Space') {
         e.preventDefault();
-        hasJudgedRef.current = true; // Khóa mảng lại, chờ qua nhịp mới
+        hasJudgedRef.current = true; // Khóa mảng lại, đợi quả cầu chạy qua nhịp mới
 
         if (isFailedSeqRef.current || userInputRef.current.length < targetSeqRef.current.length) {
             processJudgment('MISS');
         } else {
-            // Lấy vị trí quả cầu hiện tại để tính độ chuẩn xác
             const measureSec = 4 / (currentTrack.bpm / 60);
             const currentPos = (audioRef.current.currentTime % measureSec) / measureSec * 100;
             const diff = Math.abs(currentPos - 85);
@@ -315,7 +346,12 @@ const AuGame = () => {
           const globalRef = doc(db, 'au_global_leaderboard', userData.phone);
           const snap = await getDoc(globalRef);
           if (!snap.exists() || snap.data().bestScore < score) {
-              await setDoc(globalRef, { name: userData.name, bestScore: score, phone: userData.phone, timestamp: Date.now() });
+              await setDoc(globalRef, { 
+                  name: userData.name, 
+                  bestScore: score, 
+                  phone: userData.phone, 
+                  timestamp: Date.now() 
+              });
           }
       } catch (e) { console.error("Lỗi cập nhật điểm:", e); }
   };
@@ -325,7 +361,10 @@ const AuGame = () => {
       
       <style>{`
         .modern-impact { animation: impact 0.3s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes impact { 0%, 100% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(1.02); filter: brightness(1.8); } }
+        @keyframes impact {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          50% { transform: scale(1.02); filter: brightness(1.8); }
+        }
         .album-rotate { animation: rotate 8s linear infinite; }
         .album-rotate-paused { animation-play-state: paused; }
         @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -419,7 +458,7 @@ const AuGame = () => {
           <div className="h-screen relative flex flex-col items-center justify-center p-6">
               <audio ref={audioRef} src={currentTrack?.src} autoPlay onEnded={handleGameEnd} onTimeUpdate={handleTimeUpdate} className="hidden" />
               
-              <button onClick={() => setIsPaused(true)} className="absolute top-8 left-8 z-50 bg-white/5 hover:bg-white/10 p-4 rounded-3xl border border-white/10 backdrop-blur-xl transition-all">
+              <button onClick={togglePause} className="absolute top-8 left-8 z-50 bg-white/5 hover:bg-white/10 p-4 rounded-3xl border border-white/10 backdrop-blur-xl transition-all">
                   <span className="text-xl text-white">⏸️</span>
               </button>
 
@@ -441,7 +480,8 @@ const AuGame = () => {
 
               {judgment && (
                   <div key={judgment.id} className="absolute top-1/4 z-50 animate-bounce pointer-events-none text-center">
-                      <h2 className={`text-6xl font-black italic drop-shadow-[0_0_30px_rgba(255,255,255,0.3)] ${judgment.text === 'PERFECT' ? 'text-yellow-400 scale-110' : 'text-blue-400'}`}>{judgment.text}</h2>
+                      <h2 className={`text-6xl font-black italic drop-shadow-[0_0_30px_rgba(255,255,255,0.3)] 
+                        ${judgment.text === 'PERFECT' ? 'text-yellow-400 scale-110' : 'text-blue-400'}`}>{judgment.text}</h2>
                       {combo > 1 && <p className="text-3xl font-black text-white italic tracking-tighter mt-1">COMBO x{combo}</p>}
                   </div>
               )}
@@ -455,7 +495,6 @@ const AuGame = () => {
                       </div>
                   </div>
 
-                  {/* THAY ĐỔI: Hiển thị chữ Rest khi không có phím hoặc nghỉ */}
                   <div className={`flex flex-nowrap justify-center gap-4 sm:gap-6 mb-16 transition-all px-8 ${isFailedSeq ? 'opacity-10 blur-md' : ''}`}>
                       {targetSequence.length > 0 ? targetSequence.map((item, i) => (
                           <span key={i} className={`text-6xl sm:text-8xl transition-all duration-150 flex-shrink-0 ${
