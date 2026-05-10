@@ -13,7 +13,7 @@ import Order from './pages/Order';
 import CheckOrder from './pages/CheckOrder';
 import UserSettings from './pages/UserSettings'; 
 import RewardCenter from './pages/RewardCenter'; 
-import AuGame from './pages/AuGame';
+import AuGame from './Au/AuGame';
 
 // Import Widget Chat dành cho Khách hàng
 import CustomerChat from './components/CustomerChat';

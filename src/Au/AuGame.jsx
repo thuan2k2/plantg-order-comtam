@@ -4,58 +4,34 @@ import { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs } from 
 import { db } from '../firebase/config';
 import { getRankInfo } from '../utils/rankUtils';
 
-const ARROW_SYMBOLS = { UP: '⬆️', DOWN: '⬇️', LEFT: '⬅️', RIGHT: '➡️' };
-const OPPOSITE_KEYS = { UP: 'DOWN', DOWN: 'UP', LEFT: 'RIGHT', RIGHT: 'LEFT' };
-
-// --- ĐÃ THÊM: Custom Hook tạo hiệu ứng số nhảy cuộn (Rolling Number) ---
-function useRollingScore(value, duration = 300) {
-    const [displayValue, setDisplayValue] = useState(value);
-    
-    useEffect(() => {
-        let startTimestamp = null;
-        const startValue = displayValue;
-        
-        const step = (timestamp) => {
-            if (!startTimestamp) startTimestamp = timestamp;
-            const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-            
-            setDisplayValue(Math.floor(progress * (value - startValue) + startValue));
-            
-            if (progress < 1) {
-                window.requestAnimationFrame(step);
-            }
-        };
-        
-        window.requestAnimationFrame(step);
-    }, [value, duration]);
-    
-    return displayValue;
-}
+import './AuStyles.css';
+import AuSettings from './AuSettings';
+import { ARROW_SYMBOLS, OPPOSITE_KEYS, useRollingScore, getDifficultyStars } from './utils/auHelpers';
 
 const AuGame = () => {
   const navigate = useNavigate();
-  const [gameState, setGameState] = useState('LOBBY'); 
+  // ĐÃ ĐỔI: Khởi tạo mặc định là HOME thay vì LOBBY
+  const [gameState, setGameState] = useState('HOME'); 
   const [isPaused, setIsPaused] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
-  const [userData, setUserData] = useState({ phone: '', name: '', rankId: '' });
+  
+  // ĐÃ THÊM: Biến bestScore vào userData để hiển thị ở Sảnh Chính
+  const [userData, setUserData] = useState({ phone: '', name: '', rankId: '', bestScore: 0 });
   const [leaderboard, setLeaderboard] = useState([]);
   
   const [musicList, setMusicList] = useState([]);
   const [isLoadingMusic, setIsLoadingMusic] = useState(true);
 
-  // --- QUẢN LÝ ÂM LƯỢNG (Lưu vào LocalStorage) ---
   const [volumes, setVolumes] = useState(() => {
       const saved = localStorage.getItem('auVolumes');
       return saved ? JSON.parse(saved) : { lobby: 0.5, track: 0.8, sfx: 0.8, judgment: 0.8, end: 0.8 };
   });
   const [showSettings, setShowSettings] = useState(false);
 
-  // Gameplay States
   const [hp, setHp] = useState(100);
   const [level, setLevel] = useState(4); 
   const [score, setScore] = useState(0);
   
-  // Tích hợp Hook cuộn điểm cho Score
   const displayScore = useRollingScore(score, 400); 
 
   const [combo, setCombo] = useState(0);
@@ -69,10 +45,7 @@ const AuGame = () => {
   const [musicProgress, setMusicProgress] = useState(0);
   const [measureIndex, setMeasureIndex] = useState(0);
 
-  // Trạng thái dùng để kích hoạt hiệu ứng Rest Wave
   const [isResting, setIsResting] = useState(false);
-
-  // Visual Effects
   const [isShaking, setIsShaking] = useState(false);
   const [loadProgress, setLoadMusicProgress] = useState(0);
   const [prepCountdown, setPrepCountdown] = useState(3);
@@ -80,7 +53,6 @@ const AuGame = () => {
   const audioRef = useRef(null);
   const requestRef = useRef();
 
-  // Refs Tracking
   const cycleRef = useRef(0);
   const hasJudgedRef = useRef(false);
   const targetSeqRef = useRef([]);
@@ -92,7 +64,6 @@ const AuGame = () => {
   const hasStartedNotesRef = useRef(false); 
   const lastRestMusicRef = useRef(null); 
 
-  // --- HỆ THỐNG ÂM THANH (SFX & LOBBY) ---
   const sfxRef = useRef(null);
   const lobbyAudioRef = useRef(null);
   const fadeIntervalRef = useRef(null);
@@ -133,7 +104,7 @@ const AuGame = () => {
       setVolumes(newVols);
       localStorage.setItem('auVolumes', JSON.stringify(newVols));
       
-      if (key === 'lobby' && lobbyAudioRef.current && gameState === 'LOBBY') {
+      if (key === 'lobby' && lobbyAudioRef.current && (gameState === 'LOBBY' || gameState === 'HOME')) {
           lobbyAudioRef.current.volume = parseFloat(value);
       }
       if (key === 'track' && audioRef.current) {
@@ -141,27 +112,32 @@ const AuGame = () => {
       }
   };
 
+  // ĐÃ SỬA: Logic âm thanh sảnh áp dụng cho cả HOME và LOBBY
   useEffect(() => {
       if (!lobbyAudioRef.current) return;
-      if (gameState === 'LOBBY') {
+      if (gameState === 'LOBBY' || gameState === 'HOME') {
           const targetVolume = volumes.lobby;
-          lobbyAudioRef.current.volume = 0;
-          lobbyAudioRef.current.play().catch(e => console.warn("Lobby Music block:", e));
-          
-          clearInterval(fadeIntervalRef.current);
-          fadeIntervalRef.current = setInterval(() => {
-              if (lobbyAudioRef.current.volume + 0.05 < targetVolume) {
-                  lobbyAudioRef.current.volume += 0.05;
-              } else {
-                  lobbyAudioRef.current.volume = targetVolume;
-                  clearInterval(fadeIntervalRef.current);
-              }
-          }, 200); 
+          if (lobbyAudioRef.current.paused) {
+              lobbyAudioRef.current.volume = 0;
+              lobbyAudioRef.current.play().catch(e => console.warn("Lobby Music block:", e));
+              
+              clearInterval(fadeIntervalRef.current);
+              fadeIntervalRef.current = setInterval(() => {
+                  if (lobbyAudioRef.current.volume + 0.05 < targetVolume) {
+                      lobbyAudioRef.current.volume += 0.05;
+                  } else {
+                      lobbyAudioRef.current.volume = targetVolume;
+                      clearInterval(fadeIntervalRef.current);
+                  }
+              }, 200); 
+          } else {
+              lobbyAudioRef.current.volume = targetVolume;
+          }
       } else {
           clearInterval(fadeIntervalRef.current);
           lobbyAudioRef.current.pause();
       }
-  }, [gameState]);
+  }, [gameState, volumes.lobby]);
 
   useEffect(() => {
       if (audioRef.current) {
@@ -183,10 +159,23 @@ const AuGame = () => {
           const phones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
           if (phones.length > 0) {
               const userSnap = await getDoc(doc(db, 'users', phones[0]));
+              
+              // ĐÃ THÊM: Kéo điểm kỷ lục cá nhân từ bảng xếp hạng
+              let pBest = 0;
+              try {
+                  const lbSnap = await getDoc(doc(db, 'au_global_leaderboard', phones[0]));
+                  if (lbSnap.exists()) pBest = lbSnap.data().bestScore;
+              } catch(e) {}
+
               if (userSnap.exists()) {
                   const data = userSnap.data();
                   const rankInfo = getRankInfo(data.totalSpend || 0, data.manualRankId);
-                  setUserData({ phone: phones[0], name: data.fullName || 'Người chơi', rankId: rankInfo.current.id });
+                  setUserData({ 
+                      phone: phones[0], 
+                      name: data.fullName || 'Người chơi', 
+                      rankId: rankInfo.current.id,
+                      bestScore: pBest 
+                  });
               }
           } else { navigate('/'); }
       } catch (error) { console.error("Lỗi lấy thông tin:", error); }
@@ -270,21 +259,18 @@ const AuGame = () => {
 
     if (len > 0) {
         hasStartedNotesRef.current = true; 
-        setIsResting(false); // Đang có phím -> Tắt hiệu ứng Rest Wave
+        setIsResting(false); 
     }
 
     if (currentRange > 1 && currentRange !== prevLevelRangeRef.current) {
         playSFX(`level${currentRange}`, 'sfx');
-    } else if (currentRange === 0 && hasStartedNotesRef.current) {
-        setIsResting(true); // Nhịp rỗng -> Bật hiệu ứng Rest Wave
-        if (prevLevelRangeRef.current !== 0) {
-            const restSFX = ['rest1', 'rest2', 'rest3', 'rest4'];
-            const available = restSFX.filter(r => r !== lastRestMusicRef.current);
-            const randomSFX = available[Math.floor(Math.random() * available.length)];
-            
-            playSFX(randomSFX, 'sfx');
-            lastRestMusicRef.current = randomSFX; 
-        }
+    } else if (currentRange === 0 && hasStartedNotesRef.current && prevLevelRangeRef.current !== 0) {
+        const restSFX = ['rest1', 'rest2', 'rest3', 'rest4'];
+        const available = restSFX.filter(r => r !== lastRestMusicRef.current);
+        const randomSFX = available[Math.floor(Math.random() * available.length)];
+        
+        playSFX(randomSFX, 'sfx');
+        lastRestMusicRef.current = randomSFX; 
     }
     
     prevLevelRangeRef.current = currentRange; 
@@ -360,7 +346,7 @@ const AuGame = () => {
         scoreAdd = 0; 
         hpAdd = -15; 
         setCombo(0); 
-    } else { // MISS
+    } else { 
         playSFX('fail', 'judgment');
         perfectComboRef.current = 0; 
         scoreAdd = 0; 
@@ -448,14 +434,12 @@ const AuGame = () => {
       if (targetSeqRef.current.length === 0) return;
       if (hasJudgedRef.current) return;
 
-      const keyMap = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
-      
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault(); 
         if (isFailedSeqRef.current) return;
         if (userInputRef.current.length >= targetSeqRef.current.length) return;
         
-        const pressedKey = keyMap[e.key];
+        const pressedKey = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' }[e.key];
         const nextInput = [...userInputRef.current, pressedKey];
         
         userInputRef.current = nextInput;
@@ -507,109 +491,52 @@ const AuGame = () => {
       } catch (e) { console.error(e); }
   };
 
-  const getDifficultyStars = (diff) => {
-      switch(diff) {
-          case 'Easy': return 2;
-          case 'Normal': return 4;
-          case 'Hard': return 6;
-          case 'Expert': return 8;
-          default: return 4;
-      }
-  };
-
   return (
     <div className={`min-h-screen bg-[url('https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1920&auto=format&fit=crop')] bg-cover bg-center text-white font-sans overflow-hidden relative transition-all ${isShaking ? 'modern-impact' : ''}`}>
-      
       <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]"></div>
 
-      {/* --- CSS CHO TIẾN TRÌNH VIỀN VÀ CÁC HIỆU ỨNG MỚI --- */}
-      <style>{`
-        .modern-impact { animation: impact 0.2s cubic-bezier(.36,.07,.19,.97) both; }
-        @keyframes impact { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02) translateY(5px); } }
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
-        .glass-card { background: rgba(0, 0, 0, 0.4); backdrop-blur: 20px; border: 1px solid rgba(255, 255, 255, 0.1); }
-        
-        .edge-progress {
-            position: absolute; inset: 0; pointer-events: none; z-index: 30;
-            padding: 4px; 
-            background: conic-gradient(from 0deg at 50% 50%, #22d3ee var(--music-progress), transparent 0);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            transition: all 0.3s ease;
-        }
-
-        /* ĐÃ THÊM: Class viền sóng phát sáng khi Rest Time */
-        .edge-rest-wave {
-            background: linear-gradient(90deg, #22d3ee, #a855f7, #22d3ee);
-            background-size: 200% 200%;
-            animation: waveFlow 2s linear infinite, glowPulse 1.5s ease-in-out infinite alternate;
-            padding: 8px; /* Dày hơn lúc bình thường */
-            box-shadow: inset 0 0 50px rgba(34,211,238,0.5);
-        }
-        @keyframes waveFlow { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
-        @keyframes glowPulse { 0% { opacity: 0.7; filter: drop-shadow(0 0 10px #22d3ee); } 100% { opacity: 1; filter: drop-shadow(0 0 30px #a855f7); } }
-
-        .pill-progress {
-            position: absolute; inset: 0; pointer-events: none; z-index: 0;
-            border-radius: 9999px;
-            padding: 3px; 
-            background: conic-gradient(from 0deg at 50% 50%, #22d3ee var(--music-progress), transparent 0);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-        }
-
-        /* ĐÃ THÊM: Xoay đĩa đệm (Avatar Nhạc) */
-        .album-rotate { animation: spin 4s linear infinite; }
-        .album-rotate-paused { animation-play-state: paused; }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-      `}</style>
-
-      {/* --- CÀI ĐẶT ÂM THANH MODAL --- */}
       {showSettings && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center animate-in fade-in">
-              <div className="bg-gray-900 border border-white/20 p-8 rounded-[2rem] w-full max-w-md shadow-[0_0_50px_rgba(34,211,238,0.1)]">
-                  <div className="flex justify-between items-center mb-8">
-                      <h2 className="text-2xl font-black italic text-cyan-400 uppercase tracking-widest">Cài đặt Âm thanh</h2>
-                      <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-white text-2xl transition-colors">✖</button>
-                  </div>
-                  <div className="space-y-6">
-                      <div>
-                          <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Nhạc Sảnh (Lobby)</span><span>{Math.round(volumes.lobby * 100)}%</span></label>
-                          <input type="range" min="0" max="1" step="0.05" value={volumes.lobby} onChange={(e) => handleVolumeChange('lobby', e.target.value)} className="w-full accent-cyan-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
-                      </div>
-                      <div>
-                          <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Nhạc Nhảy (Main Track)</span><span>{Math.round(volumes.track * 100)}%</span></label>
-                          <input type="range" min="0" max="1" step="0.05" value={volumes.track} onChange={(e) => handleVolumeChange('track', e.target.value)} className="w-full accent-cyan-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
-                      </div>
-                      <div>
-                          <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Hiệu ứng Trận (Level, Nhịp nghỉ)</span><span>{Math.round(volumes.sfx * 100)}%</span></label>
-                          <input type="range" min="0" max="1" step="0.05" value={volumes.sfx} onChange={(e) => handleVolumeChange('sfx', e.target.value)} className="w-full accent-cyan-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
-                      </div>
-                      <div>
-                          <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Đánh giá (Perfect, Great, Sai nút)</span><span>{Math.round(volumes.judgment * 100)}%</span></label>
-                          <input type="range" min="0" max="1" step="0.05" value={volumes.judgment} onChange={(e) => handleVolumeChange('judgment', e.target.value)} className="w-full accent-cyan-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
-                      </div>
-                      <div>
-                          <label className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2"><span>Nhạc Kết thúc trận</span><span>{Math.round(volumes.end * 100)}%</span></label>
-                          <input type="range" min="0" max="1" step="0.05" value={volumes.end} onChange={(e) => handleVolumeChange('end', e.target.value)} className="w-full accent-cyan-500 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
-                      </div>
-                  </div>
-              </div>
+          <AuSettings volumes={volumes} handleVolumeChange={handleVolumeChange} setShowSettings={setShowSettings} />
+      )}
+
+      {/* --- MÀN HÌNH SẢNH CHÍNH (HOME) --- */}
+      {gameState === 'HOME' && (
+          <div className="relative z-10 h-screen flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
+             <h1 className="text-6xl sm:text-8xl md:text-9xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 mb-10 drop-shadow-[0_0_30px_rgba(34,211,238,0.5)]">AU PLANT G</h1>
+
+             <div className="glass-card p-8 sm:p-12 rounded-[3rem] w-full max-w-md flex flex-col items-center text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] mb-12">
+                 <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-cyan-400 to-purple-500 mb-4 flex items-center justify-center shadow-[0_0_20px_cyan]">
+                     <span className="text-4xl">👑</span>
+                 </div>
+                 <h2 className="text-3xl font-black text-white mb-2">{userData.name}</h2>
+                 <div className="px-4 py-1 bg-white/10 rounded-full border border-white/20 mb-8">
+                     <span className="text-xs font-black tracking-widest text-cyan-400 uppercase">{userData.rankId || 'NEWBIE'}</span>
+                 </div>
+
+                 <div className="w-full bg-black/40 rounded-2xl p-4 border border-white/5 mb-8">
+                     <p className="text-[10px] text-white/50 font-black uppercase tracking-[0.3em] mb-1">Kỷ lục cá nhân</p>
+                     <p className="text-4xl font-black text-yellow-400 tracking-tighter drop-shadow-[0_0_10px_yellow]">
+                         {userData.bestScore?.toLocaleString() || 0}
+                     </p>
+                 </div>
+
+                 <button onClick={() => setGameState('LOBBY')} className="w-full py-5 bg-cyan-500 text-black font-black rounded-full uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_cyan]">Vào Phòng Nhạc</button>
+             </div>
+
+             <div className="flex gap-4">
+                 <button onClick={() => setShowSettings(true)} className="bg-white/5 hover:bg-white/10 px-8 py-4 rounded-full text-sm font-black transition-all border border-white/10 shadow-[0_0_15px_rgba(34,211,238,0.1)] flex items-center gap-2">⚙️ CÀI ĐẶT</button>
+                 <button onClick={() => navigate('/')} className="bg-white/5 hover:bg-white/10 px-8 py-4 rounded-full text-sm font-black uppercase tracking-widest border border-white/10 transition-all hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/50">Thoát Game</button>
+             </div>
           </div>
       )}
 
-      {/* LOBBY */}
+      {/* --- MÀN HÌNH CHỌN NHẠC (LOBBY) --- */}
       {gameState === 'LOBBY' && (
         <div className="relative z-10 max-w-6xl mx-auto py-12 px-6 animate-in fade-in duration-500">
            <header className="flex justify-between items-center mb-12">
-               <h1 className="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">AU PLANT G</h1>
-               <div className="flex gap-4">
-                   <button onClick={() => setShowSettings(true)} className="bg-white/5 hover:bg-white/10 px-4 py-2 rounded-2xl text-lg transition-all border border-white/10 shadow-[0_0_15px_rgba(34,211,238,0.1)]">⚙️</button>
-                   <button onClick={() => navigate('/')} className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/10 transition-all">Trở về</button>
-               </div>
+               <h1 className="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">CHỌN BÀI HÁT</h1>
+               {/* ĐÃ SỬA: Nút Trở về đưa bạn về màn hình HOME */}
+               <button onClick={() => setGameState('HOME')} className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/10 transition-all">Trở về</button>
            </header>
            
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
@@ -659,13 +586,10 @@ const AuGame = () => {
       {/* MÀN HÌNH CHƠI CHÍNH SLEEK UI */}
       {gameState === 'PLAYING' && (
           <div className="h-screen relative z-10 w-full overflow-hidden">
-              
-              {/* --- ĐÃ SỬA: Viền Màn Hình Chạy Nhịp (Thêm hiệu ứng Rest) --- */}
               <div className={`edge-progress ${isResting ? 'edge-rest-wave' : ''}`} style={{ '--music-progress': `${musicProgress}%` }}></div>
 
               <audio ref={audioRef} src={currentTrack?.src} onEnded={handleGameEnd} onTimeUpdate={handleTimeUpdate} className="hidden" />
               
-              {/* --- ĐÃ ĐỔI VỊ TRÍ: Nút Pause chuyển sang Góc Trái --- */}
               <button onClick={togglePause} className="absolute top-8 left-8 z-50 bg-black/50 p-4 rounded-2xl border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all">⏸️</button>
 
               {isPaused && (
@@ -678,7 +602,6 @@ const AuGame = () => {
                   </div>
               )}
 
-              {/* KHU VỰC TOP-CENTER (NĂNG LƯỢNG) */}
               <div className="absolute top-8 left-1/2 -translate-x-1/2 flex flex-col items-center w-full max-w-md z-40">
                   <div className="w-full bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 shadow-lg">
                       <div className="flex justify-between items-end mb-2 px-1">
@@ -691,18 +614,15 @@ const AuGame = () => {
                   </div>
               </div>
 
-              {/* KHU VỰC TRÁI GIỮA (ĐIỂM SỐ DẠNG CUỘN) */}
               <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col w-64 sm:w-80 lg:w-96">
                   <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full">
                       <p className="text-sm font-black italic text-white/50 uppercase tracking-[0.5em] mb-[-5px]">SCORE</p>
                       <p className="text-5xl sm:text-6xl lg:text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 tracking-tighter break-words leading-none py-2">
-                          {/* SỬ DỤNG BIẾN ĐIỂM SỐ CUỘN */}
                           {displayScore.toLocaleString()}
                       </p>
                   </div>
               </div>
 
-              {/* ĐÁNH GIÁ NỔI BẬT GIỮA MÀN HÌNH */}
               {judgment && (
                   <div key={judgment.id} className="absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 z-50 animate-in zoom-in duration-100 flex flex-col items-center pointer-events-none drop-shadow-[0_0_30px_rgba(0,0,0,0.8)]">
                       <h2 className={`text-6xl sm:text-7xl font-black italic uppercase tracking-tighter
@@ -716,10 +636,7 @@ const AuGame = () => {
                   </div>
               )}
 
-              {/* KHU VỰC ĐIỀU KHIỂN ĐÁY GIỮA */}
               <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-4">
-                  
-                  {/* Thanh Nhịp điệu và Level */}
                   <div className="flex items-center gap-4 w-full px-4">
                       <span className="font-black italic text-cyan-400 text-xl tracking-wider drop-shadow-[0_0_10px_cyan]">
                           LV {Math.floor(level)}
@@ -742,23 +659,18 @@ const AuGame = () => {
                       )) : <span className="text-white/30 italic font-black uppercase tracking-[0.5em] text-2xl py-4 animate-pulse">Rest Time</span>}
                   </div>
 
-                  {/* Thanh Thông Tin Nhạc + Viền Progress (Pill) */}
                   <div className="mt-8 flex flex-col items-center">
-                      <div className="flex items-center gap-4 bg-black/60 backdrop-blur-xl pl-3 pr-8 py-3 rounded-full shadow-2xl relative">
+                      <div className="flex items-center gap-4 bg-black/60 backdrop-blur-xl pl-3 pr-8 py-3 rounded-full shadow-2xl relative overflow-hidden">
                           <div className="pill-progress" style={{ '--music-progress': `${musicProgress}%` }}></div>
-                          
-                          {/* --- ĐÃ SỬA: Ảnh Avatar Xoay (Dừng khi Pause) --- */}
                           <img src={currentTrack?.cover} className={`w-14 h-14 rounded-full object-cover border border-white/20 z-10 album-rotate ${isPaused ? 'album-rotate-paused' : ''}`} alt="cover" />
-                          
                           <div className="flex flex-col z-10">
-                              <span className="font-black text-lg text-white tracking-tight leading-none mb-1">{currentTrack?.title}</span>
-                              <span className="text-xs text-cyan-400 font-bold uppercase tracking-widest leading-none">{currentTrack?.artist}</span>
+                              <span className="font-black text-sm text-white tracking-tight leading-none mb-1">{currentTrack?.title}</span>
+                              <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest leading-none">{currentTrack?.artist}</span>
                           </div>
                       </div>
                   </div>
               </div>
 
-              {/* GÓC TRÁI DƯỚI: ĐỘ KHÓ (SAO) */}
               <div className="absolute bottom-10 left-8 flex flex-col gap-1 drop-shadow-[0_5px_10px_rgba(0,0,0,0.8)]">
                   <span className="font-black italic text-2xl text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 uppercase">
                      {currentTrack?.difficulty || 'NORMAL'}
@@ -767,11 +679,19 @@ const AuGame = () => {
                       {[...Array(getDifficultyStars(currentTrack?.difficulty))].map((_, i) => <span key={i}>★</span>)}
                   </div>
               </div>
-
           </div>
       )}
 
-      {/* HIỂN THỊ CHỮ READY GO SAU KHI ĐẾM NGƯỢC */}
+      {/* CÁC MÀN HÌNH PHỤ TRỢ KHÁC NHƯ LOADING, RESULT GIỮ NGUYÊN */}
+      {gameState === 'LOADING' && (
+          <div className="h-screen flex flex-col items-center justify-center bg-black relative z-10">
+              <div className="w-64 h-1 bg-white/5 rounded-full overflow-hidden mb-6">
+                  <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" style={{ width: `${loadProgress}%` }}></div>
+              </div>
+              <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.5em] animate-pulse">Entering Stage... {Math.floor(loadProgress)}%</p>
+          </div>
+      )}
+
       {gameState === 'PREPARING' && (
           <div className="h-screen flex items-center justify-center relative z-10">
               <div className="text-[12rem] sm:text-[15rem] leading-none font-black italic text-white drop-shadow-[0_0_50px_cyan] animate-bounce text-center select-none uppercase">
