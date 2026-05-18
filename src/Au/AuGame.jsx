@@ -10,17 +10,29 @@ import './AuStyles.css';
 import AuSettings from './AuSettings';
 import { ARROW_SYMBOLS, OPPOSITE_KEYS, useRollingScore, getDifficultyStars } from './utils/auHelpers';
 
+// ĐÃ THÊM: Hàm xử lý màu sắc phát sáng cho từng hạng Rank
+const getRankColor = (rank) => {
+    const r = (rank || '').toUpperCase();
+    if (r.includes('CHALLENGER') || r.includes('THÁCH ĐẤU') || r.includes('BÁCH CHIẾN')) return 'text-red-400 drop-shadow-[0_0_5px_red]';
+    if (r.includes('DIAMOND') || r.includes('KIM CƯƠNG')) return 'text-cyan-400 drop-shadow-[0_0_5px_cyan]';
+    if (r.includes('PLATINUM') || r.includes('BẠCH KIM')) return 'text-teal-300';
+    if (r.includes('GOLD') || r.includes('VÀNG')) return 'text-yellow-400 drop-shadow-[0_0_5px_yellow]';
+    if (r.includes('SILVER') || r.includes('BẠC')) return 'text-gray-300';
+    return 'text-green-400';
+};
+
 const AuGame = () => {
   const navigate = useNavigate();
   const [gameState, setGameState] = useState('HOME'); 
   
-  // ĐÃ THÊM: Dùng useRef để các Listener RTDB luôn lấy được gameState mới nhất
   const gameStateRef = useRef(gameState);
   useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
 
   const [isPaused, setIsPaused] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
-  const [userData, setUserData] = useState({ phone: '', name: '', rankId: '', bestScore: 0 });
+  
+  // ĐÃ SỬA: Cập nhật state để lưu trữ thêm avatar, frame, vip
+  const [userData, setUserData] = useState({ phone: '', name: '', rankId: '', bestScore: 0, avatar: '', frame: '', vip: '' });
   
   const [gameMode, setGameMode] = useState('SINGLE'); 
   const [lbTab, setLbTab] = useState('SINGLE'); 
@@ -28,7 +40,6 @@ const AuGame = () => {
   const [waitingRooms, setWaitingRooms] = useState([]);
   const [currentRoom, setCurrentRoom] = useState(null);
   
-  // ĐÃ THÊM: Sửa cấu trúc matchScores để lưu tổng điểm 2 Team
   const [matchScores, setMatchScores] = useState({ teamA: 0, teamB: 0 });
   
   const [leaderboard, setLeaderboard] = useState([]);
@@ -81,7 +92,6 @@ const AuGame = () => {
   
   const serverTimeOffsetRef = useRef(0);
 
-  // ĐÃ THÊM: Refs để hủy lắng nghe Firebase khi thoát phòng, tránh lỗi nhảy lung tung
   const roomListenerUnsub = useRef(null);
   const scoreListenerUnsub = useRef(null);
 
@@ -180,6 +190,7 @@ const AuGame = () => {
     }
   };
 
+  // ĐÃ SỬA: Lấy và truyền avatar, frame, vip
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -195,11 +206,27 @@ const AuGame = () => {
               if (userSnap.exists()) {
                   const data = userSnap.data();
                   const rankInfo = getRankInfo(data.totalSpend || 0, data.manualRankId);
-                  const uData = { phone: phones[0], name: data.fullName || 'Người chơi', rankId: rankInfo.current.id, bestScore: pBest };
+                  
+                  const uData = { 
+                      phone: phones[0], 
+                      name: data.fullName || 'Người chơi', 
+                      rankId: rankInfo.current.id, 
+                      bestScore: pBest,
+                      avatar: data.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${phones[0]}`, 
+                      frame: data.frame || null,
+                      vip: data.vip || rankInfo.current.vipIcon || null
+                  };
                   setUserData(uData);
 
                   const myPresenceRef = dbRef(rtdb, `presence/${phones[0]}`);
-                  set(myPresenceRef, { name: uData.name, rank: uData.rankId, status: 'Online' });
+                  set(myPresenceRef, { 
+                      name: uData.name, 
+                      rank: uData.rankId, 
+                      status: 'Online',
+                      avatar: uData.avatar,
+                      frame: uData.frame,
+                      vip: uData.vip
+                  });
                   onDisconnect(myPresenceRef).remove();
               }
           } else { navigate('/'); }
@@ -253,7 +280,7 @@ const AuGame = () => {
     } catch (e) { setLeaderboard([]); }
   };
 
-  // --- LOGIC PHÒNG VÀ ĐỒNG BỘ MULTIPLAYER ĐÃ SỬA CHUẨN ---
+  // ĐÃ SỬA: Thêm avatar, frame, vip vào room data
   const handleSelectTrackAndCreateRoom = async (track) => {
       if (track.requiredRank && userData.rankId !== track.requiredRank) return;
       setCurrentTrack(track);
@@ -269,7 +296,15 @@ const AuGame = () => {
               mode: gameMode,
               status: 'waiting',
               players: {
-                  [userData.phone]: { name: userData.name, score: 0, team: 'A' }
+                  [userData.phone]: { 
+                      name: userData.name, 
+                      score: 0, 
+                      team: 'A',
+                      avatar: userData.avatar,
+                      frame: userData.frame,
+                      vip: userData.vip,
+                      rank: userData.rankId
+                  }
               }
           };
           await set(newRoomRef, roomDataInit);
@@ -284,16 +319,15 @@ const AuGame = () => {
                       startGameLoading(track, data.startTimestamp);
                   }
 
-                  // ĐÃ THÊM: Nghe tín hiệu chết sớm (Ai hết HP trước thì phòng báo ended)
                   if (data.status === 'ended' && data.winnerTeam) {
                       if (gameStateRef.current === 'PLAYING') {
                           if (audioRef.current) audioRef.current.pause();
                           const myTeam = data.players[userData.phone]?.team;
                           if (myTeam === data.winnerTeam) {
                               playSFX('end', 'end'); 
-                              setGameState('RESULT'); // Bạn là người sống sót -> Thắng
+                              setGameState('RESULT'); 
                           } else {
-                              setGameState('GAME_OVER'); // Bạn đã chết -> Thua
+                              setGameState('GAME_OVER'); 
                           }
                       }
                   }
@@ -314,7 +348,6 @@ const AuGame = () => {
   const handleJoinRoom = async (room) => {
       if (!userData.phone) return;
       
-      // ĐÃ SỬA: Phân chia Team logic siêu chuẩn
       const players = Object.values(room.players || {});
       const teamACount = players.filter(p => p.team === 'A').length;
       let assignedTeam = 'A';
@@ -323,7 +356,16 @@ const AuGame = () => {
       
       const myPlayerRef = dbRef(rtdb, `rooms/${room.id}/players/${userData.phone}`);
       onDisconnect(myPlayerRef).remove();
-      await set(myPlayerRef, { name: userData.name, score: 0, team: assignedTeam });
+      // ĐÃ SỬA: Đẩy info vào playerRef
+      await set(myPlayerRef, { 
+          name: userData.name, 
+          score: 0, 
+          team: assignedTeam,
+          avatar: userData.avatar,
+          frame: userData.frame,
+          vip: userData.vip,
+          rank: userData.rankId
+      });
       
       const fullRoomSnap = await getDocs(query(collection(db, 'au_tracks')));
       const trackData = fullRoomSnap.docs.find(d => d.id === room.trackId)?.data();
@@ -409,7 +451,6 @@ const AuGame = () => {
             const myTeam = currentRoom.players[userData.phone]?.team || 'A';
             set(dbRef(rtdb, `live_scores/${currentRoom.id}/${userData.phone}`), { name: userData.name, score: 0, team: myTeam });
             
-            // ĐÃ THÊM: Listener gộp tổng điểm 2 team
             if (scoreListenerUnsub.current) scoreListenerUnsub.current();
             const scoresRef = dbRef(rtdb, `live_scores/${currentRoom.id}`);
             scoreListenerUnsub.current = onValue(scoresRef, (snap) => {
@@ -503,7 +544,6 @@ const AuGame = () => {
     }
   }, [gameState, prepCountdown, currentTrack]);
 
-  // --- ĐÃ SỬA: CƠ CHẾ HP CHO SOLO VÀ CẶP ---
   const processJudgment = (judg) => {
     setJudgment({ text: judg, id: Date.now() });
     setTimeout(() => setJudgment(prev => prev?.text === judg ? null : prev), 400);
@@ -561,7 +601,6 @@ const AuGame = () => {
     setHp(prev => {
         let newHp = Math.max(0, Math.min(100, prev + hpAdd));
         
-        // ĐÃ THÊM: Logic loại trực tiếp nếu hết HP ở Solo/Đơn. Couple thì vẫn nhảy bình thường.
         if (newHp <= 0 && gameMode !== 'COUPLE') { 
             if (audioRef.current) audioRef.current.pause();
             
@@ -600,7 +639,6 @@ const AuGame = () => {
 
   const togglePause = () => setIsPaused(prev => !prev);
 
-  // ĐÃ SỬA: Clean up dứt điểm listener khi Thoát phòng
   const handleLeaveGame = async () => {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
       
@@ -733,7 +771,6 @@ const AuGame = () => {
       }
   };
 
-  // Logic xác định thắng thua và điểm số lúc kết thúc
   let resultMessage = "STAGE CLEARED";
   let isVictory = true;
   if (gameState === 'RESULT' && gameMode !== 'SINGLE' && currentRoom) {
@@ -769,29 +806,42 @@ const AuGame = () => {
              </header>
 
              <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-8 min-h-0">
+                 {/* Cột 1: Người chơi Online */}
                  <div className="glass-card p-6 rounded-[2rem] flex flex-col overflow-hidden h-full hidden lg:flex">
                      <h2 className="text-[10px] font-black text-green-400 uppercase tracking-[0.4em] mb-6 flex items-center gap-2">🟢 Đang Online ({onlineUsers.length})</h2>
                      <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2">
                          {onlineUsers.map(user => (
-                             <div key={user.id} className="flex items-center gap-3 p-3 bg-black/40 rounded-xl border border-white/5">
-                                 <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 to-purple-500 flex items-center justify-center text-xs">👤</div>
+                             <div key={user.id} className="flex items-center gap-3 p-3 bg-black/40 rounded-xl border border-white/5 hover:bg-white/5 transition-colors">
+                                 <div className="relative w-10 h-10 shrink-0 flex items-center justify-center">
+                                     <img src={user.avatar} className="w-8 h-8 rounded-full object-cover" alt="avatar" />
+                                     {user.frame && <img src={user.frame} className="absolute inset-0 w-full h-full object-contain scale-[1.3] pointer-events-none" alt="frame" />}
+                                 </div>
                                  <div className="flex-1 overflow-hidden">
-                                     <p className="text-sm font-bold truncate">{user.name}</p>
-                                     <p className="text-[9px] text-white/40 uppercase">{user.rank}</p>
+                                     <p className="text-sm font-bold truncate flex items-center gap-1">
+                                         {user.vip && <span>{user.vip}</span>}
+                                         {user.name}
+                                     </p>
+                                     <p className={`text-[9px] uppercase font-black tracking-widest ${getRankColor(user.rank)}`}>{user.rank || 'NEWBIE'}</p>
                                  </div>
                              </div>
                          ))}
                      </div>
                  </div>
 
+                 {/* Cột 2: Profile & Nút Vào Nhảy */}
                  <div className="lg:col-span-2 flex flex-col items-center justify-center">
                      <div className="glass-card p-10 rounded-[3rem] w-full max-w-md flex flex-col items-center text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] mb-8 transform hover:scale-[1.02] transition-transform">
-                         <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-cyan-400 to-purple-500 mb-4 flex items-center justify-center shadow-[0_0_20px_cyan]">
-                             <span className="text-4xl">👑</span>
+                         {/* ĐÃ SỬA: Thay icon 👑 bằng Avatar cá nhân */}
+                         <div className="relative w-32 h-32 mb-4 flex items-center justify-center">
+                             <img src={userData.avatar} className="w-24 h-24 rounded-full object-cover shadow-[0_0_20px_cyan]" alt="avatar" />
+                             {userData.frame && <img src={userData.frame} className="absolute inset-0 w-full h-full object-contain scale-125 z-10 pointer-events-none" alt="frame" />}
+                             {userData.vip && <div className="absolute bottom-1 right-1 bg-black/80 rounded-full px-2 py-1 text-sm z-20 border border-yellow-400 shadow-[0_0_10px_yellow]">{userData.vip}</div>}
                          </div>
+
                          <h2 className="text-3xl font-black text-white mb-2">{userData.name}</h2>
+                         
                          <div className="px-4 py-1 bg-white/10 rounded-full border border-white/20 mb-8">
-                             <span className="text-xs font-black tracking-widest text-cyan-400 uppercase">{userData.rankId || 'NEWBIE'}</span>
+                             <span className={`text-xs font-black tracking-widest uppercase ${getRankColor(userData.rankId)}`}>{userData.rankId || 'NEWBIE'}</span>
                          </div>
 
                          <div className="w-full bg-black/40 rounded-2xl p-4 border border-white/5 mb-8">
@@ -805,6 +855,7 @@ const AuGame = () => {
                      </div>
                  </div>
 
+                 {/* Cột 3: Bảng TOP */}
                  <div className="glass-card p-6 rounded-[2rem] flex flex-col overflow-hidden h-full">
                      <h2 className="text-[10px] font-black text-yellow-400 uppercase tracking-[0.4em] mb-4 flex items-center gap-2">🏆 TOP THẦN NHẢY</h2>
                      
@@ -922,12 +973,42 @@ const AuGame = () => {
                   <div className="grid grid-cols-2 gap-8 mb-12">
                       <div className="bg-black/40 p-6 rounded-3xl border border-white/10 min-h-[150px]">
                           <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-4">TEAM A</h3>
-                          {Object.values(currentRoom.players || {}).filter(p => p.team === 'A').map((p, i) => <p key={i} className="font-bold mb-2 text-white">{p.name}</p>)}
+                          {/* ĐÃ SỬA: Box thông tin thành viên (Avatar, Khung, VIP, Rank) */}
+                          {Object.values(currentRoom.players || {}).filter(p => p.team === 'A').map((p, i) => (
+                              <div key={i} className="flex items-center gap-3 bg-black/40 p-3 rounded-2xl mb-3 border border-white/5 hover:border-cyan-500/50 transition-colors">
+                                  <div className="relative w-12 h-12 shrink-0 flex items-center justify-center">
+                                      <img src={p.avatar} className="w-10 h-10 rounded-full object-cover" alt="avatar" />
+                                      {p.frame && <img src={p.frame} className="absolute inset-0 w-full h-full object-contain scale-[1.3] pointer-events-none" alt="frame" />}
+                                  </div>
+                                  <div className="text-left flex-1 overflow-hidden">
+                                      <p className="font-bold text-white text-sm truncate flex items-center gap-1">
+                                          {p.vip && <span className="text-xs">{p.vip}</span>}
+                                          {p.name}
+                                      </p>
+                                      <p className={`text-[10px] font-black uppercase tracking-widest mt-0.5 ${getRankColor(p.rank)}`}>{p.rank || 'NEWBIE'}</p>
+                                  </div>
+                              </div>
+                          ))}
                       </div>
+                      
                       {currentRoom.mode === 'COUPLE' || currentRoom.mode === 'SOLO' ? (
                           <div className="bg-black/40 p-6 rounded-3xl border border-white/10 min-h-[150px]">
                               <h3 className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-4">TEAM B</h3>
-                              {Object.values(currentRoom.players || {}).filter(p => p.team === 'B').map((p, i) => <p key={i} className="font-bold mb-2 text-white">{p.name}</p>)}
+                              {Object.values(currentRoom.players || {}).filter(p => p.team === 'B').map((p, i) => (
+                                  <div key={i} className="flex items-center gap-3 bg-black/40 p-3 rounded-2xl mb-3 border border-white/5 hover:border-red-500/50 transition-colors">
+                                      <div className="relative w-12 h-12 shrink-0 flex items-center justify-center">
+                                          <img src={p.avatar} className="w-10 h-10 rounded-full object-cover" alt="avatar" />
+                                          {p.frame && <img src={p.frame} className="absolute inset-0 w-full h-full object-contain scale-[1.3] pointer-events-none" alt="frame" />}
+                                      </div>
+                                      <div className="text-left flex-1 overflow-hidden">
+                                          <p className="font-bold text-white text-sm truncate flex items-center gap-1">
+                                              {p.vip && <span className="text-xs">{p.vip}</span>}
+                                              {p.name}
+                                          </p>
+                                          <p className={`text-[10px] font-black uppercase tracking-widest mt-0.5 ${getRankColor(p.rank)}`}>{p.rank || 'NEWBIE'}</p>
+                                      </div>
+                                  </div>
+                              ))}
                           </div>
                       ) : null}
                   </div>
@@ -960,7 +1041,6 @@ const AuGame = () => {
                   </div>
               )}
 
-              {/* ĐÃ SỬA: Ẩn thanh HP nếu đang chơi Đấu Cặp (COUPLE) */}
               {gameMode !== 'COUPLE' && (
                   <div className="absolute top-8 left-1/2 -translate-x-1/2 flex flex-col items-center w-full max-w-md z-40">
                       <div className="w-full bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 shadow-lg">
@@ -975,7 +1055,6 @@ const AuGame = () => {
                   </div>
               )}
 
-              {/* --- ĐÃ SỬA: ĐIỂM SỐ TÙY THEO MODE (TEAM ĐỎ / XANH HOẶC CÁ NHÂN) --- */}
               <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col w-64 sm:w-80 lg:w-96 gap-6">
                   {gameMode === 'SINGLE' ? (
                       <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full">
@@ -995,7 +1074,6 @@ const AuGame = () => {
                           <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full opacity-90 mt-4 border-l-4 border-red-500 pl-4 bg-black/40 rounded-r-2xl py-2">
                               <p className="text-xs font-black italic text-red-400 uppercase tracking-[0.5em] mb-[-2px]">ENEMY</p>
                               <p className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-red-300 to-red-600 tracking-tighter break-words leading-none py-2 transition-all">
-                                  {/* Hiển thị điểm đội kia (đối thủ) */}
                                   {(currentRoom?.players[userData.phone]?.team === 'A' ? displayTeamB : displayTeamA).toLocaleString()}
                               </p>
                           </div>
@@ -1054,7 +1132,7 @@ const AuGame = () => {
 
                   <div className="mt-8 flex flex-col items-center">
                       <div className="flex items-center gap-4 bg-black/60 backdrop-blur-xl pl-3 pr-8 py-3 rounded-full shadow-2xl relative overflow-hidden">
-                          <div className="absolute bottom-0 left-0 h-1 bg-cyan-400/80 transition-all duration-300" style={{ width: `${musicProgress}%` }}></div>
+                          <div className="pill-progress" style={{ '--music-progress': `${musicProgress}%` }}></div>
                           <img src={currentTrack?.cover} className={`w-14 h-14 rounded-full object-cover border border-white/20 z-10 album-rotate ${isPaused ? 'album-rotate-paused' : ''}`} alt="cover" />
                           <div className="flex flex-col z-10">
                               <span className="font-black text-sm text-white tracking-tight leading-none mb-1">{currentTrack?.title}</span>
@@ -1072,11 +1150,9 @@ const AuGame = () => {
                       {[...Array(getDifficultyStars(currentTrack?.difficulty))].map((_, i) => <span key={i}>★</span>)}
                   </div>
               </div>
-
           </div>
       )}
 
-      {/* CÁC MÀN HÌNH PHỤ TRỢ KHÁC */}
       {gameState === 'PREPARING' && (
           <div className="h-screen flex items-center justify-center relative z-10">
               <div className="text-[12rem] sm:text-[15rem] leading-none font-black italic text-white drop-shadow-[0_0_50px_cyan] animate-bounce text-center select-none uppercase">
@@ -1085,7 +1161,6 @@ const AuGame = () => {
           </div>
       )}
       
-      {/* ĐÃ SỬA: MÀN HÌNH KẾT QUẢ CHO CÁC MODE */}
       {gameState === 'RESULT' && (
           <div className="h-screen flex items-center justify-center p-6 w-full relative z-10">
               <div className="bg-black/60 backdrop-blur-2xl p-16 rounded-[4rem] border border-white/10 shadow-[0_0_100px_rgba(34,211,238,0.2)] max-w-xl w-full text-center animate-in zoom-in duration-500">
@@ -1132,7 +1207,6 @@ const AuGame = () => {
               <button onClick={handleLeaveGame} className="px-16 py-6 bg-white text-black font-black rounded-full uppercase tracking-[0.2em] hover:scale-105 transition-all">Thoát</button>
           </div>
       )}
-
     </div>
   );
 };
