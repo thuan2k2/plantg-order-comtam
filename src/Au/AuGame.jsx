@@ -1,7 +1,7 @@
+// src/Au/AuGame.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
-// ĐÃ THÊM: Import Realtime Database (RTDB) cho Multiplayer
 import { getDatabase, ref as dbRef, set, onValue, update, remove, onDisconnect, push } from 'firebase/database';
 
 import { db } from '../firebase/config';
@@ -18,9 +18,8 @@ const AuGame = () => {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [userData, setUserData] = useState({ phone: '', name: '', rankId: '', bestScore: 0 });
   
-  // --- ĐÃ THÊM: States cho Multiplayer & UI Mới ---
-  const [gameMode, setGameMode] = useState('SINGLE'); // SINGLE, SOLO, COUPLE
-  const [lbTab, setLbTab] = useState('SINGLE'); // Tab Leaderboard
+  const [gameMode, setGameMode] = useState('SINGLE'); 
+  const [lbTab, setLbTab] = useState('SINGLE'); 
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [waitingRooms, setWaitingRooms] = useState([]);
   const [currentRoom, setCurrentRoom] = useState(null);
@@ -71,6 +70,9 @@ const AuGame = () => {
   const prevLevelRangeRef = useRef(null);
   const hasStartedNotesRef = useRef(false); 
   const lastRestMusicRef = useRef(null); 
+  
+  // ĐĂ THÊM: Đo độ trễ thời gian Server để đồng bộ hóa Bắt đầu
+  const serverTimeOffsetRef = useRef(0);
 
   const sfxRef = useRef(null);
   const lobbyAudioRef = useRef(null);
@@ -102,6 +104,12 @@ const AuGame = () => {
     const randomTrack = lobbyTracks[Math.floor(Math.random() * lobbyTracks.length)];
     lobbyAudioRef.current = new Audio(randomTrack);
     lobbyAudioRef.current.loop = false;
+
+    // Lắng nghe sự chênh lệch thời gian giữa Client và Server Firebase
+    const offsetRef = dbRef(rtdb, '.info/serverTimeOffset');
+    onValue(offsetRef, (snap) => {
+        serverTimeOffsetRef.current = snap.val() || 0;
+    });
 
     return () => {
         clearInterval(fadeIntervalRef.current);
@@ -180,9 +188,8 @@ const AuGame = () => {
                   const uData = { phone: phones[0], name: data.fullName || 'Người chơi', rankId: rankInfo.current.id, bestScore: pBest };
                   setUserData(uData);
 
-                  // --- ĐÃ THÊM: Quản lý Trạng thái Online (Presence) ---
                   const myPresenceRef = dbRef(rtdb, `presence/${phones[0]}`);
-                  set(myPresenceRef, { name: uData.name, rank: uData.rankId, status: 'Lobby' });
+                  set(myPresenceRef, { name: uData.name, rank: uData.rankId, status: 'Online' });
                   onDisconnect(myPresenceRef).remove();
               }
           } else { navigate('/'); }
@@ -193,7 +200,6 @@ const AuGame = () => {
     fetchMusicTracks(); 
   }, [navigate]);
 
-  // --- ĐÃ THÊM: Lắng nghe danh sách Online & Phòng chờ ---
   useEffect(() => {
       const presenceRef = dbRef(rtdb, 'presence');
       const unsubPresence = onValue(presenceRef, (snapshot) => {
@@ -237,18 +243,16 @@ const AuGame = () => {
     } catch (e) { setLeaderboard([]); }
   };
 
-  // --- ĐÃ THÊM: Logic Tạo/Tham gia Phòng (Matchmaking) ---
+  // --- LOGIC PHÒNG VÀ ĐỒNG BỘ MULTIPLAYER ---
   const handleSelectTrackAndCreateRoom = async (track) => {
       if (track.requiredRank && userData.rankId !== track.requiredRank) return;
       setCurrentTrack(track);
 
       if (gameMode === 'SINGLE') {
-          // Đấu đơn thì vào thẳng
           startGameLoading(track);
       } else {
-          // Tạo phòng mới trên RTDB
           const newRoomRef = push(dbRef(rtdb, 'rooms'));
-          const roomData = {
+          const roomDataInit = {
               hostId: userData.phone,
               trackId: track.id,
               trackTitle: track.title,
@@ -258,8 +262,14 @@ const AuGame = () => {
                   [userData.phone]: { name: userData.name, score: 0, team: 'A' }
               }
           };
-          await set(newRoomRef, roomData);
-          setCurrentRoom({ id: newRoomRef.key, ...roomData });
+          await set(newRoomRef, roomDataInit);
+          
+          // Lắng nghe sự thay đổi của phòng để hiển thị người chơi khác ngay lập tức
+          onValue(newRoomRef, (snap) => {
+              if (snap.exists()) setCurrentRoom({ id: newRoomRef.key, ...snap.val() });
+              else setCurrentRoom(null);
+          });
+          
           setGameState('ROOM_WAITING');
       }
   };
@@ -268,32 +278,55 @@ const AuGame = () => {
       if (!userData.phone) return;
       
       const team = (room.mode === 'COUPLE' && Object.keys(room.players || {}).length >= 2) ? 'B' : 'A';
-      
       const myPlayerRef = dbRef(rtdb, `rooms/${room.id}/players/${userData.phone}`);
+      
+      // Xóa người chơi khỏi phòng nếu họ ngắt kết nối đột ngột
+      onDisconnect(myPlayerRef).remove();
       await set(myPlayerRef, { name: userData.name, score: 0, team: team });
       
       const fullRoomSnap = await getDocs(query(collection(db, 'au_tracks')));
       const trackData = fullRoomSnap.docs.find(d => d.id === room.trackId)?.data();
-      
       setCurrentTrack(trackData);
-      setCurrentRoom(room);
-      setGameState('ROOM_WAITING');
 
-      // Lắng nghe tín hiệu Start từ chủ phòng
-      const statusRef = dbRef(rtdb, `rooms/${room.id}/status`);
-      onValue(statusRef, (snap) => {
-          if (snap.val() === 'playing') startGameLoading(trackData);
+      // Lắng nghe phòng để biết khi nào Chủ phòng bấm Bắt đầu
+      const roomRef = dbRef(rtdb, `rooms/${room.id}`);
+      onValue(roomRef, (snap) => {
+          if (snap.exists()) {
+              const data = snap.val();
+              setCurrentRoom({ id: room.id, ...data });
+              
+              if (data.status === 'playing' && data.startTimestamp) {
+                  startGameLoading(trackData, data.startTimestamp);
+              }
+          } else {
+              // Phòng bị hủy
+              setCurrentRoom(null);
+              if (gameState === 'ROOM_WAITING') {
+                  alert("Chủ phòng đã giải tán phòng!");
+                  setGameState('LOBBY');
+              }
+          }
       });
+      
+      setGameState('ROOM_WAITING');
   };
 
   const handleHostStartGame = async () => {
       if (currentRoom && currentRoom.hostId === userData.phone) {
-          await update(dbRef(rtdb, `rooms/${currentRoom.id}`), { status: 'playing' });
-          startGameLoading(currentTrack);
+          // Tính thời điểm bắt đầu = Giờ Server hiện tại + 3 giây để mọi người cùng chuẩn bị
+          const exactServerTime = Date.now() + serverTimeOffsetRef.current;
+          const startTime = exactServerTime + 3000; 
+
+          await update(dbRef(rtdb, `rooms/${currentRoom.id}`), { 
+              status: 'playing',
+              startTimestamp: startTime
+          });
+          
+          startGameLoading(currentTrack, startTime);
       }
   };
 
-  const startGameLoading = async (track) => {
+  const startGameLoading = async (track, targetStartTime = 0) => {
     setGameState('LOADING');
     setLoadMusicProgress(0);
     
@@ -305,34 +338,37 @@ const AuGame = () => {
 
     setCurrentTrack({ ...track, beatmap: loadedBeatmap || track.beatmap });
 
-    let prog = 0;
-    const interval = setInterval(() => {
-        prog += Math.random() * 25;
-        if (prog >= 100) {
-            setLoadMusicProgress(100); clearInterval(interval);
-            setTimeout(() => {
-                setGameState('PREPARING'); 
-                setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMeasureIndex(0); setMusicProgress(0);
-                prevLevelRangeRef.current = null; 
-                setIsResting(false);
+    // Tính toán độ trễ để bung Loading đúng lúc
+    let delay = 500;
+    if (targetStartTime > 0) {
+        const exactServerTime = Date.now() + serverTimeOffsetRef.current;
+        delay = Math.max(0, targetStartTime - exactServerTime);
+    }
 
-                // Lắng nghe điểm Realtime nếu ở chế độ Multiplayer
-                if (gameMode !== 'SINGLE' && currentRoom) {
-                    const playersRef = dbRef(rtdb, `rooms/${currentRoom.id}/players`);
-                    onValue(playersRef, (snap) => {
-                        if (snap.exists()) {
-                            const pData = snap.val();
-                            // Logic trích xuất điểm đối thủ (Tạm thời map đối thủ ngẫu nhiên khác mình)
-                            const oppKey = Object.keys(pData).find(k => k !== userData.phone);
-                            if (oppKey) {
-                                setMatchScores(prev => ({ ...prev, opponent: pData[oppKey].score || 0 }));
-                            }
-                        }
-                    });
+    setLoadMusicProgress(100);
+    
+    setTimeout(() => {
+        setGameState('PREPARING'); 
+        setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMeasureIndex(0); setMusicProgress(0);
+        prevLevelRangeRef.current = null; setIsResting(false);
+
+        // Reset điểm LiveScore của mình về 0
+        if (gameMode !== 'SINGLE' && currentRoom) {
+            set(dbRef(rtdb, `live_scores/${currentRoom.id}/${userData.phone}`), { name: userData.name, score: 0 });
+            
+            // Lắng nghe điểm số đối thủ liên tục
+            const scoresRef = dbRef(rtdb, `live_scores/${currentRoom.id}`);
+            onValue(scoresRef, (snap) => {
+                if (snap.exists()) {
+                    const sData = snap.val();
+                    const oppKey = Object.keys(sData).find(k => k !== userData.phone);
+                    if (oppKey) {
+                        setMatchScores(prev => ({ ...prev, opponent: sData[oppKey].score || 0 }));
+                    }
                 }
-            }, 500);
-        } else setLoadMusicProgress(prog);
-    }, 150);
+            });
+        }
+    }, delay); // Load xong đúng lúc
   };
 
   const loadNextMeasure = (index) => {
@@ -448,7 +484,7 @@ const AuGame = () => {
         scoreAdd = 0; 
         hpAdd = -15; 
         setCombo(0); 
-    } else { 
+    } else { // MISS
         playSFX('fail', 'judgment');
         perfectComboRef.current = 0; 
         scoreAdd = 0; 
@@ -458,9 +494,9 @@ const AuGame = () => {
 
     setScore(prevScore => {
         const newScore = prevScore + scoreAdd;
-        // ĐÃ THÊM: Đồng bộ điểm lên RTDB
+        // Đẩy điểm lên RTDB
         if (gameMode !== 'SINGLE' && currentRoom && userData.phone) {
-            update(dbRef(rtdb, `rooms/${currentRoom.id}/players/${userData.phone}`), { score: newScore });
+            update(dbRef(rtdb, `live_scores/${currentRoom.id}/${userData.phone}`), { name: userData.name, score: newScore });
         }
         return newScore;
     });
@@ -496,15 +532,20 @@ const AuGame = () => {
 
   const togglePause = () => setIsPaused(prev => !prev);
 
-  const handleLeaveGame = async () => {
+  const handleLeaveGame = () => {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
       
+      // Xử lý thoát phòng
       if (currentRoom) {
-          if (currentRoom.hostId === userData.phone) remove(dbRef(rtdb, `rooms/${currentRoom.id}`));
-          else remove(dbRef(rtdb, `rooms/${currentRoom.id}/players/${userData.phone}`));
+          if (currentRoom.hostId === userData.phone) {
+              remove(dbRef(rtdb, `rooms/${currentRoom.id}`));
+              remove(dbRef(rtdb, `live_scores/${currentRoom.id}`));
+          } else {
+              remove(dbRef(rtdb, `rooms/${currentRoom.id}/players/${userData.phone}`));
+          }
           setCurrentRoom(null);
       }
-      setGameState('HOME'); setIsPaused(false); fetchGlobalLeaderboard(); 
+      setGameState('LOBBY'); setIsPaused(false); fetchGlobalLeaderboard(); 
   };
 
   useEffect(() => {
@@ -596,8 +637,9 @@ const AuGame = () => {
       setGameState('RESULT');
       playSFX('end', 'end'); 
       
+      // Cleanup phòng khi kết thúc
       if (currentRoom && currentRoom.hostId === userData.phone) {
-          remove(dbRef(rtdb, `rooms/${currentRoom.id}`)); // Xóa phòng sau khi kết thúc
+          remove(dbRef(rtdb, `rooms/${currentRoom.id}`)); 
       }
       setCurrentRoom(null);
 
@@ -631,7 +673,6 @@ const AuGame = () => {
              </header>
 
              <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-8 min-h-0">
-                 {/* Cột 1: Người chơi Online */}
                  <div className="glass-card p-6 rounded-[2rem] flex flex-col overflow-hidden h-full hidden lg:flex">
                      <h2 className="text-[10px] font-black text-green-400 uppercase tracking-[0.4em] mb-6 flex items-center gap-2">🟢 Đang Online ({onlineUsers.length})</h2>
                      <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2">
@@ -647,7 +688,6 @@ const AuGame = () => {
                      </div>
                  </div>
 
-                 {/* Cột 2: Profile & Nút Vào Nhảy */}
                  <div className="lg:col-span-2 flex flex-col items-center justify-center">
                      <div className="glass-card p-10 rounded-[3rem] w-full max-w-md flex flex-col items-center text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] mb-8 transform hover:scale-[1.02] transition-transform">
                          <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-cyan-400 to-purple-500 mb-4 flex items-center justify-center shadow-[0_0_20px_cyan]">
@@ -669,7 +709,6 @@ const AuGame = () => {
                      </div>
                  </div>
 
-                 {/* Cột 3: Bảng TOP */}
                  <div className="glass-card p-6 rounded-[2rem] flex flex-col overflow-hidden h-full">
                      <h2 className="text-[10px] font-black text-yellow-400 uppercase tracking-[0.4em] mb-4 flex items-center gap-2">🏆 TOP THẦN NHẢY</h2>
                      
@@ -697,7 +736,7 @@ const AuGame = () => {
           </div>
       )}
 
-      {/* --- MÀN HÌNH SẢNH CHỜ (LOBBY / ROOM SELECTION) --- */}
+      {/* --- MÀN HÌNH CHỌN NHẠC (LOBBY) --- */}
       {gameState === 'LOBBY' && (
         <div className="relative z-10 max-w-[1400px] mx-auto py-12 px-6 animate-in fade-in duration-500 h-screen flex flex-col">
            <header className="flex justify-between items-center mb-8 shrink-0">
@@ -719,7 +758,6 @@ const AuGame = () => {
            </div>
 
            <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8 min-h-0">
-               {/* Cột Trái: Chọn Nhạc */}
                <div className="lg:col-span-2 glass-card p-6 rounded-[2.5rem] flex flex-col overflow-hidden h-full">
                    <h2 className="text-xs font-black text-white/50 uppercase tracking-[0.3em] mb-6 border-b border-white/10 pb-4">🎵 Danh sách Nhạc</h2>
                    <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar space-y-4">
@@ -745,7 +783,6 @@ const AuGame = () => {
                    </div>
                </div>
 
-               {/* Cột Phải: Phòng Đang Chờ (Ghép đội) */}
                <div className="glass-card p-6 rounded-[2.5rem] flex flex-col overflow-hidden h-full">
                    <h2 className="text-xs font-black text-white/50 uppercase tracking-[0.3em] mb-6 border-b border-white/10 pb-4">⚔️ Phòng Chờ {gameMode !== 'SINGLE' ? `(${gameMode})` : ''}</h2>
                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-2">
@@ -787,14 +824,14 @@ const AuGame = () => {
                   <p className="text-sm text-white/50 mb-10">{currentTrack?.title}</p>
                   
                   <div className="grid grid-cols-2 gap-8 mb-12">
-                      <div className="bg-black/40 p-6 rounded-3xl border border-white/10">
+                      <div className="bg-black/40 p-6 rounded-3xl border border-white/10 min-h-[150px]">
                           <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-4">TEAM A</h3>
-                          {Object.values(currentRoom.players || {}).filter(p => p.team === 'A').map((p, i) => <p key={i} className="font-bold mb-2">{p.name}</p>)}
+                          {Object.values(currentRoom.players || {}).filter(p => p.team === 'A').map((p, i) => <p key={i} className="font-bold mb-2 text-white">{p.name}</p>)}
                       </div>
                       {currentRoom.mode === 'COUPLE' || currentRoom.mode === 'SOLO' ? (
-                          <div className="bg-black/40 p-6 rounded-3xl border border-white/10">
+                          <div className="bg-black/40 p-6 rounded-3xl border border-white/10 min-h-[150px]">
                               <h3 className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-4">TEAM B</h3>
-                              {Object.values(currentRoom.players || {}).filter(p => p.team === 'B').map((p, i) => <p key={i} className="font-bold mb-2">{p.name}</p>)}
+                              {Object.values(currentRoom.players || {}).filter(p => p.team === 'B').map((p, i) => <p key={i} className="font-bold mb-2 text-white">{p.name}</p>)}
                           </div>
                       ) : null}
                   </div>
@@ -814,9 +851,7 @@ const AuGame = () => {
       {gameState === 'PLAYING' && (
           <div className="h-screen relative z-10 w-full overflow-hidden">
               <div className={`edge-progress ${isResting ? 'edge-rest-wave' : ''}`} style={{ '--music-progress': `${musicProgress}%` }}></div>
-
               <audio ref={audioRef} src={currentTrack?.src} onEnded={handleGameEnd} onTimeUpdate={handleTimeUpdate} className="hidden" />
-              
               <button onClick={togglePause} className="absolute top-8 left-8 z-50 bg-black/50 p-4 rounded-2xl border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all">⏸️</button>
 
               {isPaused && (
@@ -841,9 +876,8 @@ const AuGame = () => {
                   </div>
               </div>
 
-              {/* --- ĐÃ SỬA: KHU VỰC TRÁI (HIỂN THỊ ĐIỂM MULTIPLAYER) --- */}
+              {/* KHU VỰC TRÁI (HIỂN THỊ ĐIỂM MULTIPLAYER) */}
               <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col w-64 sm:w-80 lg:w-96 gap-6">
-                  {/* Điểm của mình */}
                   <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full">
                       <p className="text-sm font-black italic text-cyan-400 uppercase tracking-[0.5em] mb-[-5px]">YOU</p>
                       <p className="text-5xl sm:text-6xl lg:text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 tracking-tighter break-words leading-none py-2">
@@ -851,7 +885,6 @@ const AuGame = () => {
                       </p>
                   </div>
                   
-                  {/* Điểm của đối thủ (Nếu có) */}
                   {gameMode !== 'SINGLE' && (
                       <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full opacity-80 mt-4 border-l-4 border-red-500 pl-4 bg-black/20 rounded-r-2xl py-2">
                           <p className="text-xs font-black italic text-red-400 uppercase tracking-[0.5em] mb-[-2px]">ENEMY</p>
@@ -877,9 +910,7 @@ const AuGame = () => {
 
               <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-4">
                   <div className="flex items-center gap-4 w-full px-4">
-                      <span className="font-black italic text-cyan-400 text-xl tracking-wider drop-shadow-[0_0_10px_cyan]">
-                          LV {Math.floor(level)}
-                      </span>
+                      <span className="font-black italic text-cyan-400 text-xl tracking-wider drop-shadow-[0_0_10px_cyan]">LV {Math.floor(level)}</span>
                       <div className="relative flex-1 h-4 bg-black/80 rounded-full border border-white/20 shadow-[0_0_20px_rgba(34,211,238,0.2)]">
                           <div className="absolute left-[75%] right-[5%] inset-y-0 bg-cyan-500/20 rounded-full"></div>
                           <div className="absolute left-[85%] w-[3px] h-[150%] top-[-25%] bg-white shadow-[0_0_10px_white,0_0_20px_cyan] rounded-full z-10"></div>
@@ -918,17 +949,6 @@ const AuGame = () => {
                       {[...Array(getDifficultyStars(currentTrack?.difficulty))].map((_, i) => <span key={i}>★</span>)}
                   </div>
               </div>
-
-          </div>
-      )}
-
-      {/* CÁC MÀN HÌNH PHỤ TRỢ KHÁC */}
-      {gameState === 'LOADING' && (
-          <div className="h-screen flex flex-col items-center justify-center bg-black relative z-10">
-              <div className="w-64 h-1 bg-white/5 rounded-full overflow-hidden mb-6">
-                  <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" style={{ width: `${loadProgress}%` }}></div>
-              </div>
-              <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.5em] animate-pulse">Entering Stage... {Math.floor(loadProgress)}%</p>
           </div>
       )}
 
@@ -964,6 +984,15 @@ const AuGame = () => {
           </div>
       )}
 
+      {gameState === 'LOADING' && (
+          <div className="h-screen flex flex-col items-center justify-center bg-black relative z-10">
+              <div className="w-64 h-1 bg-white/5 rounded-full overflow-hidden mb-6">
+                  <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300" style={{ width: `${loadProgress}%` }}></div>
+              </div>
+              <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.5em] animate-pulse">Entering Stage... {Math.floor(loadProgress)}%</p>
+          </div>
+      )}
+
       {gameState === 'GAME_OVER' && (
           <div className="h-screen flex flex-col items-center justify-center text-center p-6 relative z-10 bg-black/80 backdrop-blur-md">
               <h2 className="text-[10rem] font-black text-red-600 uppercase tracking-tighter mb-4 italic drop-shadow-[0_0_50px_red]">FAILED</h2>
@@ -971,7 +1000,6 @@ const AuGame = () => {
               <button onClick={handleLeaveGame} className="px-16 py-6 bg-white text-black font-black rounded-full uppercase tracking-[0.2em] hover:scale-105 transition-all">Thoát</button>
           </div>
       )}
-
     </div>
   );
 };
