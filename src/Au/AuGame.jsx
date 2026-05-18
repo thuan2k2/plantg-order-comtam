@@ -1,4 +1,3 @@
-// src/Au/AuGame.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
@@ -14,6 +13,11 @@ import { ARROW_SYMBOLS, OPPOSITE_KEYS, useRollingScore, getDifficultyStars } fro
 const AuGame = () => {
   const navigate = useNavigate();
   const [gameState, setGameState] = useState('HOME'); 
+  
+  // ĐÃ THÊM: Dùng useRef để các Listener RTDB luôn lấy được gameState mới nhất
+  const gameStateRef = useRef(gameState);
+  useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+
   const [isPaused, setIsPaused] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
   const [userData, setUserData] = useState({ phone: '', name: '', rankId: '', bestScore: 0 });
@@ -23,7 +27,9 @@ const AuGame = () => {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [waitingRooms, setWaitingRooms] = useState([]);
   const [currentRoom, setCurrentRoom] = useState(null);
-  const [matchScores, setMatchScores] = useState({ opponent: 0, myTeam: 0, enemyTeam: 0 });
+  
+  // ĐÃ THÊM: Sửa cấu trúc matchScores để lưu tổng điểm 2 Team
+  const [matchScores, setMatchScores] = useState({ teamA: 0, teamB: 0 });
   
   const [leaderboard, setLeaderboard] = useState([]);
   const [musicList, setMusicList] = useState([]);
@@ -38,8 +44,10 @@ const AuGame = () => {
   const [hp, setHp] = useState(100);
   const [level, setLevel] = useState(4); 
   const [score, setScore] = useState(0);
+  
   const displayScore = useRollingScore(score, 400); 
-  const displayOpponentScore = useRollingScore(matchScores.opponent, 400);
+  const displayTeamA = useRollingScore(matchScores.teamA, 400);
+  const displayTeamB = useRollingScore(matchScores.teamB, 400);
 
   const [combo, setCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
@@ -71,8 +79,11 @@ const AuGame = () => {
   const hasStartedNotesRef = useRef(false); 
   const lastRestMusicRef = useRef(null); 
   
-  // ĐĂ THÊM: Đo độ trễ thời gian Server để đồng bộ hóa Bắt đầu
   const serverTimeOffsetRef = useRef(0);
+
+  // ĐÃ THÊM: Refs để hủy lắng nghe Firebase khi thoát phòng, tránh lỗi nhảy lung tung
+  const roomListenerUnsub = useRef(null);
+  const scoreListenerUnsub = useRef(null);
 
   const sfxRef = useRef(null);
   const lobbyAudioRef = useRef(null);
@@ -105,7 +116,6 @@ const AuGame = () => {
     lobbyAudioRef.current = new Audio(randomTrack);
     lobbyAudioRef.current.loop = false;
 
-    // Lắng nghe sự chênh lệch thời gian giữa Client và Server Firebase
     const offsetRef = dbRef(rtdb, '.info/serverTimeOffset');
     onValue(offsetRef, (snap) => {
         serverTimeOffsetRef.current = snap.val() || 0;
@@ -243,7 +253,7 @@ const AuGame = () => {
     } catch (e) { setLeaderboard([]); }
   };
 
-  // --- LOGIC PHÒNG VÀ ĐỒNG BỘ MULTIPLAYER ---
+  // --- LOGIC PHÒNG VÀ ĐỒNG BỘ MULTIPLAYER ĐÃ SỬA CHUẨN ---
   const handleSelectTrackAndCreateRoom = async (track) => {
       if (track.requiredRank && userData.rankId !== track.requiredRank) return;
       setCurrentTrack(track);
@@ -264,10 +274,37 @@ const AuGame = () => {
           };
           await set(newRoomRef, roomDataInit);
           
-          // Lắng nghe sự thay đổi của phòng để hiển thị người chơi khác ngay lập tức
-          onValue(newRoomRef, (snap) => {
-              if (snap.exists()) setCurrentRoom({ id: newRoomRef.key, ...snap.val() });
-              else setCurrentRoom(null);
+          if (roomListenerUnsub.current) roomListenerUnsub.current();
+          roomListenerUnsub.current = onValue(newRoomRef, (snap) => {
+              if (snap.exists()) {
+                  const data = snap.val();
+                  setCurrentRoom({ id: newRoomRef.key, ...data });
+
+                  if (data.status === 'playing' && data.startTimestamp && gameStateRef.current === 'ROOM_WAITING') {
+                      startGameLoading(track, data.startTimestamp);
+                  }
+
+                  // ĐÃ THÊM: Nghe tín hiệu chết sớm (Ai hết HP trước thì phòng báo ended)
+                  if (data.status === 'ended' && data.winnerTeam) {
+                      if (gameStateRef.current === 'PLAYING') {
+                          if (audioRef.current) audioRef.current.pause();
+                          const myTeam = data.players[userData.phone]?.team;
+                          if (myTeam === data.winnerTeam) {
+                              playSFX('end', 'end'); 
+                              setGameState('RESULT'); // Bạn là người sống sót -> Thắng
+                          } else {
+                              setGameState('GAME_OVER'); // Bạn đã chết -> Thua
+                          }
+                      }
+                  }
+              } else {
+                  setCurrentRoom(null);
+                  if (gameStateRef.current === 'ROOM_WAITING' || gameStateRef.current === 'PLAYING') {
+                      alert("Phòng đã bị đóng!");
+                      setGameState('LOBBY');
+                      if (audioRef.current) audioRef.current.pause();
+                  }
+              }
           });
           
           setGameState('ROOM_WAITING');
@@ -277,43 +314,59 @@ const AuGame = () => {
   const handleJoinRoom = async (room) => {
       if (!userData.phone) return;
       
-      const team = (room.mode === 'COUPLE' && Object.keys(room.players || {}).length >= 2) ? 'B' : 'A';
-      const myPlayerRef = dbRef(rtdb, `rooms/${room.id}/players/${userData.phone}`);
+      // ĐÃ SỬA: Phân chia Team logic siêu chuẩn
+      const players = Object.values(room.players || {});
+      const teamACount = players.filter(p => p.team === 'A').length;
+      let assignedTeam = 'A';
+      if (room.mode === 'SOLO' && teamACount >= 1) assignedTeam = 'B';
+      else if (room.mode === 'COUPLE' && teamACount >= 2) assignedTeam = 'B';
       
-      // Xóa người chơi khỏi phòng nếu họ ngắt kết nối đột ngột
+      const myPlayerRef = dbRef(rtdb, `rooms/${room.id}/players/${userData.phone}`);
       onDisconnect(myPlayerRef).remove();
-      await set(myPlayerRef, { name: userData.name, score: 0, team: team });
+      await set(myPlayerRef, { name: userData.name, score: 0, team: assignedTeam });
       
       const fullRoomSnap = await getDocs(query(collection(db, 'au_tracks')));
       const trackData = fullRoomSnap.docs.find(d => d.id === room.trackId)?.data();
       setCurrentTrack(trackData);
+      setCurrentRoom(room);
+      setGameState('ROOM_WAITING');
 
-      // Lắng nghe phòng để biết khi nào Chủ phòng bấm Bắt đầu
       const roomRef = dbRef(rtdb, `rooms/${room.id}`);
-      onValue(roomRef, (snap) => {
+      if (roomListenerUnsub.current) roomListenerUnsub.current();
+      roomListenerUnsub.current = onValue(roomRef, (snap) => {
           if (snap.exists()) {
               const data = snap.val();
               setCurrentRoom({ id: room.id, ...data });
               
-              if (data.status === 'playing' && data.startTimestamp) {
+              if (data.status === 'playing' && data.startTimestamp && gameStateRef.current === 'ROOM_WAITING') {
                   startGameLoading(trackData, data.startTimestamp);
               }
+
+              if (data.status === 'ended' && data.winnerTeam) {
+                  if (gameStateRef.current === 'PLAYING') {
+                      if (audioRef.current) audioRef.current.pause();
+                      const myTeam = data.players[userData.phone]?.team;
+                      if (myTeam === data.winnerTeam) {
+                          playSFX('end', 'end'); 
+                          setGameState('RESULT');
+                      } else {
+                          setGameState('GAME_OVER');
+                      }
+                  }
+              }
           } else {
-              // Phòng bị hủy
               setCurrentRoom(null);
-              if (gameState === 'ROOM_WAITING') {
-                  alert("Chủ phòng đã giải tán phòng!");
+              if (gameStateRef.current === 'ROOM_WAITING' || gameStateRef.current === 'PLAYING') {
+                  alert("Phòng đã bị đóng!");
                   setGameState('LOBBY');
+                  if (audioRef.current) audioRef.current.pause();
               }
           }
       });
-      
-      setGameState('ROOM_WAITING');
   };
 
   const handleHostStartGame = async () => {
       if (currentRoom && currentRoom.hostId === userData.phone) {
-          // Tính thời điểm bắt đầu = Giờ Server hiện tại + 3 giây để mọi người cùng chuẩn bị
           const exactServerTime = Date.now() + serverTimeOffsetRef.current;
           const startTime = exactServerTime + 3000; 
 
@@ -338,7 +391,6 @@ const AuGame = () => {
 
     setCurrentTrack({ ...track, beatmap: loadedBeatmap || track.beatmap });
 
-    // Tính toán độ trễ để bung Loading đúng lúc
     let delay = 500;
     if (targetStartTime > 0) {
         const exactServerTime = Date.now() + serverTimeOffsetRef.current;
@@ -350,25 +402,29 @@ const AuGame = () => {
     setTimeout(() => {
         setGameState('PREPARING'); 
         setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMeasureIndex(0); setMusicProgress(0);
+        setMatchScores({ teamA: 0, teamB: 0 });
         prevLevelRangeRef.current = null; setIsResting(false);
 
-        // Reset điểm LiveScore của mình về 0
         if (gameMode !== 'SINGLE' && currentRoom) {
-            set(dbRef(rtdb, `live_scores/${currentRoom.id}/${userData.phone}`), { name: userData.name, score: 0 });
+            const myTeam = currentRoom.players[userData.phone]?.team || 'A';
+            set(dbRef(rtdb, `live_scores/${currentRoom.id}/${userData.phone}`), { name: userData.name, score: 0, team: myTeam });
             
-            // Lắng nghe điểm số đối thủ liên tục
+            // ĐÃ THÊM: Listener gộp tổng điểm 2 team
+            if (scoreListenerUnsub.current) scoreListenerUnsub.current();
             const scoresRef = dbRef(rtdb, `live_scores/${currentRoom.id}`);
-            onValue(scoresRef, (snap) => {
+            scoreListenerUnsub.current = onValue(scoresRef, (snap) => {
                 if (snap.exists()) {
                     const sData = snap.val();
-                    const oppKey = Object.keys(sData).find(k => k !== userData.phone);
-                    if (oppKey) {
-                        setMatchScores(prev => ({ ...prev, opponent: sData[oppKey].score || 0 }));
-                    }
+                    let tA = 0, tB = 0;
+                    Object.values(sData).forEach(p => {
+                        if (p.team === 'A') tA += p.score;
+                        if (p.team === 'B') tB += p.score;
+                    });
+                    setMatchScores({ teamA: tA, teamB: tB });
                 }
             });
         }
-    }, delay); // Load xong đúng lúc
+    }, delay);
   };
 
   const loadNextMeasure = (index) => {
@@ -447,6 +503,7 @@ const AuGame = () => {
     }
   }, [gameState, prepCountdown, currentTrack]);
 
+  // --- ĐÃ SỬA: CƠ CHẾ HP CHO SOLO VÀ CẶP ---
   const processJudgment = (judg) => {
     setJudgment({ text: judg, id: Date.now() });
     setTimeout(() => setJudgment(prev => prev?.text === judg ? null : prev), 400);
@@ -484,7 +541,7 @@ const AuGame = () => {
         scoreAdd = 0; 
         hpAdd = -15; 
         setCombo(0); 
-    } else { // MISS
+    } else { 
         playSFX('fail', 'judgment');
         perfectComboRef.current = 0; 
         scoreAdd = 0; 
@@ -494,16 +551,27 @@ const AuGame = () => {
 
     setScore(prevScore => {
         const newScore = prevScore + scoreAdd;
-        // Đẩy điểm lên RTDB
         if (gameMode !== 'SINGLE' && currentRoom && userData.phone) {
-            update(dbRef(rtdb, `live_scores/${currentRoom.id}/${userData.phone}`), { name: userData.name, score: newScore });
+            const myT = currentRoom.players[userData.phone]?.team || 'A';
+            update(dbRef(rtdb, `live_scores/${currentRoom.id}/${userData.phone}`), { name: userData.name, score: newScore, team: myT });
         }
         return newScore;
     });
     
     setHp(prev => {
-        const newHp = Math.max(0, Math.min(100, prev + hpAdd));
-        if (newHp <= 0) { setGameState('GAME_OVER'); if(audioRef.current) audioRef.current.pause(); }
+        let newHp = Math.max(0, Math.min(100, prev + hpAdd));
+        
+        // ĐÃ THÊM: Logic loại trực tiếp nếu hết HP ở Solo/Đơn. Couple thì vẫn nhảy bình thường.
+        if (newHp <= 0 && gameMode !== 'COUPLE') { 
+            if (audioRef.current) audioRef.current.pause();
+            
+            if (gameMode === 'SOLO' && currentRoom) {
+                const myTeam = currentRoom.players[userData.phone]?.team;
+                const enemyTeam = myTeam === 'A' ? 'B' : 'A';
+                update(dbRef(rtdb, `rooms/${currentRoom.id}`), { status: 'ended', winnerTeam: enemyTeam });
+            }
+            setGameState('GAME_OVER'); 
+        }
         return newHp;
     });
 
@@ -532,16 +600,20 @@ const AuGame = () => {
 
   const togglePause = () => setIsPaused(prev => !prev);
 
-  const handleLeaveGame = () => {
+  // ĐÃ SỬA: Clean up dứt điểm listener khi Thoát phòng
+  const handleLeaveGame = async () => {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
       
-      // Xử lý thoát phòng
+      if (roomListenerUnsub.current) { roomListenerUnsub.current(); roomListenerUnsub.current = null; }
+      if (scoreListenerUnsub.current) { scoreListenerUnsub.current(); scoreListenerUnsub.current = null; }
+
       if (currentRoom) {
           if (currentRoom.hostId === userData.phone) {
-              remove(dbRef(rtdb, `rooms/${currentRoom.id}`));
-              remove(dbRef(rtdb, `live_scores/${currentRoom.id}`));
+              await remove(dbRef(rtdb, `rooms/${currentRoom.id}`));
+              await remove(dbRef(rtdb, `live_scores/${currentRoom.id}`));
           } else {
-              remove(dbRef(rtdb, `rooms/${currentRoom.id}/players/${userData.phone}`));
+              await remove(dbRef(rtdb, `rooms/${currentRoom.id}/players/${userData.phone}`));
+              await remove(dbRef(rtdb, `live_scores/${currentRoom.id}/${userData.phone}`));
           }
           setCurrentRoom(null);
       }
@@ -634,15 +706,13 @@ const AuGame = () => {
   }, [gameState, isPaused, currentTrack]);
 
   const handleGameEnd = async () => {
-      setGameState('RESULT');
       playSFX('end', 'end'); 
       
-      // Cleanup phòng khi kết thúc
       if (currentRoom && currentRoom.hostId === userData.phone) {
           remove(dbRef(rtdb, `rooms/${currentRoom.id}`)); 
       }
-      setCurrentRoom(null);
-
+      setGameState('RESULT');
+      
       try {
           if (!userData.phone) return;
           const globalRef = doc(db, 'au_global_leaderboard', userData.phone);
@@ -652,6 +722,32 @@ const AuGame = () => {
           }
       } catch (e) { console.error(e); }
   };
+
+  const getDifficultyStars = (diff) => {
+      switch(diff) {
+          case 'Easy': return 2;
+          case 'Normal': return 4;
+          case 'Hard': return 6;
+          case 'Expert': return 8;
+          default: return 4;
+      }
+  };
+
+  // Logic xác định thắng thua và điểm số lúc kết thúc
+  let resultMessage = "STAGE CLEARED";
+  let isVictory = true;
+  if (gameState === 'RESULT' && gameMode !== 'SINGLE' && currentRoom) {
+      const myT = currentRoom.players[userData.phone]?.team || 'A';
+      const myS = myT === 'A' ? matchScores.teamA : matchScores.teamB;
+      const enS = myT === 'A' ? matchScores.teamB : matchScores.teamA;
+      if (myS >= enS) {
+          resultMessage = "VICTORY!";
+          isVictory = true;
+      } else {
+          resultMessage = "DEFEAT!";
+          isVictory = false;
+      }
+  }
 
   return (
     <div className={`min-h-screen bg-[url('https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=1920&auto=format&fit=crop')] bg-cover bg-center text-white font-sans overflow-hidden relative transition-all ${isShaking ? 'modern-impact' : ''}`}>
@@ -864,34 +960,61 @@ const AuGame = () => {
                   </div>
               )}
 
-              <div className="absolute top-8 left-1/2 -translate-x-1/2 flex flex-col items-center w-full max-w-md z-40">
-                  <div className="w-full bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 shadow-lg">
-                      <div className="flex justify-between items-end mb-2 px-1">
-                          <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em]">ENERGY</p>
-                          <p className="text-[10px] text-white/50 font-black">{Math.floor(hp)}%</p>
-                      </div>
-                      <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
-                          <div className={`h-full transition-all duration-300 ${hp < 30 ? 'bg-red-500 shadow-[0_0_10px_red]' : 'bg-cyan-400 shadow-[0_0_10px_cyan]'}`} style={{ width: `${hp}%` }}></div>
+              {/* ĐÃ SỬA: Ẩn thanh HP nếu đang chơi Đấu Cặp (COUPLE) */}
+              {gameMode !== 'COUPLE' && (
+                  <div className="absolute top-8 left-1/2 -translate-x-1/2 flex flex-col items-center w-full max-w-md z-40">
+                      <div className="w-full bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 shadow-lg">
+                          <div className="flex justify-between items-end mb-2 px-1">
+                              <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em]">ENERGY</p>
+                              <p className="text-[10px] text-white/50 font-black">{Math.floor(hp)}%</p>
+                          </div>
+                          <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
+                              <div className={`h-full transition-all duration-300 ${hp < 30 ? 'bg-red-500 shadow-[0_0_10px_red]' : 'bg-cyan-400 shadow-[0_0_10px_cyan]'}`} style={{ width: `${hp}%` }}></div>
+                          </div>
                       </div>
                   </div>
-              </div>
+              )}
 
-              {/* KHU VỰC TRÁI (HIỂN THỊ ĐIỂM MULTIPLAYER) */}
+              {/* --- ĐÃ SỬA: ĐIỂM SỐ TÙY THEO MODE (TEAM ĐỎ / XANH HOẶC CÁ NHÂN) --- */}
               <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col w-64 sm:w-80 lg:w-96 gap-6">
-                  <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full">
-                      <p className="text-sm font-black italic text-cyan-400 uppercase tracking-[0.5em] mb-[-5px]">YOU</p>
-                      <p className="text-5xl sm:text-6xl lg:text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 tracking-tighter break-words leading-none py-2">
-                          {displayScore.toLocaleString()}
-                      </p>
-                  </div>
-                  
-                  {gameMode !== 'SINGLE' && (
-                      <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full opacity-80 mt-4 border-l-4 border-red-500 pl-4 bg-black/20 rounded-r-2xl py-2">
-                          <p className="text-xs font-black italic text-red-400 uppercase tracking-[0.5em] mb-[-2px]">ENEMY</p>
-                          <p className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-gray-300 to-gray-600 tracking-tighter break-words leading-none py-2">
-                              {displayOpponentScore.toLocaleString()}
+                  {gameMode === 'SINGLE' ? (
+                      <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full">
+                          <p className="text-sm font-black italic text-cyan-400 uppercase tracking-[0.5em] mb-[-5px]">MY SCORE</p>
+                          <p className="text-5xl sm:text-6xl lg:text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 tracking-tighter break-words leading-none py-2 transition-all">
+                              {displayScore.toLocaleString()}
                           </p>
                       </div>
+                  ) : gameMode === 'SOLO' ? (
+                      <>
+                          <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full">
+                              <p className="text-sm font-black italic text-cyan-400 uppercase tracking-[0.5em] mb-[-5px]">MY SCORE</p>
+                              <p className="text-5xl sm:text-6xl lg:text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-cyan-300 to-blue-500 tracking-tighter break-words leading-none py-2 transition-all">
+                                  {displayScore.toLocaleString()}
+                              </p>
+                          </div>
+                          <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full opacity-90 mt-4 border-l-4 border-red-500 pl-4 bg-black/40 rounded-r-2xl py-2">
+                              <p className="text-xs font-black italic text-red-400 uppercase tracking-[0.5em] mb-[-2px]">ENEMY</p>
+                              <p className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-red-300 to-red-600 tracking-tighter break-words leading-none py-2 transition-all">
+                                  {/* Hiển thị điểm đội kia (đối thủ) */}
+                                  {(currentRoom?.players[userData.phone]?.team === 'A' ? displayTeamB : displayTeamA).toLocaleString()}
+                              </p>
+                          </div>
+                      </>
+                  ) : (
+                      <>
+                          <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full border-l-4 border-cyan-500 pl-4 bg-cyan-500/10 rounded-r-2xl py-2">
+                              <p className="text-xs font-black italic text-cyan-400 uppercase tracking-[0.5em] mb-[-2px]">TEAM XANH (BẠN)</p>
+                              <p className="text-4xl sm:text-5xl font-black italic text-cyan-100 tracking-tighter break-words leading-none py-2 transition-all">
+                                  {(currentRoom?.players[userData.phone]?.team === 'A' ? displayTeamA : displayTeamB).toLocaleString()}
+                              </p>
+                          </div>
+                          <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full opacity-90 mt-4 border-l-4 border-red-500 pl-4 bg-red-500/10 rounded-r-2xl py-2">
+                              <p className="text-xs font-black italic text-red-400 uppercase tracking-[0.5em] mb-[-2px]">TEAM ĐỎ (ĐỐI THỦ)</p>
+                              <p className="text-4xl sm:text-5xl font-black italic text-red-100 tracking-tighter break-words leading-none py-2 transition-all">
+                                  {(currentRoom?.players[userData.phone]?.team === 'A' ? displayTeamB : displayTeamA).toLocaleString()}
+                              </p>
+                          </div>
+                      </>
                   )}
               </div>
 
@@ -931,7 +1054,7 @@ const AuGame = () => {
 
                   <div className="mt-8 flex flex-col items-center">
                       <div className="flex items-center gap-4 bg-black/60 backdrop-blur-xl pl-3 pr-8 py-3 rounded-full shadow-2xl relative overflow-hidden">
-                          <div className="pill-progress" style={{ '--music-progress': `${musicProgress}%` }}></div>
+                          <div className="absolute bottom-0 left-0 h-1 bg-cyan-400/80 transition-all duration-300" style={{ width: `${musicProgress}%` }}></div>
                           <img src={currentTrack?.cover} className={`w-14 h-14 rounded-full object-cover border border-white/20 z-10 album-rotate ${isPaused ? 'album-rotate-paused' : ''}`} alt="cover" />
                           <div className="flex flex-col z-10">
                               <span className="font-black text-sm text-white tracking-tight leading-none mb-1">{currentTrack?.title}</span>
@@ -949,9 +1072,11 @@ const AuGame = () => {
                       {[...Array(getDifficultyStars(currentTrack?.difficulty))].map((_, i) => <span key={i}>★</span>)}
                   </div>
               </div>
+
           </div>
       )}
 
+      {/* CÁC MÀN HÌNH PHỤ TRỢ KHÁC */}
       {gameState === 'PREPARING' && (
           <div className="h-screen flex items-center justify-center relative z-10">
               <div className="text-[12rem] sm:text-[15rem] leading-none font-black italic text-white drop-shadow-[0_0_50px_cyan] animate-bounce text-center select-none uppercase">
@@ -960,10 +1085,13 @@ const AuGame = () => {
           </div>
       )}
       
+      {/* ĐÃ SỬA: MÀN HÌNH KẾT QUẢ CHO CÁC MODE */}
       {gameState === 'RESULT' && (
           <div className="h-screen flex items-center justify-center p-6 w-full relative z-10">
               <div className="bg-black/60 backdrop-blur-2xl p-16 rounded-[4rem] border border-white/10 shadow-[0_0_100px_rgba(34,211,238,0.2)] max-w-xl w-full text-center animate-in zoom-in duration-500">
-                  <h2 className="text-6xl font-black italic text-white uppercase mb-12 tracking-tighter">STAGE CLEARED</h2>
+                  <h2 className={`text-6xl font-black italic uppercase mb-12 tracking-tighter ${isVictory ? 'text-yellow-400 drop-shadow-[0_0_20px_yellow]' : 'text-red-500 drop-shadow-[0_0_20px_red]'}`}>
+                      {resultMessage}
+                  </h2>
                   <div className="grid grid-cols-2 gap-6 mb-12">
                       <div className="bg-white/5 p-6 rounded-[2rem]">
                           <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest mb-2">Max Combo</p>
@@ -975,11 +1103,15 @@ const AuGame = () => {
                       </div>
                   </div>
                   <div className="mb-16">
-                      <p className="text-xs text-white/50 font-black uppercase tracking-[0.5em] mb-4">Final Score</p>
-                      <p className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-cyan-400 drop-shadow-2xl tracking-tighter">{score.toLocaleString()}</p>
+                      <p className="text-xs text-white/50 font-black uppercase tracking-[0.5em] mb-4">
+                          {gameMode === 'SINGLE' ? 'Final Score' : (isVictory ? 'Team Score' : 'Điểm của bạn')}
+                      </p>
+                      <p className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-cyan-400 drop-shadow-2xl tracking-tighter">
+                          {gameMode === 'SINGLE' ? score.toLocaleString() : (currentRoom?.players[userData.phone]?.team === 'A' ? matchScores.teamA : matchScores.teamB).toLocaleString()}
+                      </p>
                   </div>
                   <button onClick={handleLeaveGame} 
-                          className="w-full py-6 bg-cyan-600 text-black font-black rounded-[2rem] uppercase tracking-[0.3em] shadow-[0_0_20px_cyan] hover:scale-105 transition-all">Về Sảnh Chờ</button>
+                          className="w-full py-6 bg-cyan-600 text-black font-black rounded-[2rem] uppercase tracking-[0.3em] shadow-[0_0_20px_cyan] hover:scale-105 transition-all">Trở về sảnh</button>
               </div>
           </div>
       )}
@@ -996,10 +1128,11 @@ const AuGame = () => {
       {gameState === 'GAME_OVER' && (
           <div className="h-screen flex flex-col items-center justify-center text-center p-6 relative z-10 bg-black/80 backdrop-blur-md">
               <h2 className="text-[10rem] font-black text-red-600 uppercase tracking-tighter mb-4 italic drop-shadow-[0_0_50px_red]">FAILED</h2>
-              <p className="text-xl font-bold text-gray-400 mb-12 uppercase tracking-[0.5em]">Hãy luyện tập thêm</p>
+              <p className="text-xl font-bold text-gray-400 mb-12 uppercase tracking-[0.5em]">Đáng tiếc, bạn đã hết năng lượng!</p>
               <button onClick={handleLeaveGame} className="px-16 py-6 bg-white text-black font-black rounded-full uppercase tracking-[0.2em] hover:scale-105 transition-all">Thoát</button>
           </div>
       )}
+
     </div>
   );
 };
