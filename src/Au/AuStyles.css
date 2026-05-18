@@ -60,3 +60,99 @@
 .album-rotate-paused { animation-play-state: paused; }
 
 @keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* =========================================
+   THÊM MỚI: CSS CHO CHẾ ĐỘ MULTIPLAYER
+   ========================================= */
+
+/* Chấm xanh báo hiệu Online */
+.online-dot {
+    width: 8px;
+    height: 8px;
+    background-color: #22c55e;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #22c55e;
+    animation: blinkOnline 1.5s infinite alternate;
+}
+@keyframes blinkOnline {
+    from { opacity: 0.5; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1.1); }
+}
+
+/* Tabs Bảng xếp hạng */
+.au-tab-btn {
+    padding: 8px 16px;
+    border-radius: 9999px;
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    transition: all 0.3s ease;
+    border: 1px solid transparent;
+    color: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+}
+.au-tab-active {
+    background: rgba(34, 211, 238, 0.1);
+    color: #22d3ee;
+    border-color: rgba(34, 211, 238, 0.4);
+    box-shadow: 0 0 15px rgba(34, 211, 238, 0.2);
+}
+
+/* Viền phát sáng cho phòng đang chờ ghép đấu */
+.pulse-border {
+    position: relative;
+}
+.pulse-border::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    background: linear-gradient(45deg, #22d3ee, #a855f7, #ec4899);
+    z-index: -1;
+    animation: rotateGlow 3s linear infinite;
+    opacity: 0.5;
+}
+@keyframes rotateGlow {
+    0% { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(360deg); }
+}
+
+/* Chữ VS trong trận Solo/Cặp */
+.vs-text {
+    font-size: 2rem;
+    font-weight: 900;
+    font-style: italic;
+    background: linear-gradient(to bottom, #fde047, #f97316);
+    -webkit-background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 10px rgba(249, 115, 22, 0.8));
+    animation: vsBeat 0.5s ease-in-out infinite alternate;
+}
+@keyframes vsBeat {
+    0% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(249, 115, 22, 0.5)); }
+    100% { transform: scale(1.1); filter: drop-shadow(0 0 20px rgba(249, 115, 22, 1)); }
+}
+
+/* Thanh điểm Realtime Team Xanh / Đỏ */
+.team-bar-container {
+    width: 100%;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.team-bar-blue {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #22d3ee);
+    box-shadow: 0 0 15px rgba(34, 211, 238, 0.8);
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.team-bar-red {
+    height: 100%;
+    background: linear-gradient(90deg, #ef4444, #f97316);
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.8);
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}

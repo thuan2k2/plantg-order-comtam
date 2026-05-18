@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+// ĐÃ THÊM: Import Realtime Database (RTDB) cho Multiplayer
+import { getDatabase, ref as dbRef, set, onValue, update, remove, onDisconnect, push } from 'firebase/database';
+
 import { db } from '../firebase/config';
 import { getRankInfo } from '../utils/rankUtils';
 
@@ -10,15 +13,20 @@ import { ARROW_SYMBOLS, OPPOSITE_KEYS, useRollingScore, getDifficultyStars } fro
 
 const AuGame = () => {
   const navigate = useNavigate();
-  // ĐÃ ĐỔI: Khởi tạo mặc định là HOME thay vì LOBBY
   const [gameState, setGameState] = useState('HOME'); 
   const [isPaused, setIsPaused] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
-  
-  // ĐÃ THÊM: Biến bestScore vào userData để hiển thị ở Sảnh Chính
   const [userData, setUserData] = useState({ phone: '', name: '', rankId: '', bestScore: 0 });
-  const [leaderboard, setLeaderboard] = useState([]);
   
+  // --- ĐÃ THÊM: States cho Multiplayer & UI Mới ---
+  const [gameMode, setGameMode] = useState('SINGLE'); // SINGLE, SOLO, COUPLE
+  const [lbTab, setLbTab] = useState('SINGLE'); // Tab Leaderboard
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [waitingRooms, setWaitingRooms] = useState([]);
+  const [currentRoom, setCurrentRoom] = useState(null);
+  const [matchScores, setMatchScores] = useState({ opponent: 0, myTeam: 0, enemyTeam: 0 });
+  
+  const [leaderboard, setLeaderboard] = useState([]);
   const [musicList, setMusicList] = useState([]);
   const [isLoadingMusic, setIsLoadingMusic] = useState(true);
 
@@ -31,8 +39,8 @@ const AuGame = () => {
   const [hp, setHp] = useState(100);
   const [level, setLevel] = useState(4); 
   const [score, setScore] = useState(0);
-  
   const displayScore = useRollingScore(score, 400); 
+  const displayOpponentScore = useRollingScore(matchScores.opponent, 400);
 
   const [combo, setCombo] = useState(0);
   const [maxCombo, setMaxCombo] = useState(0);
@@ -67,6 +75,8 @@ const AuGame = () => {
   const sfxRef = useRef(null);
   const lobbyAudioRef = useRef(null);
   const fadeIntervalRef = useRef(null);
+  
+  const rtdb = getDatabase();
 
   useEffect(() => {
     sfxRef.current = {
@@ -104,7 +114,7 @@ const AuGame = () => {
       setVolumes(newVols);
       localStorage.setItem('auVolumes', JSON.stringify(newVols));
       
-      if (key === 'lobby' && lobbyAudioRef.current && (gameState === 'LOBBY' || gameState === 'HOME')) {
+      if (key === 'lobby' && lobbyAudioRef.current && (gameState === 'LOBBY' || gameState === 'HOME' || gameState === 'ROOM_WAITING')) {
           lobbyAudioRef.current.volume = parseFloat(value);
       }
       if (key === 'track' && audioRef.current) {
@@ -112,10 +122,9 @@ const AuGame = () => {
       }
   };
 
-  // ĐÃ SỬA: Logic âm thanh sảnh áp dụng cho cả HOME và LOBBY
   useEffect(() => {
       if (!lobbyAudioRef.current) return;
-      if (gameState === 'LOBBY' || gameState === 'HOME') {
+      if (gameState === 'LOBBY' || gameState === 'HOME' || gameState === 'ROOM_WAITING') {
           const targetVolume = volumes.lobby;
           if (lobbyAudioRef.current.paused) {
               lobbyAudioRef.current.volume = 0;
@@ -159,8 +168,6 @@ const AuGame = () => {
           const phones = JSON.parse(localStorage.getItem('recentPhones') || '[]');
           if (phones.length > 0) {
               const userSnap = await getDoc(doc(db, 'users', phones[0]));
-              
-              // ĐÃ THÊM: Kéo điểm kỷ lục cá nhân từ bảng xếp hạng
               let pBest = 0;
               try {
                   const lbSnap = await getDoc(doc(db, 'au_global_leaderboard', phones[0]));
@@ -170,12 +177,13 @@ const AuGame = () => {
               if (userSnap.exists()) {
                   const data = userSnap.data();
                   const rankInfo = getRankInfo(data.totalSpend || 0, data.manualRankId);
-                  setUserData({ 
-                      phone: phones[0], 
-                      name: data.fullName || 'Người chơi', 
-                      rankId: rankInfo.current.id,
-                      bestScore: pBest 
-                  });
+                  const uData = { phone: phones[0], name: data.fullName || 'Người chơi', rankId: rankInfo.current.id, bestScore: pBest };
+                  setUserData(uData);
+
+                  // --- ĐÃ THÊM: Quản lý Trạng thái Online (Presence) ---
+                  const myPresenceRef = dbRef(rtdb, `presence/${phones[0]}`);
+                  set(myPresenceRef, { name: uData.name, rank: uData.rankId, status: 'Lobby' });
+                  onDisconnect(myPresenceRef).remove();
               }
           } else { navigate('/'); }
       } catch (error) { console.error("Lỗi lấy thông tin:", error); }
@@ -184,6 +192,31 @@ const AuGame = () => {
     fetchGlobalLeaderboard(); 
     fetchMusicTracks(); 
   }, [navigate]);
+
+  // --- ĐÃ THÊM: Lắng nghe danh sách Online & Phòng chờ ---
+  useEffect(() => {
+      const presenceRef = dbRef(rtdb, 'presence');
+      const unsubPresence = onValue(presenceRef, (snapshot) => {
+          if(snapshot.exists()) {
+              const data = snapshot.val();
+              const users = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+              setOnlineUsers(users);
+          } else setOnlineUsers([]);
+      });
+
+      const roomsRef = dbRef(rtdb, 'rooms');
+      const unsubRooms = onValue(roomsRef, (snapshot) => {
+          if(snapshot.exists()) {
+              const data = snapshot.val();
+              const rooms = Object.keys(data)
+                  .map(key => ({ id: key, ...data[key] }))
+                  .filter(r => r.status === 'waiting' && r.mode !== 'SINGLE');
+              setWaitingRooms(rooms);
+          } else setWaitingRooms([]);
+      });
+
+      return () => { unsubPresence(); unsubRooms(); };
+  }, []);
 
   const fetchMusicTracks = async () => {
     setIsLoadingMusic(true);
@@ -204,9 +237,63 @@ const AuGame = () => {
     } catch (e) { setLeaderboard([]); }
   };
 
-  const selectTrack = async (track) => {
-    if (track.requiredRank && userData.rankId !== track.requiredRank) return;
-    setCurrentTrack(track);
+  // --- ĐÃ THÊM: Logic Tạo/Tham gia Phòng (Matchmaking) ---
+  const handleSelectTrackAndCreateRoom = async (track) => {
+      if (track.requiredRank && userData.rankId !== track.requiredRank) return;
+      setCurrentTrack(track);
+
+      if (gameMode === 'SINGLE') {
+          // Đấu đơn thì vào thẳng
+          startGameLoading(track);
+      } else {
+          // Tạo phòng mới trên RTDB
+          const newRoomRef = push(dbRef(rtdb, 'rooms'));
+          const roomData = {
+              hostId: userData.phone,
+              trackId: track.id,
+              trackTitle: track.title,
+              mode: gameMode,
+              status: 'waiting',
+              players: {
+                  [userData.phone]: { name: userData.name, score: 0, team: 'A' }
+              }
+          };
+          await set(newRoomRef, roomData);
+          setCurrentRoom({ id: newRoomRef.key, ...roomData });
+          setGameState('ROOM_WAITING');
+      }
+  };
+
+  const handleJoinRoom = async (room) => {
+      if (!userData.phone) return;
+      
+      const team = (room.mode === 'COUPLE' && Object.keys(room.players || {}).length >= 2) ? 'B' : 'A';
+      
+      const myPlayerRef = dbRef(rtdb, `rooms/${room.id}/players/${userData.phone}`);
+      await set(myPlayerRef, { name: userData.name, score: 0, team: team });
+      
+      const fullRoomSnap = await getDocs(query(collection(db, 'au_tracks')));
+      const trackData = fullRoomSnap.docs.find(d => d.id === room.trackId)?.data();
+      
+      setCurrentTrack(trackData);
+      setCurrentRoom(room);
+      setGameState('ROOM_WAITING');
+
+      // Lắng nghe tín hiệu Start từ chủ phòng
+      const statusRef = dbRef(rtdb, `rooms/${room.id}/status`);
+      onValue(statusRef, (snap) => {
+          if (snap.val() === 'playing') startGameLoading(trackData);
+      });
+  };
+
+  const handleHostStartGame = async () => {
+      if (currentRoom && currentRoom.hostId === userData.phone) {
+          await update(dbRef(rtdb, `rooms/${currentRoom.id}`), { status: 'playing' });
+          startGameLoading(currentTrack);
+      }
+  };
+
+  const startGameLoading = async (track) => {
     setGameState('LOADING');
     setLoadMusicProgress(0);
     
@@ -228,6 +315,21 @@ const AuGame = () => {
                 setPrepCountdown(3); setHp(100); setScore(0); setCombo(0); setMeasureIndex(0); setMusicProgress(0);
                 prevLevelRangeRef.current = null; 
                 setIsResting(false);
+
+                // Lắng nghe điểm Realtime nếu ở chế độ Multiplayer
+                if (gameMode !== 'SINGLE' && currentRoom) {
+                    const playersRef = dbRef(rtdb, `rooms/${currentRoom.id}/players`);
+                    onValue(playersRef, (snap) => {
+                        if (snap.exists()) {
+                            const pData = snap.val();
+                            // Logic trích xuất điểm đối thủ (Tạm thời map đối thủ ngẫu nhiên khác mình)
+                            const oppKey = Object.keys(pData).find(k => k !== userData.phone);
+                            if (oppKey) {
+                                setMatchScores(prev => ({ ...prev, opponent: pData[oppKey].score || 0 }));
+                            }
+                        }
+                    });
+                }
             }, 500);
         } else setLoadMusicProgress(prog);
     }, 150);
@@ -354,7 +456,14 @@ const AuGame = () => {
         setCombo(0); 
     }
 
-    setScore(s => s + scoreAdd);
+    setScore(prevScore => {
+        const newScore = prevScore + scoreAdd;
+        // ĐÃ THÊM: Đồng bộ điểm lên RTDB
+        if (gameMode !== 'SINGLE' && currentRoom && userData.phone) {
+            update(dbRef(rtdb, `rooms/${currentRoom.id}/players/${userData.phone}`), { score: newScore });
+        }
+        return newScore;
+    });
     
     setHp(prev => {
         const newHp = Math.max(0, Math.min(100, prev + hpAdd));
@@ -385,13 +494,17 @@ const AuGame = () => {
     }
   }, [isPaused, gameState]);
 
-  const togglePause = () => {
-      setIsPaused(prev => !prev);
-  };
+  const togglePause = () => setIsPaused(prev => !prev);
 
-  const handleLeaveGame = () => {
+  const handleLeaveGame = async () => {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
-      setGameState('LOBBY'); setIsPaused(false); fetchGlobalLeaderboard(); 
+      
+      if (currentRoom) {
+          if (currentRoom.hostId === userData.phone) remove(dbRef(rtdb, `rooms/${currentRoom.id}`));
+          else remove(dbRef(rtdb, `rooms/${currentRoom.id}/players/${userData.phone}`));
+          setCurrentRoom(null);
+      }
+      setGameState('HOME'); setIsPaused(false); fetchGlobalLeaderboard(); 
   };
 
   useEffect(() => {
@@ -434,6 +547,8 @@ const AuGame = () => {
       if (targetSeqRef.current.length === 0) return;
       if (hasJudgedRef.current) return;
 
+      const keyMap = { ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT' };
+      
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault(); 
         if (isFailedSeqRef.current) return;
@@ -481,6 +596,11 @@ const AuGame = () => {
       setGameState('RESULT');
       playSFX('end', 'end'); 
       
+      if (currentRoom && currentRoom.hostId === userData.phone) {
+          remove(dbRef(rtdb, `rooms/${currentRoom.id}`)); // Xóa phòng sau khi kết thúc
+      }
+      setCurrentRoom(null);
+
       try {
           if (!userData.phone) return;
           const globalRef = doc(db, 'au_global_leaderboard', userData.phone);
@@ -501,86 +621,193 @@ const AuGame = () => {
 
       {/* --- MÀN HÌNH SẢNH CHÍNH (HOME) --- */}
       {gameState === 'HOME' && (
-          <div className="relative z-10 h-screen flex flex-col items-center justify-center p-6 animate-in fade-in duration-500">
-             <h1 className="text-6xl sm:text-8xl md:text-9xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 mb-10 drop-shadow-[0_0_30px_rgba(34,211,238,0.5)]">AU PLANT G</h1>
-
-             <div className="glass-card p-8 sm:p-12 rounded-[3rem] w-full max-w-md flex flex-col items-center text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] mb-12">
-                 <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-cyan-400 to-purple-500 mb-4 flex items-center justify-center shadow-[0_0_20px_cyan]">
-                     <span className="text-4xl">👑</span>
+          <div className="relative z-10 h-screen flex flex-col p-6 animate-in fade-in duration-500 max-w-[1400px] mx-auto">
+             <header className="flex justify-between items-center mb-8 shrink-0">
+                 <h1 className="text-4xl sm:text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 drop-shadow-[0_0_30px_rgba(34,211,238,0.5)]">AU PLANT G</h1>
+                 <div className="flex gap-4">
+                     <button onClick={() => setShowSettings(true)} className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-2xl text-sm font-black transition-all border border-white/10 shadow-[0_0_15px_rgba(34,211,238,0.1)] flex items-center gap-2">⚙️ CÀI ĐẶT</button>
+                     <button onClick={() => navigate('/')} className="bg-white/5 hover:bg-red-500/20 px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/10 transition-all hover:text-red-400 hover:border-red-500/50">Thoát</button>
                  </div>
-                 <h2 className="text-3xl font-black text-white mb-2">{userData.name}</h2>
-                 <div className="px-4 py-1 bg-white/10 rounded-full border border-white/20 mb-8">
-                     <span className="text-xs font-black tracking-widest text-cyan-400 uppercase">{userData.rankId || 'NEWBIE'}</span>
+             </header>
+
+             <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-8 min-h-0">
+                 {/* Cột 1: Người chơi Online */}
+                 <div className="glass-card p-6 rounded-[2rem] flex flex-col overflow-hidden h-full hidden lg:flex">
+                     <h2 className="text-[10px] font-black text-green-400 uppercase tracking-[0.4em] mb-6 flex items-center gap-2">🟢 Đang Online ({onlineUsers.length})</h2>
+                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2">
+                         {onlineUsers.map(user => (
+                             <div key={user.id} className="flex items-center gap-3 p-3 bg-black/40 rounded-xl border border-white/5">
+                                 <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-400 to-purple-500 flex items-center justify-center text-xs">👤</div>
+                                 <div className="flex-1 overflow-hidden">
+                                     <p className="text-sm font-bold truncate">{user.name}</p>
+                                     <p className="text-[9px] text-white/40 uppercase">{user.rank}</p>
+                                 </div>
+                             </div>
+                         ))}
+                     </div>
                  </div>
 
-                 <div className="w-full bg-black/40 rounded-2xl p-4 border border-white/5 mb-8">
-                     <p className="text-[10px] text-white/50 font-black uppercase tracking-[0.3em] mb-1">Kỷ lục cá nhân</p>
-                     <p className="text-4xl font-black text-yellow-400 tracking-tighter drop-shadow-[0_0_10px_yellow]">
-                         {userData.bestScore?.toLocaleString() || 0}
-                     </p>
+                 {/* Cột 2: Profile & Nút Vào Nhảy */}
+                 <div className="lg:col-span-2 flex flex-col items-center justify-center">
+                     <div className="glass-card p-10 rounded-[3rem] w-full max-w-md flex flex-col items-center text-center shadow-[0_0_50px_rgba(0,0,0,0.5)] mb-8 transform hover:scale-[1.02] transition-transform">
+                         <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-cyan-400 to-purple-500 mb-4 flex items-center justify-center shadow-[0_0_20px_cyan]">
+                             <span className="text-4xl">👑</span>
+                         </div>
+                         <h2 className="text-3xl font-black text-white mb-2">{userData.name}</h2>
+                         <div className="px-4 py-1 bg-white/10 rounded-full border border-white/20 mb-8">
+                             <span className="text-xs font-black tracking-widest text-cyan-400 uppercase">{userData.rankId || 'NEWBIE'}</span>
+                         </div>
+
+                         <div className="w-full bg-black/40 rounded-2xl p-4 border border-white/5 mb-8">
+                             <p className="text-[10px] text-white/50 font-black uppercase tracking-[0.3em] mb-1">Kỷ lục Cá nhân</p>
+                             <p className="text-4xl font-black text-yellow-400 tracking-tighter drop-shadow-[0_0_10px_yellow]">
+                                 {userData.bestScore?.toLocaleString() || 0}
+                             </p>
+                         </div>
+
+                         <button onClick={() => setGameState('LOBBY')} className="w-full py-5 bg-gradient-to-r from-cyan-500 to-blue-500 text-black font-black rounded-full uppercase tracking-[0.2em] hover:brightness-125 active:scale-95 transition-all shadow-[0_0_30px_rgba(34,211,238,0.4)]">Vào Sảnh Chờ</button>
+                     </div>
                  </div>
 
-                 <button onClick={() => setGameState('LOBBY')} className="w-full py-5 bg-cyan-500 text-black font-black rounded-full uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_0_20px_cyan]">Vào Phòng Nhạc</button>
-             </div>
+                 {/* Cột 3: Bảng TOP */}
+                 <div className="glass-card p-6 rounded-[2rem] flex flex-col overflow-hidden h-full">
+                     <h2 className="text-[10px] font-black text-yellow-400 uppercase tracking-[0.4em] mb-4 flex items-center gap-2">🏆 TOP THẦN NHẢY</h2>
+                     
+                     <div className="flex gap-2 mb-6 bg-black/40 p-1 rounded-xl">
+                         {['SINGLE', 'SOLO', 'COUPLE'].map(tab => (
+                             <button key={tab} onClick={() => setLbTab(tab)} className={`flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all ${lbTab === tab ? 'bg-white/20 text-white shadow-lg' : 'text-white/40 hover:text-white/70'}`}>
+                                 {tab === 'SINGLE' ? 'Đơn' : tab === 'SOLO' ? 'Solo' : 'Cặp'}
+                             </button>
+                         ))}
+                     </div>
 
-             <div className="flex gap-4">
-                 <button onClick={() => setShowSettings(true)} className="bg-white/5 hover:bg-white/10 px-8 py-4 rounded-full text-sm font-black transition-all border border-white/10 shadow-[0_0_15px_rgba(34,211,238,0.1)] flex items-center gap-2">⚙️ CÀI ĐẶT</button>
-                 <button onClick={() => navigate('/')} className="bg-white/5 hover:bg-white/10 px-8 py-4 rounded-full text-sm font-black uppercase tracking-widest border border-white/10 transition-all hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/50">Thoát Game</button>
+                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-2">
+                         {leaderboard.map((item, i) => (
+                             <div key={i} className={`flex justify-between items-center bg-black/40 p-3 rounded-xl border-l-4 ${i === 0 ? 'border-yellow-400' : 'border-white/10'}`}>
+                                 <div className="flex items-center gap-3 overflow-hidden">
+                                     <span className={`font-black italic text-sm ${i === 0 ? 'text-yellow-400' : 'text-white/30'}`}>{i+1}</span>
+                                     <span className="font-bold text-xs truncate">{item.name}</span>
+                                 </div>
+                                 <span className="font-mono font-black text-cyan-300 text-xs shrink-0">{item.bestScore?.toLocaleString()}</span>
+                             </div>
+                         ))}
+                     </div>
+                 </div>
              </div>
           </div>
       )}
 
-      {/* --- MÀN HÌNH CHỌN NHẠC (LOBBY) --- */}
+      {/* --- MÀN HÌNH SẢNH CHỜ (LOBBY / ROOM SELECTION) --- */}
       {gameState === 'LOBBY' && (
-        <div className="relative z-10 max-w-6xl mx-auto py-12 px-6 animate-in fade-in duration-500">
-           <header className="flex justify-between items-center mb-12">
-               <h1 className="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">CHỌN BÀI HÁT</h1>
-               {/* ĐÃ SỬA: Nút Trở về đưa bạn về màn hình HOME */}
-               <button onClick={() => setGameState('HOME')} className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/10 transition-all">Trở về</button>
+        <div className="relative z-10 max-w-[1400px] mx-auto py-12 px-6 animate-in fade-in duration-500 h-screen flex flex-col">
+           <header className="flex justify-between items-center mb-8 shrink-0">
+               <div>
+                   <h1 className="text-4xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400">SẢNH CHỜ</h1>
+                   <p className="text-xs text-white/50 uppercase tracking-widest mt-1">Chọn chế độ và bài hát để bắt đầu</p>
+               </div>
+               <button onClick={() => setGameState('HOME')} className="bg-white/5 hover:bg-white/10 px-6 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border border-white/10 transition-all">Quay lại</button>
            </header>
            
-           <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-               <div className="lg:col-span-2 space-y-4 max-h-[72vh] overflow-y-auto pr-4 custom-scrollbar">
-                   {isLoadingMusic ? (
-                       <div className="flex flex-col items-center justify-center h-full text-white/50 space-y-4">
-                           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white"></div>
-                           <p className="text-xs font-black tracking-widest uppercase">Đang tải máy chủ...</p>
-                       </div>
-                   ) : (
-                       musicList.map(track => {
-                           const isLocked = track.requiredRank && userData.rankId !== track.requiredRank;
-                           return (
-                               <div key={track.id} onClick={() => !isLocked && selectTrack(track)} 
-                                    className={`group glass-card p-5 rounded-[2rem] flex items-center gap-6 transition-all 
-                                    ${isLocked ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10 hover:border-cyan-500/50 hover:shadow-[0_0_30px_rgba(34,211,238,0.2)]'}`}>
-                                   <img src={track.cover} className="w-20 h-20 rounded-xl object-cover shadow-2xl group-hover:scale-105 transition-transform" alt="cover" />
-                                   <div className="flex-1">
-                                       <h3 className="font-black text-xl tracking-tight mb-1">{track.title} {track.requiredRank && '👑'}</h3>
-                                       <p className="text-cyan-400 text-[10px] font-bold uppercase tracking-widest">{track.artist} • {track.bpm} BPM</p>
+           <div className="flex gap-4 mb-8 shrink-0">
+               {['SINGLE', 'SOLO', 'COUPLE'].map(mode => (
+                   <button key={mode} onClick={() => setGameMode(mode)} 
+                       className={`px-8 py-4 rounded-[1.5rem] font-black uppercase tracking-widest transition-all border 
+                       ${gameMode === mode ? 'bg-cyan-500/20 border-cyan-400 text-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.2)]' : 'bg-black/40 border-white/10 text-white/40 hover:bg-white/5'}`}>
+                       {mode === 'SINGLE' ? '👤 Nhảy Đơn' : mode === 'SOLO' ? '⚔️ Đấu Solo' : '🤝 Đấu Cặp'}
+                   </button>
+               ))}
+           </div>
+
+           <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8 min-h-0">
+               {/* Cột Trái: Chọn Nhạc */}
+               <div className="lg:col-span-2 glass-card p-6 rounded-[2.5rem] flex flex-col overflow-hidden h-full">
+                   <h2 className="text-xs font-black text-white/50 uppercase tracking-[0.3em] mb-6 border-b border-white/10 pb-4">🎵 Danh sách Nhạc</h2>
+                   <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar space-y-4">
+                       {isLoadingMusic ? (
+                           <div className="flex justify-center py-10"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div></div>
+                       ) : (
+                           musicList.map(track => {
+                               const isLocked = track.requiredRank && userData.rankId !== track.requiredRank;
+                               return (
+                                   <div key={track.id} onClick={() => !isLocked && handleSelectTrackAndCreateRoom(track)} 
+                                        className={`group bg-black/40 p-4 rounded-3xl flex items-center gap-5 transition-all border border-white/5
+                                        ${isLocked ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10 hover:border-cyan-500/50 hover:shadow-[0_10px_20px_rgba(0,0,0,0.3)]'}`}>
+                                       <img src={track.cover} className="w-16 h-16 rounded-2xl object-cover shadow-lg group-hover:scale-105 transition-transform" alt="cover" />
+                                       <div className="flex-1">
+                                           <h3 className="font-black text-lg tracking-tight mb-1">{track.title} {track.requiredRank && '👑'}</h3>
+                                           <p className="text-cyan-400 text-[10px] font-bold uppercase tracking-widest">{track.artist} • {track.bpm} BPM</p>
+                                       </div>
+                                       <div className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase tracking-tighter ${track.difficulty === 'Expert' ? 'bg-purple-500/30 text-purple-300' : 'bg-white/10 text-white/50'}`}>{track.difficulty}</div>
                                    </div>
-                                   <div className={`px-4 py-2 rounded-2xl font-black text-[9px] uppercase tracking-tighter ${track.difficulty === 'Expert' ? 'bg-purple-500/30 text-purple-300' : 'bg-white/10 text-white/50'}`}>{track.difficulty}</div>
-                               </div>
-                           );
-                       })
-                   )}
+                               );
+                           })
+                       )}
+                   </div>
                </div>
 
-               <div className="glass-card p-8 rounded-[3rem] h-fit">
-                   <h2 className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.4em] mb-8 flex items-center gap-2">🏆 TOP THẦN NHẢY</h2>
-                   <div className="space-y-4">
-                       {leaderboard.map((item, i) => (
-                           <div key={i} className={`flex justify-between items-center bg-black/40 p-4 rounded-2xl border-l-4 ${i === 0 ? 'border-yellow-400' : 'border-white/10'}`}>
-                               <div className="flex items-center gap-4">
-                                   <span className={`font-black italic text-lg ${i === 0 ? 'text-yellow-400' : 'text-white/30'}`}>{i+1}</span>
-                                   <span className="font-bold text-sm truncate max-w-[110px]">{item.name}</span>
-                               </div>
-                               <span className="font-mono font-black text-cyan-300">{item.bestScore?.toLocaleString()}</span>
+               {/* Cột Phải: Phòng Đang Chờ (Ghép đội) */}
+               <div className="glass-card p-6 rounded-[2.5rem] flex flex-col overflow-hidden h-full">
+                   <h2 className="text-xs font-black text-white/50 uppercase tracking-[0.3em] mb-6 border-b border-white/10 pb-4">⚔️ Phòng Chờ {gameMode !== 'SINGLE' ? `(${gameMode})` : ''}</h2>
+                   <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-2">
+                       {gameMode === 'SINGLE' ? (
+                           <div className="h-full flex flex-col items-center justify-center text-center opacity-50">
+                               <span className="text-4xl mb-4">👤</span>
+                               <p className="text-xs font-bold uppercase tracking-widest">Chế độ Đấu Đơn</p>
+                               <p className="text-[10px] mt-2">Chọn nhạc bên trái để nhảy ngay</p>
                            </div>
-                       ))}
+                       ) : waitingRooms.filter(r => r.mode === gameMode).length === 0 ? (
+                           <div className="h-full flex flex-col items-center justify-center text-center opacity-50">
+                               <span className="text-4xl mb-4">🔍</span>
+                               <p className="text-xs font-bold uppercase tracking-widest">Chưa có phòng nào</p>
+                               <p className="text-[10px] mt-2">Chọn nhạc để tạo phòng mới</p>
+                           </div>
+                       ) : (
+                           waitingRooms.filter(r => r.mode === gameMode).map(room => (
+                               <div key={room.id} className="bg-black/60 p-4 rounded-2xl border border-white/10">
+                                   <div className="flex justify-between items-center mb-3">
+                                       <span className="text-xs font-black text-cyan-400">ROOM: {room.id.slice(-4)}</span>
+                                       <span className="text-[9px] uppercase bg-white/10 px-2 py-1 rounded-md">{Object.keys(room.players || {}).length} / {room.mode==='SOLO' ? 2 : 4} Người</span>
+                                   </div>
+                                   <p className="text-sm font-bold truncate mb-4">{room.trackTitle}</p>
+                                   <button onClick={() => handleJoinRoom(room)} className="w-full py-2 bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 hover:bg-cyan-500 hover:text-black font-black text-xs uppercase tracking-widest rounded-xl transition-all">Tham Gia</button>
+                               </div>
+                           ))
+                       )}
                    </div>
                </div>
            </div>
         </div>
+      )}
+
+      {/* --- MÀN HÌNH ĐỢI TRONG PHÒNG MULTIPLAYER --- */}
+      {gameState === 'ROOM_WAITING' && currentRoom && (
+          <div className="h-screen flex items-center justify-center relative z-10 p-6 animate-in zoom-in duration-300">
+              <div className="glass-card p-12 rounded-[4rem] w-full max-w-2xl text-center shadow-2xl">
+                  <h2 className="text-4xl font-black italic text-cyan-400 uppercase tracking-tighter mb-2">ĐANG CHỜ NGƯỜI CHƠI</h2>
+                  <p className="text-sm text-white/50 mb-10">{currentTrack?.title}</p>
+                  
+                  <div className="grid grid-cols-2 gap-8 mb-12">
+                      <div className="bg-black/40 p-6 rounded-3xl border border-white/10">
+                          <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-4">TEAM A</h3>
+                          {Object.values(currentRoom.players || {}).filter(p => p.team === 'A').map((p, i) => <p key={i} className="font-bold mb-2">{p.name}</p>)}
+                      </div>
+                      {currentRoom.mode === 'COUPLE' || currentRoom.mode === 'SOLO' ? (
+                          <div className="bg-black/40 p-6 rounded-3xl border border-white/10">
+                              <h3 className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-4">TEAM B</h3>
+                              {Object.values(currentRoom.players || {}).filter(p => p.team === 'B').map((p, i) => <p key={i} className="font-bold mb-2">{p.name}</p>)}
+                          </div>
+                      ) : null}
+                  </div>
+
+                  {currentRoom.hostId === userData.phone ? (
+                      <button onClick={handleHostStartGame} className="w-full py-5 bg-cyan-500 text-black font-black rounded-full uppercase tracking-widest hover:scale-105 transition-all shadow-[0_0_20px_cyan]">Bắt Đầu Ngay</button>
+                  ) : (
+                      <p className="text-sm font-bold text-yellow-400 animate-pulse">Chờ chủ phòng bắt đầu...</p>
+                  )}
+                  
+                  <button onClick={handleLeaveGame} className="mt-6 text-xs text-white/40 hover:text-white uppercase tracking-widest font-bold">Rời Phòng</button>
+              </div>
+          </div>
       )}
 
       {/* MÀN HÌNH CHƠI CHÍNH SLEEK UI */}
@@ -614,13 +841,25 @@ const AuGame = () => {
                   </div>
               </div>
 
-              <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col w-64 sm:w-80 lg:w-96">
+              {/* --- ĐÃ SỬA: KHU VỰC TRÁI (HIỂN THỊ ĐIỂM MULTIPLAYER) --- */}
+              <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col w-64 sm:w-80 lg:w-96 gap-6">
+                  {/* Điểm của mình */}
                   <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full">
-                      <p className="text-sm font-black italic text-white/50 uppercase tracking-[0.5em] mb-[-5px]">SCORE</p>
+                      <p className="text-sm font-black italic text-cyan-400 uppercase tracking-[0.5em] mb-[-5px]">YOU</p>
                       <p className="text-5xl sm:text-6xl lg:text-7xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 tracking-tighter break-words leading-none py-2">
                           {displayScore.toLocaleString()}
                       </p>
                   </div>
+                  
+                  {/* Điểm của đối thủ (Nếu có) */}
+                  {gameMode !== 'SINGLE' && (
+                      <div className="drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] w-full opacity-80 mt-4 border-l-4 border-red-500 pl-4 bg-black/20 rounded-r-2xl py-2">
+                          <p className="text-xs font-black italic text-red-400 uppercase tracking-[0.5em] mb-[-2px]">ENEMY</p>
+                          <p className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-b from-gray-300 to-gray-600 tracking-tighter break-words leading-none py-2">
+                              {displayOpponentScore.toLocaleString()}
+                          </p>
+                      </div>
+                  )}
               </div>
 
               {judgment && (
@@ -679,10 +918,11 @@ const AuGame = () => {
                       {[...Array(getDifficultyStars(currentTrack?.difficulty))].map((_, i) => <span key={i}>★</span>)}
                   </div>
               </div>
+
           </div>
       )}
 
-      {/* CÁC MÀN HÌNH PHỤ TRỢ KHÁC NHƯ LOADING, RESULT GIỮ NGUYÊN */}
+      {/* CÁC MÀN HÌNH PHỤ TRỢ KHÁC */}
       {gameState === 'LOADING' && (
           <div className="h-screen flex flex-col items-center justify-center bg-black relative z-10">
               <div className="w-64 h-1 bg-white/5 rounded-full overflow-hidden mb-6">
@@ -718,8 +958,8 @@ const AuGame = () => {
                       <p className="text-xs text-white/50 font-black uppercase tracking-[0.5em] mb-4">Final Score</p>
                       <p className="text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-cyan-400 drop-shadow-2xl tracking-tighter">{score.toLocaleString()}</p>
                   </div>
-                  <button onClick={() => { setGameState('LOBBY'); fetchGlobalLeaderboard(); }} 
-                          className="w-full py-6 bg-cyan-600 text-black font-black rounded-[2rem] uppercase tracking-[0.3em] shadow-[0_0_20px_cyan] hover:scale-105 transition-all">Trở về sảnh</button>
+                  <button onClick={handleLeaveGame} 
+                          className="w-full py-6 bg-cyan-600 text-black font-black rounded-[2rem] uppercase tracking-[0.3em] shadow-[0_0_20px_cyan] hover:scale-105 transition-all">Về Sảnh Chờ</button>
               </div>
           </div>
       )}
@@ -728,7 +968,7 @@ const AuGame = () => {
           <div className="h-screen flex flex-col items-center justify-center text-center p-6 relative z-10 bg-black/80 backdrop-blur-md">
               <h2 className="text-[10rem] font-black text-red-600 uppercase tracking-tighter mb-4 italic drop-shadow-[0_0_50px_red]">FAILED</h2>
               <p className="text-xl font-bold text-gray-400 mb-12 uppercase tracking-[0.5em]">Hãy luyện tập thêm</p>
-              <button onClick={() => { setGameState('LOBBY'); fetchGlobalLeaderboard(); }} className="px-16 py-6 bg-white text-black font-black rounded-full uppercase tracking-[0.2em] hover:scale-105 transition-all">Thử lại</button>
+              <button onClick={handleLeaveGame} className="px-16 py-6 bg-white text-black font-black rounded-full uppercase tracking-[0.2em] hover:scale-105 transition-all">Thoát</button>
           </div>
       )}
 
